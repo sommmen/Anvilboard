@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout Anvilboard
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: Anvilboard
           fetch-depth: 0
@@ -28,14 +28,14 @@ jobs:
       # sibling-repo ProjectReference (not a NuGet package), so it must be checked out
       # next to Anvilboard for the relative paths in Anvilboard.Agent.csproj to resolve.
       - name: Checkout dotnet-agent-surface
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: sommmen/dotnet-agent-surface
           path: dotnet-agent-surface
           fetch-depth: 0
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
 
@@ -60,10 +60,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22.x"
           cache: npm
