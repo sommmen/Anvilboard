@@ -1,0 +1,39 @@
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <span class="brand-mark">⚒</span>
+      <span class="brand-name">Anvilboard</span>
+    </div>
+
+    <nav class="nav">
+      <a routerLink="/board" routerLinkActive="active" class="nav-link">
+        <span class="nav-icon">▤</span>
+        Board
+      </a>
+      <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">
+        <span class="nav-icon">◔</span>
+        Dashboard
+      </a>
+    </nav>
+
+    <div class="rail-section">
+      <div class="rail-heading">Teams</div>
+      @for (team of teams(); track team.id) {
+        <div class="team-row">
+          <span class="team-key">{{ team.key }}</span>
+          <span class="team-name">{{ team.name }}</span>
+        </div>
+      } @empty {
+        <div class="rail-empty">No teams yet</div>
+      }
+    </div>
+
+    <div class="rail-footer">
+      <p>Forge your work, in-process.</p>
+    </div>
+  </aside>
+
+  <main class="content">
+    <router-outlet />
+  </main>
+</div>

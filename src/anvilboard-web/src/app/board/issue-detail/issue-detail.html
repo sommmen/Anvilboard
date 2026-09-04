@@ -1,0 +1,54 @@
+<div class="scrim" (click)="close()">
+  <aside class="panel" (click)="$event.stopPropagation()">
+    <header class="panel-header">
+      <span class="panel-key">{{ issue().key }}</span>
+      <span class="panel-source">{{ providerLabels[issue().source] }}</span>
+      <button class="panel-close" (click)="close()">✕</button>
+    </header>
+
+    <h2 class="panel-title">{{ issue().title }}</h2>
+
+    @if (issue().description) {
+      <p class="panel-description">{{ issue().description }}</p>
+    }
+
+    <div class="panel-field">
+      <span class="panel-label">Status</span>
+      <div class="status-options">
+        @for (status of statuses; track status) {
+          <button
+            class="status-chip"
+            [class.selected]="issue().status === status"
+            (click)="changeStatus(status)"
+          >
+            {{ statusLabels[status] }}
+          </button>
+        }
+      </div>
+    </div>
+
+    <div class="panel-field">
+      <span class="panel-label">Assignee</span>
+      <span class="panel-value">{{ issue().assigneeId ?? 'Unassigned' }}</span>
+    </div>
+
+    <div class="panel-comments">
+      <span class="panel-label">Comments</span>
+      @for (comment of comments(); track comment.id) {
+        <div class="comment">{{ comment.body }}</div>
+      } @empty {
+        <p class="panel-empty">No comments yet.</p>
+      }
+
+      <div class="comment-composer">
+        <textarea
+          rows="2"
+          placeholder="Leave a comment"
+          [value]="newComment()"
+          (input)="newComment.set($any($event.target).value)"
+        ></textarea>
+        <button class="ab-btn ab-btn-primary" (click)="submitComment()">Comment</button>
+      </div>
+    </div>
+  </aside>
+</div>

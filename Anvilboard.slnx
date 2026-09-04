@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Anvilboard.Agent/Anvilboard.Agent.csproj" />
+    <Project Path="src/Anvilboard.Api/Anvilboard.Api.csproj" />
+    <Project Path="src/Anvilboard.Application/Anvilboard.Application.csproj" />
+    <Project Path="src/Anvilboard.Domain/Anvilboard.Domain.csproj" />
+    <Project Path="src/Anvilboard.Infrastructure/Anvilboard.Infrastructure.csproj" />
+    <Project Path="src/Anvilboard.Integrations.GitHub/Anvilboard.Integrations.GitHub.csproj" />
+    <Project Path="src/Anvilboard.Integrations.Linear/Anvilboard.Integrations.Linear.csproj" />
+    <Project Path="src/Anvilboard.Plugins.Abstractions/Anvilboard.Plugins.Abstractions.csproj" />
+  </Folder>
+</Solution>

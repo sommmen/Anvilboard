@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  merge_group:
+  workflow_dispatch:
+
+jobs:
+  build-and-test-dotnet:
+    name: Build and Test (.NET)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Anvilboard
+        uses: actions/checkout@v4
+        with:
+          path: Anvilboard
+          fetch-depth: 0
+
+      # Anvilboard.Agent references the dotnet-agent-surface CLI/MCP libraries via a
+      # sibling-repo ProjectReference (not a NuGet package), so it must be checked out
+      # next to Anvilboard for the relative paths in Anvilboard.Agent.csproj to resolve.
+      - name: Checkout dotnet-agent-surface
+        uses: actions/checkout@v4
+        with:
+          repository: sommmen/dotnet-agent-surface
+          path: dotnet-agent-surface
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore dependencies
+        working-directory: Anvilboard
+        run: dotnet restore Anvilboard.slnx
+
+      - name: Build
+        working-directory: Anvilboard
+        run: dotnet build Anvilboard.slnx --no-restore --configuration Release
+
+      - name: Run tests
+        working-directory: Anvilboard
+        run: dotnet test Anvilboard.slnx --no-build --no-restore --configuration Release --verbosity normal
+
+  build-and-test-web:
+    name: Build and Test (Angular)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/anvilboard-web
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+          cache-dependency-path: src/anvilboard-web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (format check)
+        run: npx prettier --check "src/**/*.{ts,html,scss}"
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test -- --watch=false

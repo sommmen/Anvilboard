@@ -1,0 +1,35 @@
+# Editor configuration for the .NET side of Anvilboard.
+# See https://editorconfig.org
+#
+# src/anvilboard-web has its own `.editorconfig` with `root = true`, so Angular/TypeScript
+# files are governed by that file instead of this one and the two never conflict.
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+end_of_line = crlf
+
+[*.{cs,csx}]
+indent_size = 4
+
+# `var` when the type is apparent, explicit type otherwise — not enforced strictly, just the
+# house style used throughout the existing codebase.
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+csharp_new_line_before_open_brace = all
+csharp_style_namespace_declarations = file_scoped:suggestion
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:suggestion
+
+[*.{json,slnx}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+[*.{yml,yaml}]
+indent_size = 2

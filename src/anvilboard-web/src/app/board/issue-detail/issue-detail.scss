@@ -1,0 +1,138 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 50;
+}
+
+.panel {
+  width: 380px;
+  height: 100%;
+  background: var(--ab-bg-elevated);
+  border-left: 1px solid var(--ab-border);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.panel-key {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ab-text-faint);
+}
+
+.panel-source {
+  font-size: 10px;
+  color: var(--ab-text-faint);
+  text-transform: uppercase;
+}
+
+.panel-close {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--ab-text-faint);
+  font-size: 13px;
+
+  &:hover {
+    color: var(--ab-text);
+  }
+}
+
+.panel-title {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.panel-description {
+  color: var(--ab-text-muted);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  margin: 0 0 16px;
+}
+
+.panel-field {
+  margin-bottom: 16px;
+}
+
+.panel-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ab-text-faint);
+  margin-bottom: 6px;
+}
+
+.panel-value {
+  font-size: 12.5px;
+  color: var(--ab-text-muted);
+}
+
+.status-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.status-chip {
+  background: var(--ab-bg);
+  border: 1px solid var(--ab-border);
+  color: var(--ab-text-muted);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+
+  &:hover {
+    border-color: var(--ab-text-faint);
+  }
+
+  &.selected {
+    background: var(--ab-accent);
+    border-color: var(--ab-accent);
+    color: #0e0e11;
+    font-weight: 600;
+  }
+}
+
+.panel-comments {
+  border-top: 1px solid var(--ab-border-subtle);
+  padding-top: 14px;
+}
+
+.comment {
+  background: var(--ab-bg);
+  border: 1px solid var(--ab-border-subtle);
+  border-radius: var(--ab-radius-sm);
+  padding: 8px;
+  font-size: 12.5px;
+  margin-bottom: 8px;
+}
+
+.panel-empty {
+  color: var(--ab-text-faint);
+  font-size: 12px;
+}
+
+.comment-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+
+  textarea {
+    resize: vertical;
+  }
+
+  button {
+    align-self: flex-end;
+  }
+}

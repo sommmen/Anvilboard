@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Anvilboard.Domain\Anvilboard.Domain.csproj" />
+    <ProjectReference Include="..\Anvilboard.Plugins.Abstractions\Anvilboard.Plugins.Abstractions.csproj" />
+    <ProjectReference Include="..\Anvilboard.Infrastructure\Anvilboard.Infrastructure.csproj" />
+    <ProjectReference Include="..\Anvilboard.Application\Anvilboard.Application.csproj" />
+    <ProjectReference Include="..\Anvilboard.Integrations.GitHub\Anvilboard.Integrations.GitHub.csproj" />
+    <ProjectReference Include="..\Anvilboard.Integrations.Linear\Anvilboard.Integrations.Linear.csproj" />
+  </ItemGroup>
+
+</Project>

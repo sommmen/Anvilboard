@@ -1,0 +1,23 @@
+<article class="card" (click)="open.emit(issue())">
+  <header class="card-header">
+    <span class="card-key">{{ issue().key }}</span>
+    <span class="card-source" [title]="providerLabels[issue().source]">{{
+      providerLabels[issue().source]
+    }}</span>
+  </header>
+
+  <p class="card-title">{{ issue().title }}</p>
+
+  <footer class="card-footer">
+    <span class="card-priority" [title]="priorityLabels[issue().priority]">
+      {{ priorityGlyph(issue().priority) }}
+    </span>
+    @if (issue().assigneeId) {
+      <span class="card-assignee" [title]="issue().assigneeId!">
+        {{ issue().assigneeId!.slice(0, 2).toUpperCase() }}
+      </span>
+    } @else {
+      <span class="card-unassigned">—</span>
+    }
+  </footer>
+</article>

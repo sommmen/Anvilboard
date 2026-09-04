@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Anvilboard.Plugins.Abstractions</PackageId>
+    <Description>
+      Stable contracts for authoring Anvilboard ingestion, webhook, and lifecycle-hook plugins.
+      Depend on this package alone (plus Anvilboard.Domain) to build a private, out-of-repo plugin
+      such as a Slack ticket-creation source without referencing the host application.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Anvilboard.Domain\Anvilboard.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

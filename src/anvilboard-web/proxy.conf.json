@@ -1,0 +1,10 @@
+{
+  "/api": {
+    "target": "http://localhost:5089",
+    "secure": false
+  },
+  "/webhooks": {
+    "target": "http://localhost:5089",
+    "secure": false
+  }
+}

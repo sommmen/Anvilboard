@@ -1,0 +1,65 @@
+@if (summary(); as s) {
+  <div class="dashboard">
+    <header class="dashboard-header">
+      <h1>Dashboard</h1>
+      <p class="tagline">A clear read on the state of the work.</p>
+    </header>
+
+    <div class="stat-row">
+      <div class="stat-card">
+        <span class="stat-value">{{ s.createdLast7Days }}</span>
+        <span class="stat-label">Created, last 7 days</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value">{{ s.completedLast7Days }}</span>
+        <span class="stat-label">Completed, last 7 days</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value">{{ s.openIssuesByAssignee.length }}</span>
+        <span class="stat-label">Contributors with open work</span>
+      </div>
+    </div>
+
+    <div class="panel-grid">
+      <section class="panel-block">
+        <h2>By status</h2>
+        @for (entry of statusEntries(); track entry.status) {
+          <div class="bar-row">
+            <span class="bar-label">{{ entry.status }}</span>
+            <div class="bar-track">
+              <div class="bar-fill" [style.width.%]="entry.pct"></div>
+            </div>
+            <span class="bar-count">{{ entry.count }}</span>
+          </div>
+        }
+      </section>
+
+      <section class="panel-block">
+        <h2>By source</h2>
+        @for (entry of sourceEntries(); track entry.source) {
+          <div class="bar-row">
+            <span class="bar-label">{{ entry.source }}</span>
+            <div class="bar-track">
+              <div class="bar-fill bar-fill-alt" [style.width.%]="entry.pct"></div>
+            </div>
+            <span class="bar-count">{{ entry.count }}</span>
+          </div>
+        }
+      </section>
+
+      <section class="panel-block">
+        <h2>Open load by assignee</h2>
+        @for (load of s.openIssuesByAssignee; track load.assigneeId) {
+          <div class="bar-row">
+            <span class="bar-label">{{ load.assigneeId.slice(0, 8) }}</span>
+            <span class="bar-count">{{ load.openIssueCount }}</span>
+          </div>
+        } @empty {
+          <p class="panel-empty">No open assignments.</p>
+        }
+      </section>
+    </div>
+  </div>
+} @else {
+  <p class="loading">Loading dashboard…</p>
+}

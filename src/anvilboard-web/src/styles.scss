@@ -1,0 +1,134 @@
+// Anvilboard global theme.
+//
+// Look-and-feel goal (per product spec): fast, minimal, keyboard-first, dark-by-default — the
+// aesthetic of modern issue trackers, without reusing any specific product's name, wordmark, logo,
+// or copied visual assets. Everything below is an original, generic dark/graphite design system.
+
+:root {
+  --ab-bg: #0e0e11;
+  --ab-bg-elevated: #17171b;
+  --ab-bg-hover: #202024;
+  --ab-border: #2a2a2f;
+  --ab-border-subtle: #1d1d21;
+  --ab-text: #e7e7ea;
+  --ab-text-muted: #9a9aa2;
+  --ab-text-faint: #6c6c74;
+  --ab-accent: #6e6ef6;
+  --ab-accent-hover: #8080f8;
+  --ab-danger: #f66e6e;
+  --ab-warning: #f6b26e;
+  --ab-success: #6ef6a0;
+
+  --ab-radius-sm: 4px;
+  --ab-radius-md: 8px;
+  --ab-radius-lg: 12px;
+
+  --ab-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ab-bg);
+  color: var(--ab-text);
+  font-family: var(--ab-font);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--ab-text);
+  background: var(--ab-bg-elevated);
+  border: 1px solid var(--ab-border);
+  border-radius: var(--ab-radius-sm);
+  padding: 6px 8px;
+
+  &:focus {
+    outline: none;
+    border-color: var(--ab-accent);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ab-border);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+// Small utility classes reused across feature components rather than duplicating the same rule
+// in every component's stylesheet.
+.ab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--ab-bg-elevated);
+  border: 1px solid var(--ab-border);
+  color: var(--ab-text);
+  border-radius: var(--ab-radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+
+  &:hover {
+    background: var(--ab-bg-hover);
+    border-color: var(--ab-text-faint);
+  }
+}
+
+.ab-btn-primary {
+  background: var(--ab-accent);
+  border-color: var(--ab-accent);
+  color: #0e0e11;
+
+  &:hover {
+    background: var(--ab-accent-hover);
+    border-color: var(--ab-accent-hover);
+  }
+}
+
+.ab-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--ab-bg-hover);
+  color: var(--ab-text-muted);
+}

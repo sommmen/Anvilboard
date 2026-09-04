@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Anvilboard.Domain\Anvilboard.Domain.csproj" />
+    <ProjectReference Include="..\Anvilboard.Plugins.Abstractions\Anvilboard.Plugins.Abstractions.csproj" />
+    <ProjectReference Include="..\Anvilboard.Infrastructure\Anvilboard.Infrastructure.csproj" />
+    <ProjectReference Include="..\Anvilboard.Application\Anvilboard.Application.csproj" />
+    <ProjectReference Include="..\Anvilboard.Integrations.GitHub\Anvilboard.Integrations.GitHub.csproj" />
+    <ProjectReference Include="..\Anvilboard.Integrations.Linear\Anvilboard.Integrations.Linear.csproj" />
+    <!-- Not published to NuGet; consumed via sibling-repo ProjectReference, per the user's explicit
+         requirement that Anvilboard's agent surface be built on dotnet-agent-surface. -->
+    <ProjectReference Include="..\..\..\dotnet-agent-surface\src\DotNetAgentSurface.Core\DotNetAgentSurface.Core.csproj" />
+    <ProjectReference Include="..\..\..\dotnet-agent-surface\src\DotNetAgentSurface.CommandLine\DotNetAgentSurface.CommandLine.csproj" />
+    <ProjectReference Include="..\..\..\dotnet-agent-surface\src\DotNetAgentSurface.Mcp\DotNetAgentSurface.Mcp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Configuration" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

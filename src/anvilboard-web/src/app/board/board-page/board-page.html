@@ -1,0 +1,53 @@
+<div class="board">
+  <header class="board-toolbar">
+    <div>
+      <h1>Board</h1>
+      <p class="tagline">Ship the work. Skip the ceremony.</p>
+    </div>
+    <button class="ab-btn" (click)="refresh()">Refresh</button>
+  </header>
+
+  <div class="columns">
+    @for (column of columns(); track column.status) {
+      <section class="column">
+        <header class="column-header">
+          <span class="column-title">{{ column.label }}</span>
+          <span class="column-count">{{ column.issues.length }}</span>
+          <button class="column-add" (click)="startCreating(column.status)">+</button>
+        </header>
+
+        @if (creatingForStatus() === column.status) {
+          <div class="quick-create">
+            <input
+              type="text"
+              placeholder="Issue title"
+              [value]="newIssueTitle()"
+              (input)="newIssueTitle.set($any($event.target).value)"
+              (keydown.enter)="submitCreate()"
+              (keydown.escape)="cancelCreating()"
+              autofocus
+            />
+            <div class="quick-create-actions">
+              <button class="ab-btn ab-btn-primary" (click)="submitCreate()">Add</button>
+              <button class="ab-btn" (click)="cancelCreating()">Cancel</button>
+            </div>
+          </div>
+        }
+
+        <div class="column-body">
+          @for (issue of column.issues; track issue.id) {
+            <app-issue-card [issue]="issue" (open)="openIssue($event)" />
+          } @empty {
+            @if (creatingForStatus() !== column.status) {
+              <p class="column-empty">Nothing here.</p>
+            }
+          }
+        </div>
+      </section>
+    }
+  </div>
+</div>
+
+@if (selectedIssue(); as issue) {
+  <app-issue-detail [issue]="issue" (closed)="closeDetail()" (changed)="onStatusChanged()" />
+}
