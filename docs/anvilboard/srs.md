@@ -51,7 +51,7 @@ This SRS excludes mandatory cloud hosting, broad enterprise portfolio management
 
 | Document | Version | Date |
 |---|---|---|
-| [`ideas/anvilboard/draft.md`](../../ideas/anvilboard/draft.md) | 0.1 | 2026-03-25 |
+| [`ideas/anvilboard/draft.md`](../../ideas/anvilboard/draft.md) | 0.1 | 2026-09-05 |
 | [`docs/project-anvilboard.md`](../project-anvilboard.md) | 0.1 | 2026-03-25 |
 | [`docs/anvilboard/prd.md`](prd.md) | 0.1 | 2026-03-25 |
 | [`docs/anvilboard/tech-design.md`](tech-design.md) | 0.1 | 2026-03-25 |

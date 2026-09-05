@@ -386,7 +386,7 @@ Every anticipated failure has a stable catalog entry. Implementations must retur
 
 | Component | Responsibility | Public Interface | Dependencies | Feature Spec |
 |---|---|---|---|---|
-| Workspace & Authorization | Authenticates actors, resolves workspace scope, enforces role permissions for every operation | `IAuthorizationService`, ASP.NET Core auth middleware, Agent credential resolver | Domain (`Workspace`, `Member`, `Role`) | [`docs/features/workspace-authorization.md`](../features/workspace-authorization.md) |
+| Workspace & Authorization | Authenticates actors, resolves workspace scope, enforces role permissions for every operation | `IWorkspaceAuthorizationService`, ASP.NET Core auth middleware, Agent credential resolver | Domain (`Workspace`, `Member`, `Role`) | [`docs/features/workspace-authorization.md`](../features/workspace-authorization.md) |
 | Workflow Engine | Defines/validates configurable workflow states and transitions; migrates legacy `IssueStatus` values | `IWorkflowService` | Domain (`WorkflowState`), Infrastructure | [`docs/features/workflow-engine.md`](../features/workflow-engine.md) |
 | Issue & Board Service | Issue CRUD, board/list query, filtering/grouping, dashboard aggregation | `IIssueService`, `IBoardQueryService` | Workflow Engine, Workspace & Authorization | [`docs/features/issue-board-service.md`](../features/issue-board-service.md) |
 | Integration & Plugin Platform | Integration lifecycle, secret handling, ingestion/webhook/post-commit plugin execution, provenance and sync-health | `IIntegrationService`, `IIngestionSource`, `IWebhookReceiver`, `IIssueHook` | Issue & Board Service, external providers | [`docs/features/integration-and-plugin-platform.md`](../features/integration-and-plugin-platform.md) |

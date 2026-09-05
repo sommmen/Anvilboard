@@ -67,7 +67,7 @@ All six feature specs are in **draft** status: authored against the current
 [`docs/anvilboard/tech-design.md`](../anvilboard/tech-design.md) and
 [`docs/anvilboard/srs.md`](../anvilboard/srs.md), grounded in the existing `src/` codebase where
 components already exist (e.g. `IssueService`, `DashboardService`, `SyncCoordinator`,
-`BoardAgentService`) and clearly marking planned additions (e.g. `IAuthorizationService`,
+`BoardAgentService`) and clearly marking planned additions (e.g. `IWorkspaceAuthorizationService`,
 `WorkflowState`, `IIntegrationService`) that do not yet exist in code. None have been implemented
 or reviewed against running code yet — treat them as the target contract, not the current
 behavior, until an implementation PR lands and this line is updated.
