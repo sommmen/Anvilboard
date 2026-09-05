@@ -252,7 +252,7 @@ The container structure mirrors the current `src/` project layout. `Anvilboard.A
 | Element | Convention | Example |
 |---|---|---|
 | REST route segments | kebab-case, versioned prefix | `/api/v1/issues`, `/api/v1/workflow-states` |
-| Query parameters | camelCase | `?workflowStateId=...&provider=github` |
+| Query parameters | camelCase | `?workflowStateId=...&provider=GITHUB` |
 | JSON fields | camelCase | `"workflowStateId"`, `"syncCondition"` |
 | Enumerated values | UPPER_SNAKE_CASE symbolic strings | `"IN_PROGRESS"`, `"STALE"` |
 
