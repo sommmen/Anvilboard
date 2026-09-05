@@ -233,7 +233,7 @@ The container structure mirrors the current `src/` project layout. `Anvilboard.A
 | Frontend framework | Angular (standalone components) | 22.1.0 | Already in use in `anvilboard-web`. |
 | Frontend language | TypeScript | ~6.0.2 | Already pinned in `anvilboard-web/package.json`. |
 | Agent/automation host | .NET console host (CLI + MCP stdio JSON-RPC) | .NET 10 | Already in use in `Anvilboard.Agent`; extended, not replaced. |
-| Testing framework | xUnit (backend), existing Angular test runner (frontend) | Per existing project convention | Continue existing convention; no new framework introduced. |
+| Testing framework | xUnit (backend), existing Angular test runner (frontend) | Target-state choice; no backend test project exists yet | No backend test project exists yet (see DEVELOPMENT.md §Testing); xUnit is the chosen framework to adopt when one is added. Frontend keeps its existing Angular test runner; no new framework introduced. |
 | Containerization | Not currently containerized | N/A | Deployment packaging is an open decision (§17, OQ-005); single-host process deployment is the documented minimum. |
 
 ### 7.2 Naming Conventions
