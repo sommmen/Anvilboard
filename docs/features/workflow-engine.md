@@ -64,9 +64,11 @@ sequenceDiagram
 
     IB->>WE: ValidateTransitionAsync(workspaceId, currentStateId, targetStateId)
     WE->>Store: Load WorkflowState(currentStateId), WorkflowState(targetStateId)
-    Store-->>WE: States found, or null if missing/archived
-    alt either state missing or archived
+    Store-->>WE: States found, or null if missing; IsArchived flag if found
+    alt either state missing
         WE-->>IB: Denied(REFERENCED_ENTITY_NOT_FOUND, missing state id)
+    else either state archived
+        WE-->>IB: Denied(INVALID_WORKFLOW_TRANSITION, archived state id, "state is archived")
     else currentStateId == targetStateId
         WE-->>IB: Allowed (no-op transition, no adjacency lookup needed)
     else states resolved and distinct
@@ -86,7 +88,7 @@ sequenceDiagram
 
 `Task<TransitionValidationResult> ValidateTransitionAsync(WorkspaceId workspaceId, WorkflowStateId currentStateId, WorkflowStateId targetStateId, CancellationToken ct = default)`
 
-1. Load `currentStateId` and `targetStateId` from `WorkflowStates` scoped to `workspaceId`. If either row does not exist, or exists with `IsArchived == true` (an archived state is never a valid current or target state) → return `TransitionValidationResult.Denied(REFERENCED_ENTITY_NOT_FOUND, missingStateId)`.
+1. Load `currentStateId` and `targetStateId` from `WorkflowStates` scoped to `workspaceId`. If either row does not exist → return `TransitionValidationResult.Denied(REFERENCED_ENTITY_NOT_FOUND, missingStateId)`. If either row exists but `IsArchived == true` (an archived state is never a valid current or target state) → return `TransitionValidationResult.Denied(INVALID_WORKFLOW_TRANSITION, archivedStateId, "state is archived")` instead, per the tech-design §7.7 catalog split between missing references (404) and inactive/archived states (409).
 2. If `currentStateId == targetStateId` → return `TransitionValidationResult.Allowed()` as a no-op. This mirrors the existing `IssueService.ChangeStatusAsync` early-return behavior (`src/Anvilboard.Application/Issues/IssueService.cs`), which already treats an identical old/new status as a no-op with no activity emitted; the workflow engine preserves that precedent rather than treating a same-state request as an unconfigured transition.
 3. Otherwise, query `WorkflowTransitions` for a row where `FromStateId == currentStateId AND ToStateId == targetStateId AND WorkspaceId == workspaceId`.
 4. If no row is found → return `TransitionValidationResult.Denied(INVALID_WORKFLOW_TRANSITION, currentState.Key, targetState.Key, "no configured transition rule")`. The caller (Issue & Board Service) must not increment `Issue.Version` or persist any change on this outcome (tech-design AC-004).
@@ -163,19 +165,20 @@ Archiving with open issues and no replacement is rejected (`VALIDATION_FAILED`) 
 | AC-003 | P0 | Given a workspace workflow with `WorkflowTransition(from=A, to=B)` configured, when `ValidateTransitionAsync(workspaceId, A, B)` is called | Returns `Allowed()` | Unit: `WorkflowEngineTests.ValidateTransitionAsync_ConfiguredTransition_ReturnsAllowed` |
 | AC-004 | P0 | Given no `WorkflowTransition(from=A, to=C)` is configured, when `ValidateTransitionAsync(workspaceId, A, C)` is called | Returns `Denied(INVALID_WORKFLOW_TRANSITION)` naming state `A`'s key, state `C`'s key, and "no configured transition rule"; caller applies no version increment | Integration: transition API test asserts 409 body fields and unchanged persisted `Issue.Version` |
 | AC-201 | P0 | Given a `WorkflowState` with key `in_progress` already exists in a workspace, when `CreateWorkflowStateAsync` is called again with `key="in_progress"` in the same workspace | Returns/throws `VALIDATION_FAILED` naming the duplicate key; no second row is persisted | Unit: `CreateWorkflowStateAsync_DuplicateKey_ThrowsValidationFailed` |
-| AC-202 | P0 | Given `currentStateId` does not exist (or is archived) in the workspace, when `ValidateTransitionAsync` is called | Returns `Denied(REFERENCED_ENTITY_NOT_FOUND)` naming the missing/archived state id | Unit: `ValidateTransitionAsync_UnknownOrArchivedState_ReturnsReferencedEntityNotFound` |
+| AC-202 | P0 | Given `currentStateId` does not exist in the workspace, when `ValidateTransitionAsync` is called | Returns `Denied(REFERENCED_ENTITY_NOT_FOUND)` naming the missing state id | Unit: `ValidateTransitionAsync_UnknownState_ReturnsReferencedEntityNotFound` |
 | AC-203 | P1 | Given `currentStateId == targetStateId` for an active state, when `ValidateTransitionAsync` is called | Returns `Allowed()` as a no-op; no `WorkflowTransitions` lookup is performed | Unit: `ValidateTransitionAsync_SameState_ReturnsAllowedNoOp` |
 | AC-204 | P0 | Given at least one open issue references a `WorkflowState`, when `ArchiveWorkflowStateAsync` is called with `replacementStateId = null` | Returns/throws `VALIDATION_FAILED` naming the dependent issue count; the state remains `IsArchived = false` | Negative integration test: seed dependent issue, assert rejection and unchanged `IsArchived` |
 | AC-205 | P1 | Given the same dependent-issue scenario as AC-204 but `replacementStateId` supplied and valid | Dependent issues are reassigned to the replacement state and the original state becomes `IsArchived = true` | Integration test: assert reassignment count and archived flag |
 | AC-206 | P0 | Given a workspace with legacy `IssueStatus`-only data, when the legacy migration runs | Exactly six `WorkflowState` rows are seeded with the keys/order/`IsTerminal` values in the field-mapping table, and every `Issue.WorkflowStateId` is backfilled to match its prior `Status` | Integration: `LegacyStatusMigrationTests` against seeded legacy-shaped SQLite data |
 | AC-207 | P1 | Given a `WorkflowState` with `Key = "in_progress"`, when it is serialized on any REST/CLI/MCP response | The symbolic value `"IN_PROGRESS"` is produced identically across all three channels | Cross-channel contract test comparing REST/CLI/MCP serialized output for the same state |
 | AC-208 | P1 | Given any configuration mutation (create/update/archive state, or create/remove transition) | The caller emits exactly one audit event carrying the mutation type and affected id, consumed by `audit-and-recovery.md` | Integration: assert one `IAuditService` call per configuration mutation |
+| AC-209 | P0 | Given `currentStateId` or `targetStateId` exists but has `IsArchived = true` in the workspace, when `ValidateTransitionAsync` is called | Returns `Denied(INVALID_WORKFLOW_TRANSITION)` naming the archived state id and "state is archived" — never `REFERENCED_ENTITY_NOT_FOUND`, per tech-design §7.7 | Unit: `ValidateTransitionAsync_ArchivedState_ReturnsInvalidWorkflowTransition` |
 
 ## Error Handling
 
 - **`VALIDATION_FAILED`** (400) — duplicate `WorkflowState.Key` within a workspace; malformed `key`/`displayName`/`order`; archiving a state with open dependents and no `replacementStateId`; attempting to bootstrap issue creation with no active initial workflow state configured (FR-WS-002 AC2).
-- **`REFERENCED_ENTITY_NOT_FOUND`** (404) — `currentStateId` or `targetStateId` does not exist, or exists but is archived, within the workspace.
-- **`INVALID_WORKFLOW_TRANSITION`** (409) — the requested `(currentStateId, targetStateId)` pair has no configured `WorkflowTransition` row; the message names the current state key, requested state key, and the violated-rule text so both a human UI and an agent can render a specific correction.
+- **`REFERENCED_ENTITY_NOT_FOUND`** (404) — `currentStateId` or `targetStateId` does not exist within the workspace.
+- **`INVALID_WORKFLOW_TRANSITION`** (409) — either: (a) `currentStateId` or `targetStateId` exists but is archived within the workspace, naming the archived state id and "state is archived"; or (b) the requested `(currentStateId, targetStateId)` pair has no configured `WorkflowTransition` row, naming the current state key, requested state key, and the violated-rule text — so both a human UI and an agent can render a specific correction.
 - No anticipated failure above ever surfaces as `500`; any EF Core exception encountered while resolving states/transitions is caught and translated at the `Anvilboard.Application` boundary per §7.6 before reaching `issue-board-service.md` or any channel.
 
 ## File Structure

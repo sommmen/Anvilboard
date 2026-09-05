@@ -91,7 +91,7 @@ sequenceDiagram
 Current implementation (`Anvilboard.Application/Issues/IssueService.cs`) validates `title` is non-empty, loads the `Team` to mint the next `"{TeamKey}-{N}"` key, and inserts an `Issue` with `Source = IntegrationProvider.Local`. Future-state additions required by FR-WS-001/FR-WRK-002:
 
 1. Accept and validate `WorkspaceId` first; reject with `WORKSPACE_ACCESS_DENIED` if the caller is not authorized for it (delegated to `workspace-authorization`, enforced before this method is reached).
-2. Resolve `WorkflowStateId` (not the fixed `IssueStatus` enum) for the issue's initial state; a missing/inactive state returns `REFERENCED_ENTITY_NOT_FOUND`.
+2. Resolve `WorkflowStateId` (not the fixed `IssueStatus` enum) for the issue's initial state; a missing state returns `REFERENCED_ENTITY_NOT_FOUND`, while an archived state returns `INVALID_WORKFLOW_TRANSITION` (tech-design §7.7 catalog split).
 3. Validate `idempotencyKey` (required for the automation surface's create endpoint per FR-AUT-002) is well-formed; the automation-surface layer owns replay detection, but this method must accept and forward the resolved key so its result can be cached against it.
 4. Initialize `Issue.Version = 1` (new `Version` column, tech-design §10.1).
 5. Persist and call `RecordAndDispatchAsync(issue, ActivityEventType.Created, ...)`.
@@ -161,7 +161,8 @@ Every anticipated failure resolves to a §7.7 catalog code; no raw EF Core or pr
 | Condition | Code | HTTP status | Notes |
 |---|---:|---|---|
 | Missing/malformed `title`, pagination, or idempotency key | `VALIDATION_FAILED` | 400 | Names the invalid/missing field and requirement. |
-| `workflowStateId` does not exist or is inactive for the workspace | `REFERENCED_ENTITY_NOT_FOUND` | 404 | Applies to create and transition. |
+| `workflowStateId` does not exist for the workspace | `REFERENCED_ENTITY_NOT_FOUND` | 404 | Applies to create and transition. |
+| `workflowStateId` exists but is archived for the workspace | `INVALID_WORKFLOW_TRANSITION` | 409 | Applies to create and transition; names the archived state. |
 | Requested transition not in the workspace's allowed-transition set | `INVALID_WORKFLOW_TRANSITION` | 409 | Names current state, requested state, violated rule; no version increment. |
 | `expectedVersion` does not match persisted `Issue.Version` | `CONCURRENCY_CONFLICT` | 409 | Response supplies current version for refetch/retry. |
 | Duplicate `(WorkspaceId, Key)` on issue creation | `RESOURCE_ALREADY_EXISTS` | 409 | UNIQUE constraint translation (tech-design §7.6). |
