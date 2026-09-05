@@ -6,16 +6,21 @@ architecture rather than introducing a new one.
 
 ## Before you start
 
-- **Read the specs first.** [FUNCTIONAL_SPEC.md](FUNCTIONAL_SPEC.md) covers what the product is
-  for, [SPEC.md](SPEC.md) covers how it's built, and [DEVELOPMENT.md](DEVELOPMENT.md) covers how
-  to build/run it locally. Most "is this the right approach" questions are already answered there.
+- **Read the specs first.** [`docs/anvilboard/prd.md`](docs/anvilboard/prd.md) and
+  [`docs/anvilboard/srs.md`](docs/anvilboard/srs.md) cover what the product is for and must do,
+  [`docs/anvilboard/tech-design.md`](docs/anvilboard/tech-design.md) and
+  [`docs/features/`](docs/features/) cover how it's built, and [DEVELOPMENT.md](DEVELOPMENT.md)
+  covers how to build/run it locally. Most "is this the right approach" questions are already
+  answered there. The root-level [FUNCTIONAL_SPEC.md](FUNCTIONAL_SPEC.md) and
+  [SPEC.md](SPEC.md) are retained historical snapshots of the original proof of concept only.
 - **Prefer a plugin over a core change.** If what you want is a new way to pull work in (another
   issue tracker, a chat tool, an internal system) or a side effect after issues change (another
   notification target), that almost certainly belongs in a new plugin against
   `Anvilboard.Plugins.Abstractions`, not a change to `Anvilboard.Application`, `Anvilboard.Api`, or
-  `Anvilboard.Agent`. See [PLUGINS.md](PLUGINS.md). Plugins can live in their own private repo and
-  never need to be contributed back here at all — `Plugins:AssemblyPaths` loads them from outside
-  the tree.
+  `Anvilboard.Agent`. See
+  [`docs/features/integration-and-plugin-platform.md`](docs/features/integration-and-plugin-platform.md).
+  Plugins can live in their own private repo and never need to be contributed back here at all —
+  `Plugins:AssemblyPaths` loads them from outside the tree.
 - **Core changes** (new REST endpoints, new domain fields, new agent operations, UI changes) are
   welcome when they benefit the product generally rather than one integration's needs. If you're
   not sure whether something is "core" or "should be a plugin," open an issue describing the use
@@ -29,7 +34,7 @@ architecture rather than introducing a new one.
    there, expose it from *both* `Anvilboard.Api`'s endpoints and `Anvilboard.Agent`'s
    `BoardAgentService` in the same change, so the web UI and agents never fall out of sync with
    each other. This is a hard rule, not a suggestion — it's the whole point of the architecture
-   (see [SPEC.md](SPEC.md#solution-layout)).
+   (see [`docs/anvilboard/tech-design.md`](docs/anvilboard/tech-design.md)).
 3. Match existing conventions — see [DEVELOPMENT.md's coding conventions](DEVELOPMENT.md#coding-conventions)
    section (nullable enabled, minimal APIs, strongly-typed IDs, application-layer-first, standalone
    Angular components with signals).
@@ -54,10 +59,16 @@ Open an issue describing:
 
 ## Documentation changes
 
-Documentation lives at the repo root (`README.md`, `FUNCTIONAL_SPEC.md`, `SPEC.md`, `PLUGINS.md`,
-`DEVELOPMENT.md`, this file, `CHANGELOG.md`). Keep facts (ports, config keys, operation names)
-consistent with the actual code — when in doubt, check the source rather than another doc, since
-docs can drift.
+Canonical documentation follows the Spec-Forge chain under `docs/` and `ideas/`:
+`ideas/anvilboard/draft.md`, `docs/project-anvilboard.md`, `docs/anvilboard/prd.md`,
+`docs/anvilboard/srs.md`, `docs/anvilboard/tech-design.md`, `docs/features/*.md`, and
+`docs/anvilboard/test-cases.md`. Repo-root docs (`README.md`, `DEVELOPMENT.md`, this file,
+`CHANGELOG.md`) cover onboarding and process; `FUNCTIONAL_SPEC.md`, `SPEC.md`, and `PLUGINS.md`
+are retained historical snapshots only — do not add new normative content to them. When you
+change a canonical doc, check whether downstream docs (SRS → tech design → feature specs → test
+cases) need updating too, and keep requirement IDs (`FR-*`, `NFR-*`, `AC-*`) stable. Keep facts
+(ports, config keys, operation names) consistent with the actual code — when in doubt, check the
+source rather than another doc, since docs can drift.
 
 ## Code of conduct
 

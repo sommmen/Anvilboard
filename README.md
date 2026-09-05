@@ -45,7 +45,7 @@ up ownership of the data or standing up infrastructure to get it.
   new source (a private Slack ticket-creation plugin, for example) without touching core code. See
   [`PLUGINS.md`](PLUGINS.md).
 - **Agents are first-class users of the board, not bolted on.** `Anvilboard.Agent` is a CLI+MCP
-  surface built on [`dotnet-agent-surface`](../dotnet-agent-surface) that calls the exact same
+  surface built on [`dotnet-agent-surface`](https://github.com/sommmen/dotnet-agent-surface) that calls the exact same
   application services the web UI calls, so a coding agent lists, creates, and updates issues
   through the identical code path a person uses.
 
@@ -54,13 +54,18 @@ up ownership of the data or standing up infrastructure to get it.
 ```text
 Anvilboard/
 ├── README.md              this file
-├── SPEC.md                technical architecture (as-built)
-├── FUNCTIONAL_SPEC.md      what the product does and for whom
-├── PLUGINS.md              how to write a plugin
+├── SPEC.md                (historical) as-built PoC architecture — superseded, see docs/anvilboard/
+├── FUNCTIONAL_SPEC.md      (historical) original product scope — superseded, see docs/anvilboard/
+├── PLUGINS.md              (historical) original plugin guide — superseded, see docs/features/
 ├── DEVELOPMENT.md          local dev workflow
 ├── CONTRIBUTING.md         how to propose changes
 ├── CHANGELOG.md            notable changes per version
 ├── LICENSE                 MIT
+├── ideas/anvilboard/       product vision (draft.md)
+├── docs/
+│   ├── project-anvilboard.md          feature decomposition / manifest
+│   ├── anvilboard/                    prd.md, srs.md, tech-design.md, test-cases.md
+│   └── features/                      per-component implementation-facing specs
 └── src/
     ├── Anvilboard.Domain                    Entities, enums, no dependencies on anything else
     ├── Anvilboard.Plugins.Abstractions       The three plugin interfaces + PluginManifest
@@ -73,7 +78,10 @@ Anvilboard/
     └── anvilboard-web/                       Angular client (board + dashboard)
 ```
 
-See [SPEC.md](SPEC.md) for the full architecture, domain model, REST surface, and data flow.
+See [`docs/anvilboard/tech-design.md`](docs/anvilboard/tech-design.md) for the canonical
+architecture, domain model, REST surface, and data flow, and
+[`docs/features/`](docs/features/) for per-component detail. [`SPEC.md`](SPEC.md) is the retained
+historical snapshot of the original proof-of-concept build.
 
 ## Quickstart
 
@@ -111,7 +119,8 @@ dotnet run -- mcp   # long-running MCP server over stdio, for an MCP-aware agent
 ```
 
 The CLI and MCP surface both call `BoardAgentService`, the same application services the REST API
-calls — see [SPEC.md § Agent surface](SPEC.md#agent-surface-climcp).
+calls — see [`docs/features/agent-and-automation-surface.md`](docs/features/agent-and-automation-surface.md)
+for the canonical CLI/MCP/REST contract, idempotency, and error-handling rules.
 
 ## Configuring integrations
 
@@ -130,18 +139,27 @@ for the agent host):
 
 Private, out-of-repo plugins (e.g. a Slack ticket-creation plugin) are enabled by dropping a
 compiled DLL path into `Plugins:AssemblyPaths` — no source reference from Anvilboard needed. See
-[PLUGINS.md](PLUGINS.md).
+[`docs/features/integration-and-plugin-platform.md`](docs/features/integration-and-plugin-platform.md)
+(canonical) or [PLUGINS.md](PLUGINS.md) (historical PoC snapshot).
 
 ## Documentation
 
+Anvilboard follows the Spec-Forge documentation chain: vision → PRD → SRS → technical design →
+feature specs → test cases, with stable requirement IDs threaded through every layer.
+
 | Doc | Answers |
 |---|---|
-| [FUNCTIONAL_SPEC.md](FUNCTIONAL_SPEC.md) | Who is this for, what can they do, what does it *not* do |
-| [SPEC.md](SPEC.md) | How is it built: hosting model, domain model, REST API, agent surface, data flow |
-| [PLUGINS.md](PLUGINS.md) | How do I add a new ingestion source / webhook / hook |
+| [`ideas/anvilboard/draft.md`](ideas/anvilboard/draft.md) | What's the product vision and why does it need to exist |
+| [`docs/anvilboard/prd.md`](docs/anvilboard/prd.md) | Who is this for, goals, priorities, success measures |
+| [`docs/anvilboard/srs.md`](docs/anvilboard/srs.md) | Formal functional/non-functional requirements (`FR-*`/`NFR-*`), acceptance criteria, traceability |
+| [`docs/anvilboard/tech-design.md`](docs/anvilboard/tech-design.md) | How is it built: architecture, domain model, REST API, security, operations |
+| [`docs/features/`](docs/features/) (start at [`overview.md`](docs/features/overview.md)) | How does a specific component work (authorization, workflow engine, board, integrations, automation surface, audit/recovery) |
+| [`docs/anvilboard/test-cases.md`](docs/anvilboard/test-cases.md) | How is this verified |
+| [`docs/project-anvilboard.md`](docs/project-anvilboard.md) | How the product is decomposed into delivery streams |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | How do I build/run/test this locally |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How do I propose a change |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, release by release |
+| [SPEC.md](SPEC.md), [FUNCTIONAL_SPEC.md](FUNCTIONAL_SPEC.md), [PLUGINS.md](PLUGINS.md) | (Historical) as-built snapshot of the original proof of concept — superseded by the docs above |
 
 ## License
 

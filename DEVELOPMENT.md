@@ -1,15 +1,19 @@
 # Developing Anvilboard
 
 This document is for anyone building, running, or modifying Anvilboard itself. For what the
-product does, see [FUNCTIONAL_SPEC.md](FUNCTIONAL_SPEC.md); for how it's built, see
-[SPEC.md](SPEC.md); for writing a plugin, see [PLUGINS.md](PLUGINS.md).
+product does, see [`docs/anvilboard/prd.md`](docs/anvilboard/prd.md) and
+[`docs/anvilboard/srs.md`](docs/anvilboard/srs.md); for how it's built, see
+[`docs/anvilboard/tech-design.md`](docs/anvilboard/tech-design.md); for writing a plugin, see
+[`docs/features/integration-and-plugin-platform.md`](docs/features/integration-and-plugin-platform.md).
+The historical PoC-era equivalents ([FUNCTIONAL_SPEC.md](FUNCTIONAL_SPEC.md),
+[SPEC.md](SPEC.md), [PLUGINS.md](PLUGINS.md)) are retained for reference but no longer updated.
 
 ## Prerequisites
 
 - **.NET SDK 10** (`dotnet --version` should report `10.x`).
 - **Node.js 20+** and **npm** (Angular 22 requires Node 20 or newer; this repo was built/verified
   against Node v24, npm 11).
-- **[`dotnet-agent-surface`](https://github.com/)** cloned as a sibling directory:
+- **[`dotnet-agent-surface`](https://github.com/sommmen/dotnet-agent-surface)** cloned as a sibling directory:
 
   ```
   repos/
@@ -113,8 +117,9 @@ dotnet run -- mcp
 Both `Anvilboard.Api` and `Anvilboard.Agent` read from `appsettings.json` +
 `appsettings.{Environment}.json` + environment variables (prefix `ANVILBOARD_`, double-underscore
 for nesting — e.g. `ANVILBOARD_Plugins__github__Token`). See [README.md](README.md#configuring-integrations)
-for the `Plugins:github` / `Plugins:linear` shape, and [PLUGINS.md](PLUGINS.md) for
-`Plugins:AssemblyPaths` (loading out-of-repo plugin DLLs).
+for the `Plugins:github` / `Plugins:linear` shape, and
+[`docs/features/integration-and-plugin-platform.md`](docs/features/integration-and-plugin-platform.md)
+for `Plugins:AssemblyPaths` (loading out-of-repo plugin DLLs).
 
 The SQLite file path is `Database:DatabasePath`, defaulting to `anvilboard.db` next to the running
 executable. Schema is created/updated automatically on startup (`Database.MigrateAsync()`) — there
@@ -124,9 +129,9 @@ is no separate migration command to run by hand.
 
 There is no automated test project in the solution yet (`Anvilboard.slnx` currently has eight
 non-test projects only). Verification so far has been manual/smoke-test based: exercising the REST
-API, the Angular UI, and every agent CLI/MCP operation end-to-end against a real SQLite database —
-see [SPEC.md's "Testing performed"](SPEC.md#testing-performed) section for exactly what was
-exercised.
+API, the Angular UI, and every agent CLI/MCP operation end-to-end against a real SQLite database.
+The canonical test strategy and coverage plan going forward is
+[`docs/anvilboard/test-cases.md`](docs/anvilboard/test-cases.md).
 
 If you're adding a non-trivial feature, adding a proper test project (`Anvilboard.Application.Tests`
 against `IssueService`/`DashboardService` is the highest-value starting point, since both front
