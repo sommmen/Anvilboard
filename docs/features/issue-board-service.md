@@ -1,6 +1,6 @@
 # Issue & Board Service
 
-> Feature spec for code-forge implementation planning.
+> Feature spec for Spec-Forge implementation planning.
 > Source: extracted from docs/anvilboard/tech-design.md §8.1
 > Created: 2026-09-05
 

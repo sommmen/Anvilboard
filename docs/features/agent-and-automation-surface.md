@@ -1,6 +1,6 @@
 # Agent and Automation Surface
 
-> Feature spec for code-forge implementation planning.
+> Feature spec for Spec-Forge implementation planning.
 > Source: extracted from docs/anvilboard/tech-design.md §8.1, §7.3, §7.6, §9, §10.1
 > Created: 2026-09-05
 

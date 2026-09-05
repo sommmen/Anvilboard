@@ -54,7 +54,7 @@ This SRS excludes mandatory cloud hosting, broad enterprise portfolio management
 | [`ideas/anvilboard/draft.md`](../../ideas/anvilboard/draft.md) | 0.1 | 2026-03-25 |
 | [`docs/project-anvilboard.md`](../project-anvilboard.md) | 0.1 | 2026-03-25 |
 | [`docs/anvilboard/prd.md`](prd.md) | 0.1 | 2026-03-25 |
-| [`docs/anvilboard/tech-design.md`](tech-design.md) | Planned | — |
+| [`docs/anvilboard/tech-design.md`](tech-design.md) | 0.1 | 2026-03-25 |
 
 ### 3.5 Overview
 
@@ -468,7 +468,7 @@ erDiagram
 | issue.version | Integer | Required, monotonic | Optimistic concurrency token. |
 | external_link.provider + remote_id | String pair | Unique within workspace/provider integration mapping | Deduplication identity for imported record. |
 | external_link.last_success_at | Timestamp | Nullable for never-successful import | Last successful synchronization time. |
-| external_link.sync_condition | Enumerated symbolic value | Required for linked item | Fresh, stale, paused, failed, or other documented condition. |
+| external_link.sync_condition | Enumerated symbolic value (derived, not stored) | Required for linked item | Fresh, stale, paused, failed, or other documented condition, derived at read time from provider health inputs rather than persisted. |
 | integration.secret_reference | Opaque string | Write-only/read-redacted | Reference to protected credential material, never the raw secret. |
 | audit_event.correlation_id | String | Required for request-caused event | Links results, audit, logs, and diagnostics. |
 | idempotency_record.key | String | Unique by actor/workspace/operation within retention period | Prevents duplicate supported mutations. |

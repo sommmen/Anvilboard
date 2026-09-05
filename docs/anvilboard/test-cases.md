@@ -12,7 +12,7 @@
 |---|---|
 | **Project** | Anvilboard |
 | **Project Type** | Multi-workspace issue-management web application with REST, CLI, MCP, provider integration, and plugin surfaces |
-| **Tech Stack** | .NET 8 / ASP.NET Core, Angular, EF Core, SQLite for supported single-host deployment |
+| **Tech Stack** | .NET 10 / ASP.NET Core, Angular, EF Core, SQLite for supported single-host deployment |
 | **Test Framework** | Target: xUnit, `WebApplicationFactory`, EF Core SQLite fixtures, Angular component tests; contract tests for CLI and MCP |
 | **Scan Date** | 2026-05-09 |
 | **Input Mode** | Spec Mode, grounded in the repository’s current PoC |

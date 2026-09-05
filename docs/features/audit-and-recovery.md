@@ -1,6 +1,6 @@
 # Audit and Recovery
 
-> Feature spec for code-forge implementation planning.
+> Feature spec for Spec-Forge implementation planning.
 > Source: extracted from docs/anvilboard/tech-design.md §8.1, §10.1, §11.4, §14.3
 > Created: 2026-09-05
 
