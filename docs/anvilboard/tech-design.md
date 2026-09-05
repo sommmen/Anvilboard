@@ -301,7 +301,7 @@ The container structure mirrors the current `src/` project layout. `Anvilboard.A
 #### Edge Case Handling
 
 - **Archiving a workflow state still referenced by open issues:** rejected with `VALIDATION_FAILED` naming the dependent issues/count unless the administrator supplies a replacement-state migration.
-- **Duplicate provider delivery (webhook redelivery or poll overlap):** deduplicated via the `(provider, remoteId)` unique mapping on `ExternalLink`; second delivery updates the existing record rather than creating a new one.
+- **Duplicate provider delivery (webhook redelivery or poll overlap):** deduplicated via the `(provider, sourceKey)` unique mapping on `ExternalLink`; second delivery updates the existing record rather than creating a new one.
 - **Concurrent edits to the same issue:** the losing writer receives `CONCURRENCY_CONFLICT` with the current version and is expected to refetch and retry.
 - **Idempotency key reused with a different request body:** rejected with `IDEMPOTENCY_KEY_REUSED`; the original result is not returned and no new mutation is applied.
 
@@ -342,7 +342,7 @@ Every anticipated failure (validation, authorization, workflow-transition, concu
 | Constraint violation | HTTP status | Translated error | Client-safe cause |
 |---|---:|---|---|
 | UNIQUE `(WorkspaceId, Key)` on `Issues` | 409 | `RESOURCE_ALREADY_EXISTS` | Names the conflicting workspace key. |
-| UNIQUE `(Provider, RemoteId)` on `ExternalLinks` | Not applicable | Upsert result, not an error | Provider identity already maps to the existing link. |
+| UNIQUE `(Provider, SourceKey)` on `ExternalLinks` | Not applicable | Upsert result, not an error | Provider identity already maps to the existing link. |
 | FOREIGN KEY `WorkflowStateId` on `Issues` | 404 | `REFERENCED_ENTITY_NOT_FOUND` | Names the missing or unavailable workflow state. |
 | FOREIGN KEY workspace/member/integration references | 404 | `REFERENCED_ENTITY_NOT_FOUND` | Names the required reference type and identifier. |
 | CHECK active-state/transition or workspace ownership guard | 409 | `INVALID_WORKFLOW_TRANSITION` / `WORKSPACE_ACCESS_DENIED` | Names the prohibited transition or scope rule. |
@@ -643,7 +643,7 @@ erDiagram
 |---|---|---|
 | `Issues` | `(WorkspaceId, WorkflowStateId)` | Board filter by state within workspace. |
 | `Issues` | `(WorkspaceId, Key)` unique | Deduplicate/lookup by human-readable key. |
-| `ExternalLinks` | `(Provider, RemoteId)` unique | Deduplicate provider ingestion. |
+| `ExternalLinks` | `(Provider, SourceKey)` unique | Deduplicate provider ingestion. |
 | `AuditEvents` | `(WorkspaceId, OccurredAt)` | Chronological audit queries per workspace. |
 | `IdempotencyRecords` | `(WorkspaceId, ActorId, Operation, Key)` unique | Idempotent replay lookup and reuse detection. |
 

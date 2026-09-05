@@ -26,7 +26,7 @@ The Integration & Plugin Platform owns the lifecycle of external connectors (Git
 - Webhook plugin execution (`IWebhookReceiver`): signature verification, payload parsing, normalization into `NormalizedIssue`/`NormalizedComment`.
 - Post-commit plugin execution (`IIssueHook`): reacting to already-committed issue mutations (owned jointly with `issue-board-service`'s hook-dispatch mechanics; this component owns hook *registration/discovery* and *manifest/compatibility validation*).
 - Plugin discovery and manifest/version/capability validation (`IPluginRegistry`, `PluginManifest`) for both in-repo (GitHub, Linear) and reflection-loaded third-party plugins (FR-INT-003).
-- Provenance and sync-health surfacing: `(provider, remoteId)` deduplication identity, last attempt/success timestamps, and a derived sync condition (`FRESH`/`STALE`/`PAUSED`/`FAILED`).
+- Provenance and sync-health surfacing: `(provider, sourceKey)` deduplication identity, last attempt/success timestamps, and a derived sync condition (`FRESH`/`STALE`/`PAUSED`/`FAILED`).
 - Outbound retry/backoff and rate-limit honoring for provider adapters (`Anvilboard.Integrations.GitHub`/`.Linear`).
 
 **Excluded:**
@@ -143,7 +143,7 @@ This derivation must be implemented once, in this component, and reused by both 
 - **Fault isolation**: each `IIngestionSource`'s polling loop runs independently; an unhandled exception in one loop must be caught and logged without stopping that loop or any other (NFR-REL-002).
 - **Post-commit hooks cannot veto**: `IIssueHook` implementations run only after a core mutation is durably committed and cannot roll it back; hook failures are diagnostics, not request failures (FR-INT-003 AC 3).
 - **Secret write-only**: no method on `IIntegrationService` or any DTO it returns may echo a stored secret value, in success or error responses, logs, or audit summaries (NFR-SEC-001).
-- **Deduplication identity**: `(Provider, SourceKey)` — mapped to the `(Provider, RemoteId)` unique index on `ExternalLinks` — is the sole dedup key; a second delivery of the same remote record must update, not duplicate.
+- **Deduplication identity**: `(Provider, SourceKey)` — the unique index on `ExternalLinks` — is the sole dedup key; a second delivery of the same remote record must update, not duplicate.
 - **Bounded retry**: outbound provider retries use bounded exponential backoff and honor `Retry-After`/rate-limit headers; non-transient (4xx business) provider errors are not retried (tech-design §7.6).
 - **Untrusted code out of scope**: only first-party-reviewed plugin packages are supported; no plugin sandboxing/isolation model is required in this design pass.
 

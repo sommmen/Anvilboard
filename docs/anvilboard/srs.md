@@ -441,10 +441,9 @@ erDiagram
       uuid issue_id FK
       uuid integration_id FK
       string provider
-      string remote_id
+      string source_key
       string remote_reference
       datetime last_success_at
-      string sync_condition
     }
     AUDIT_EVENT {
       uuid id PK
@@ -466,7 +465,7 @@ erDiagram
 | issue.key | String | Unique per workspace/team according to configured key policy | Human-readable issue reference. |
 | issue.workflow_state_id | Stable string/UUID | Required FK to active or archived state mapping | Current workflow state. |
 | issue.version | Integer | Required, monotonic | Optimistic concurrency token. |
-| external_link.provider + remote_id | String pair | Unique within workspace/provider integration mapping | Deduplication identity for imported record. |
+| external_link.provider + source_key | String pair | Unique within workspace/provider integration mapping | Deduplication identity for imported record. |
 | external_link.last_success_at | Timestamp | Nullable for never-successful import | Last successful synchronization time. |
 | external_link.sync_condition | Enumerated symbolic value (derived, not stored) | Required for linked item | Fresh, stale, paused, failed, or other documented condition, derived at read time from provider health inputs rather than persisted. |
 | integration.secret_reference | Opaque string | Write-only/read-redacted | Reference to protected credential material, never the raw secret. |
