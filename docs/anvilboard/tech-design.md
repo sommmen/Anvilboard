@@ -5,10 +5,10 @@
 | Field | Value |
 |---|---|
 | **Document ID** | TDD-ANV-001 |
-| **Version** | 0.1 |
+| **Version** | 0.2 |
 | **Author** | Anvilboard maintainers |
 | **Reviewers** | Engineering, security, operations |
-| **Date** | 2026-03-25 |
+| **Date** | 2026-09-05 |
 | **Status** | Draft |
 | **Related PRD** | [`docs/anvilboard/prd.md`](prd.md) |
 | **Related SRS** | [`docs/anvilboard/srs.md`](srs.md) |
@@ -19,6 +19,7 @@
 | Version | Date | Author | Description |
 |---|---|---|---|
 | 0.1 | 2026-03-25 | Anvilboard maintainers | Initial technical design for the future-state product, superseding the PoC-era `SPEC.md`/`FUNCTIONAL_SPEC.md` as canonical architecture reference. |
+| 0.2 | 2026-09-05 | Anvilboard maintainers | Added archive lifecycle, structured activity history, advisory dependencies, generic `ILifecycleHook<TEvent>` model, plugin persistence/events, GitHub PR artifacts, and real-time dashboard design. |
 
 ## 3. Overview
 
@@ -113,7 +114,7 @@ Anvilboard is the system under design. Human users and automation agents are the
 
 **Description:**
 
-Keep the current single-deployable, layered .NET solution and Angular SPA. Add a `Workspace`/`Role`/`Principal` authorization layer at the `Anvilboard.Application` boundary (enforced by API/Agent middleware, not duplicated per-endpoint). Replace the `IssueStatus` enum with a `WorkflowState` entity referenced by stable ID, with a data migration mapping each existing enum value to an equivalent seeded state per workspace. Add `AuditEvent`, `IdempotencyRecord`, and `IntegrationHealth`/sync-condition fields to the domain and persist them via new EF Core configurations and migrations, consistent with the existing `Persistence/Configurations` pattern. Normalize REST and MCP DTOs onto one shared contract module so both channels serialize workflow state, priority, provider, and sync condition symbolically. This solution reuses the current dependency-injection wiring, plugin abstraction (`IIngestionSource`, `IWebhookReceiver`, `IIssueHook`), and per-source sync loop isolation, extending rather than replacing them.
+Keep the current single-deployable, layered .NET solution and Angular SPA. Add a `Workspace`/`Role`/`Principal` authorization layer at the `Anvilboard.Application` boundary (enforced by API/Agent middleware, not duplicated per-endpoint). Replace the `IssueStatus` enum with a `WorkflowState` entity referenced by stable ID, with a data migration mapping each existing enum value to an equivalent seeded state per workspace. Add `AuditEvent`, `IdempotencyRecord`, and `IntegrationHealth`/sync-condition fields to the domain and persist them via new EF Core configurations and migrations, consistent with the existing `Persistence/Configurations` pattern. Normalize REST and MCP DTOs onto one shared contract module so both channels serialize workflow state, priority, provider, and sync condition symbolically. This solution reuses the current dependency-injection wiring, plugin abstraction (`IIngestionSource`, `IWebhookReceiver`, `ILifecycleHook<TEvent>`), and per-source sync loop isolation, extending rather than replacing them.
 
 **Architecture:**
 
@@ -189,17 +190,17 @@ flowchart TB
     end
 
     subgraph "Domain Layer"
-        Domain["[Container: .NET 10 class library]<br/>Anvilboard.Domain<br/>Workspace, WorkflowState, Issue, AuditEvent, ExternalLink, entities/invariants"]
+        Domain["[Container: .NET 10 class library]<br/>Anvilboard.Domain<br/>Workspace, WorkflowState, Issue, Comment, Artifact, IssueLink, AuditEvent, ExternalLink, entities/invariants"]
     end
 
     subgraph "Infrastructure Layer"
-        Infra["[Container: .NET 10 + EF Core 10]<br/>Anvilboard.Infrastructure<br/>Repositories, EF configurations, migrations"]
+        Infra["[Container: .NET 10 + EF Core 10]<br/>Anvilboard.Infrastructure<br/>Repositories, EF configurations, migrations, IArtifactStore (SQLite BLOB-backed)"]
         Sqlite[("[Container: SQLite file]<br/>Workspace data store")]
         Backup["[Container: filesystem]<br/>Backup archive store"]
     end
 
     subgraph "Integration Layer"
-        PluginAbs["[Container: .NET 10 class library]<br/>Anvilboard.Plugins.Abstractions<br/>IIngestionSource, IWebhookReceiver, IIssueHook"]
+        PluginAbs["[Container: .NET 10 class library]<br/>Anvilboard.Plugins.Abstractions<br/>IIngestionSource, IWebhookReceiver, ILifecycleHook&lt;TEvent&gt;, IPluginEventPublisher, IPluginConfigStore, IPluginStateStore"]
         GH["[Container: .NET 10 class library]<br/>Anvilboard.Integrations.GitHub"]
         LI["[Container: .NET 10 class library]<br/>Anvilboard.Integrations.Linear"]
     end
@@ -316,10 +317,13 @@ stateDiagram-v2
     IssueCreated --> Transitioning: Actor requests transition
     Transitioning --> IssueCreated: Transition rejected (not in allowed-transition set)
     Transitioning --> IssueCreated: Transition accepted, state updated, activity + audit recorded
-    IssueCreated --> Archived: Terminal state reached and issue archived per retention policy
+    IssueCreated --> Terminal: Terminal state reached (inactive visual treatment only)
+    IssueCreated --> Archived: Explicit archive operation sets ArchivedAt
+    Terminal --> Archived: Explicit archive operation sets ArchivedAt
+    Archived --> IssueCreated: Explicit unarchive operation clears ArchivedAt
 ```
 
-The workflow engine validates every transition request against the workspace's configured allowed-transition set (an adjacency list keyed by `WorkflowState.Id`), not a hardcoded enum ordering. This directly replaces the PoC's fixed `IssueStatus` progression (`Backlog → Todo → InProgress → InReview → Done/Cancelled`), which becomes the default seeded workflow for migrated workspaces.
+The workflow engine validates every transition request against the workspace's configured allowed-transition set (an adjacency list keyed by `WorkflowState.Id`), not a hardcoded enum ordering. This directly replaces the PoC's fixed `IssueStatus` progression (`Backlog → Todo → InProgress → InReview → Done/Cancelled`), which becomes the default seeded workflow for migrated workspaces. Reaching a terminal `WorkflowState` (`IsTerminal = true`) only changes presentation (inactive visual treatment); archiving is a separate, idempotent, explicit operation that sets `Issues.ArchivedAt`, preserves comments/artifacts/links/activity/external links, and excludes the issue from default board/list/dashboard queries until `includeArchived=true` is requested.
 
 #### Computation Rules
 
@@ -329,7 +333,7 @@ The workflow engine validates every transition request against the workspace's c
 #### Conditional Logic
 
 - Provider-controlled fields on an `ExternalLink`-backed issue are read-only in the local mutation path unless a future write-back policy (PRD-ANV-011, deferred) is enabled per workspace.
-- Post-commit plugin hooks (`IIssueHook`) execute only after the core mutation is durably committed and cannot veto or roll back that mutation; hook failures are captured as diagnostics, not propagated as request failures.
+- `ILifecycleHook<TEvent>` implementations execute at named `Pre*`/`Post*` lifecycle points (`PreIngest`/`PostIngest`, `PreResync`/`PostResync`, `PrePhaseChange`/`PostPhaseChange`, `PreAddComment`/`PostAddComment`, `PreAddAttachment`/`PostAddAttachment`) using a shared `HookContext<TEvent, TMetadata>(issue, trigger, metadata, ct)`. Pre-hooks may enrich/validate the pending operation through authorized application services; a `Pre*` hook denial or budget exhaustion returns `VALIDATION_FAILED` (409) to the caller without persisting the operation (§7.7 error-code contract). Post-hooks run only after the core mutation is durably committed and cannot veto or roll back it; post-hook failures and budget exhaustion are captured as diagnostics only and never propagated as request failures.
 
 ### 7.6 Error Handling Strategy
 
@@ -377,6 +381,9 @@ Every anticipated failure has a stable catalog entry. Implementations must retur
 | `PROVIDER_UNAVAILABLE` | 502 | Provider timeout, transport failure, or retry budget exhaustion. | Identify provider and sync operation; retry only after bounded backoff. | FR-INT-002, NFR-REL-002 |
 | `INTEGRATION_PAUSED` | 409 | Operator-paused integration receives a sync action. | State that synchronization is paused and must be resumed deliberately. | FR-INT-001 |
 | `BACKUP_INTEGRITY_INVALID` | 422 | Restore artifact fails checksum, manifest, schema, or compatibility validation. | Identify failed integrity/compatibility check; select a verified compatible backup. | FR-OPS-002, NFR-AVL-001 |
+| `SYNC_CONFLICT` | 409 | Resync detects the linked provider record and the local issue both changed since `ExternalLink.LastSyncedVersion`. | State that a resync conflict exists on the affected field(s) and that the actor must choose keep-local/accept-remote/merge before the field updates. | FR-INT-005 |
+| `ARTIFACT_STORE_UNAVAILABLE` | 502 | The configured `IArtifactStore` implementation cannot read/write content (e.g., filesystem unreachable). | State that artifact storage is temporarily unavailable; retry after the store recovers. | FR-ART-001 |
+> `HOOK_BUDGET_EXCEEDED` is a lifecycle-hook execution diagnostic, not a REST contract error: the hook dispatcher records timeout/step-budget exhaustion in health, activity, and audit diagnostics, isolates the failure from the triggering operation (no partial write, no rollback of the already-committed mutation), and never surfaces it through this error table.
 
 ## 8. Detailed Design
 
@@ -388,8 +395,11 @@ Every anticipated failure has a stable catalog entry. Implementations must retur
 |---|---|---|---|---|
 | Workspace & Authorization | Authenticates actors, resolves workspace scope, enforces role permissions for every operation | `IWorkspaceAuthorizationService`, ASP.NET Core auth middleware, Agent credential resolver | Domain (`Workspace`, `Member`, `Role`) | [`docs/features/workspace-authorization.md`](../features/workspace-authorization.md) |
 | Workflow Engine | Defines/validates configurable workflow states and transitions; migrates legacy `IssueStatus` values | `IWorkflowService` | Domain (`WorkflowState`), Infrastructure | [`docs/features/workflow-engine.md`](../features/workflow-engine.md) |
-| Issue & Board Service | Issue CRUD, board/list query, filtering/grouping, dashboard aggregation | `IIssueService`, `IBoardQueryService` | Workflow Engine, Workspace & Authorization | [`docs/features/issue-board-service.md`](../features/issue-board-service.md) |
-| Integration & Plugin Platform | Integration lifecycle, secret handling, ingestion/webhook/post-commit plugin execution, provenance and sync-health | `IIntegrationService`, `IIngestionSource`, `IWebhookReceiver`, `IIssueHook` | Issue & Board Service, external providers | [`docs/features/integration-and-plugin-platform.md`](../features/integration-and-plugin-platform.md) |
+| Real-time Updates | Delivers compact workspace-scoped post-commit issue/activity/dashboard-summary/eligible plugin-event envelopes without blocking mutation completion | `IRealtimeUpdatePublisher`, SignalR `WorkspaceRealtimeHub` | Workspace & Authorization, Issue & Board Service, Integration & Plugin Platform | [`docs/features/realtime-updates.md`](../features/realtime-updates.md) |
+| Issue & Board Service | Issue CRUD (incl. free-form type/priority/session-state and threaded comments), kanban/list query, filtering/grouping/ordering, dashboard aggregation, archive/unarchive, structured activity history, and advisory `Blocks`/`BlockedBy` projection | `IIssueService`, `IBoardQueryService`, `ICommentService`, `RecordAndDispatchAsync` | Workflow Engine, Workspace & Authorization, Real-time Updates | [`docs/features/issue-board-service.md`](../features/issue-board-service.md) |
+| Integration & Plugin Platform | Integration lifecycle, secret handling, ingestion/webhook execution, generic `ILifecycleHook<TEvent>` dispatch, provenance, sync-health, sync-conflict detection, outbound plugin events, and durable plugin config/state | `IIntegrationService`, `IIngestionSource`, `IWebhookReceiver`, `ILifecycleHook<TEvent>`, `IPluginEventPublisher`, `IPluginConfigStore`, `IPluginStateStore` | Issue & Board Service, Artifact Store, Real-time Updates, external providers | [`docs/features/integration-and-plugin-platform.md`](../features/integration-and-plugin-platform.md) |
+| Issue Artifacts | Attaches/lists/removes file, link, and deployment artifacts on an issue behind a persistence abstraction | `IArtifactService`, `IArtifactStore` | Issue & Board Service | [`docs/features/artifacts.md`](../features/artifacts.md) |
+| Issue Linking | Creates/lists/removes free-form typed relationships between two issues | `IIssueLinkService` | Issue & Board Service | [`docs/features/issue-linking.md`](../features/issue-linking.md) |
 | Automation Surface (REST/CLI/MCP) | Versioned symbolic contracts, idempotency enforcement, correlation IDs, structured errors | REST controllers, CLI commands, MCP stdio handlers | All above via `Anvilboard.Application` | [`docs/features/agent-and-automation-surface.md`](../features/agent-and-automation-surface.md) |
 | Audit & Recovery | Append-only audit trail; backup creation and verified restore | `IAuditService`, `IBackupService` | All mutating components | [`docs/features/audit-and-recovery.md`](../features/audit-and-recovery.md) |
 
@@ -401,7 +411,10 @@ flowchart LR
         WA["Workspace & Authorization<br/>Authenticates + authorizes every call"]
         WE["Workflow Engine<br/>Validates transitions"]
         IB["Issue & Board Service<br/>CRUD + queries"]
-        IP["Integration & Plugin Platform<br/>Provenance + sync health"]
+        AF["Issue Artifacts<br/>Attach/list/remove"]
+        LK["Issue Linking<br/>Free-form typed links"]
+        IP["Integration & Plugin Platform<br/>Provenance, sync health, hooks + plugin events"]
+        RT["Real-time Updates<br/>Post-commit workspace envelopes"]
         AR["Audit & Recovery<br/>Records every mutation"]
     end
 
@@ -409,12 +422,20 @@ flowchart LR
     WA -->|"authorized"| IB
     IB -->|"validates transition"| WE
     IB -->|"emits activity + audit"| AR
+    IB -->|"attach/list"| AF
+    IB -->|"link/unlink"| LK
+    AF -->|"emits activity + audit"| AR
+    LK -->|"emits activity + audit"| AR
     IP -->|"writes issues via"| IB
+    IP -->|"dispatches lifecycle hooks through"| IB
+    IP -->|"expands artifacts via post-hooks"| AF
     IP -->|"emits health + audit"| AR
     WA -->|"emits access decisions"| AR
+    IB -->|"post-commit issue/activity changes"| RT
+    IP -->|"eligible plugin events"| RT
 ```
 
-Every mutating request flows through Workspace & Authorization first; no component accepts a request that bypasses that check. The Issue & Board Service is the single write path for issue data, used both by direct user mutations and by integration ingestion, ensuring one set of business rules governs both origins.
+Every mutating request flows through Workspace & Authorization first; no component accepts a request that bypasses that check. The Issue & Board Service is the single write path for issue data, used both by direct user mutations and by integration ingestion, ensuring one set of business rules governs both origins. Issue Artifacts and Issue Linking are satellite components: they never bypass the Issue & Board Service's authorization/audit path. The Integration & Plugin Platform dispatches `ILifecycleHook<TEvent>` implementations through the same `IIssueService`/`IArtifactService` surface as any other actor rather than a privileged back door. After a mutation commits, the Issue & Board Service and eligible plugin events publish compact versioned envelopes through `IRealtimeUpdatePublisher`; that delivery is asynchronous and cannot delay or fail the originating mutation.
 
 ### 8.3 Core Workflow
 
@@ -453,8 +474,15 @@ REST is versioned under `/api/v1/...`. CLI commands and MCP tool calls map one-t
 |---|---|---|---|---|
 | `/api/v1/issues` | GET | List workspace issues using board filters and pagination. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `RATE_LIMITED` |
 | `/api/v1/issues` | POST | Create a local workspace issue. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `RESOURCE_ALREADY_EXISTS`, `RATE_LIMITED` |
+| `/api/v1/issues/{id}/archive` | POST | Idempotently archive an issue (sets `ArchivedAt`); excluded from default queries thereafter. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `CONCURRENCY_CONFLICT`, `RATE_LIMITED` |
+| `/api/v1/issues/{id}/unarchive` | POST | Idempotently unarchive an issue (clears `ArchivedAt`). | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `CONCURRENCY_CONFLICT`, `RATE_LIMITED` |
 | `/api/v1/issues/{id}/transition` | POST | Transition an issue state using an idempotent mutation. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `INVALID_WORKFLOW_TRANSITION`, `CONCURRENCY_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, `RATE_LIMITED` |
-| `/api/v1/integrations/{id}/sync` | POST | Start or resume provider synchronization. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `INTEGRATION_PAUSED`, `PROVIDER_UNAVAILABLE`, `RATE_LIMITED` |
+| `/api/v1/integrations/{id}/sync` | POST | Start or resume provider synchronization. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `INTEGRATION_PAUSED`, `PROVIDER_UNAVAILABLE`, `SYNC_CONFLICT`, `RATE_LIMITED` |
+| `/api/v1/issues/{id}/sync-conflicts/{conflictId}/resolve` | POST | Resolve a flagged resync conflict by choosing keep-local, accept-remote, or a field-level merge. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `RATE_LIMITED` |
+| `/api/v1/issues/{id}/artifacts` | GET, POST | List or attach a file/link/deployment artifact on an issue. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `ARTIFACT_STORE_UNAVAILABLE`, `RATE_LIMITED` |
+| `/api/v1/issues/{id}/artifacts/{artifactId}` | DELETE | Remove an artifact from an issue. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `RATE_LIMITED` |
+| `/api/v1/issues/{id}/links` | GET, POST | List or create a typed relationship (e.g., `related`, `blocks`, `duplicate-of`) to another issue. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `RESOURCE_ALREADY_EXISTS`, `RATE_LIMITED` |
+| `/api/v1/issues/{id}/links/{linkId}` | DELETE | Remove an issue link. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `RATE_LIMITED` |
 | `/api/v1/workspaces/{id}/restore` | POST | Validate and restore a workspace backup. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `BACKUP_INTEGRITY_INVALID`, `RATE_LIMITED` |
 
 ### 9.2 Detailed API Specifications
@@ -478,7 +506,8 @@ REST is versioned under `/api/v1/...`. CLI commands and MCP tool calls map one-t
 | workflowStateId | string | No | — | Filter by workflow state. |
 | assigneeId | string (UUID) | No | — | Filter by assignee. |
 | provider | string | No | — | Filter by source provider (`LOCAL`, `GITHUB`, `LINEAR`). |
-| syncCondition | string | No | — | Filter by sync health (`FRESH`, `STALE`, `PAUSED`, `FAILED`). |
+| syncCondition | string | No | — | Filter by sync health (`FRESH`, `STALE`, `PAUSED`, `FAILED`, `SYNC_CONFLICT`). |
+| includeArchived | boolean | No | `false` | Include archived issues; default board/list/dashboard queries exclude them. |
 | page | integer | No | 1 | Page number. |
 | limit | integer | No | 25 | Items per page (max 100). |
 
@@ -594,7 +623,110 @@ REST is versioned under `/api/v1/...`. CLI commands and MCP tool calls map one-t
 
 #### Table: `Issues` (modified)
 
-Adds `WorkflowStateId` (replacing the `IssueStatus` enum column) and `Version` (INTEGER, optimistic concurrency token). The prior `Status` column is retained temporarily during migration and dropped in a follow-up migration once the mapping is verified (see §10.4).
+Adds `WorkflowStateId` (replacing the `IssueStatus` enum column) and `Version` (INTEGER, optimistic concurrency token). The prior `Status` column is retained temporarily during migration and dropped in a follow-up migration once the mapping is verified (see §10.4). This change also converts `Issues.Priority` from the fixed `IssuePriority` enum column to a nullable free-form `TEXT` column (workspace-configurable, per FR-WRK-005; the current five enum values become the seeded default option set, migrated in place — no data loss), and adds:
+
+| Column | Type | Constraints |
+|---|---|---|
+| `Type` | TEXT | NULL (free-form, e.g. `bug`, `feature`, `task`; FR-WRK-005) |
+| `Priority` | TEXT | NULL (free-form, replaces `IssuePriority` enum; FR-WRK-005) |
+| `SessionStateTitle` | TEXT | NULL (current sub-phase title, e.g. "Reviewing"; FR-WRK-006) |
+| `SessionStateDescription` | TEXT | NULL (current sub-phase detail; FR-WRK-006) |
+| `ArchivedAt` | TEXT (ISO-8601) | NULL (explicit archive timestamp; NULL = active; orthogonal to `WorkflowStateId`/`IsTerminal`; FR-WRK-011) |
+
+#### Table: `Comments` (modified)
+
+Adds `ParentCommentId` (nullable, FK → `Comments.Id`, single-level only — a reply may not itself be replied to; enforced at the application layer per FR-WRK-010 AC2, not by a recursive DB constraint).
+
+#### Table: `ExternalLinks` (modified)
+
+Adds `LastSyncedVersion` (INTEGER, NULL) — captures `Issues.Version` at the moment of the last successful, non-conflicted sync. Used by the sync coordinator to detect divergence: if the local issue's current `Version` no longer equals `LastSyncedVersion` *and* the incoming remote payload differs from what was last synced, a `SYNC_CONFLICT` (§7.7) is raised instead of an overwrite (FR-INT-005).
+
+#### Table: `Artifacts` (new)
+
+| Column | Type | Constraints |
+|---|---|---|
+| `Id` | TEXT (UUID) | PK |
+| `IssueId` | TEXT (UUID) | FK → `Issues.Id`, NOT NULL |
+| `Kind` | TEXT | NOT NULL (`file`, `link`, `deployment`, `pull_request`; FR-ART-001, FR-INT-009) |
+| `Title` | TEXT | NOT NULL |
+| `ContentReference` | TEXT | NOT NULL (opaque locator resolved by the active `IArtifactStore`: a URL for `link`/`deployment`/`pull_request`, a store-relative key for `file`) |
+| `Source` | TEXT | NOT NULL (`local`, or the originating integration, e.g. `slack-thread-expansion`, `github`) |
+| `AddedById` | TEXT | NULL (member ID; NULL when added by an automation/hook) |
+| `DedupKey` | TEXT | NULL (opaque provider identity, e.g. `github:{repo}#{number}`, used only by refreshable kinds for upsert-in-place; unique per `IssueId` when set) |
+| `Metadata` | TEXT (JSON) | NULL (opaque key-value bag for refreshable kinds; `pull_request` stores `{ number, state, checksStatus }`) |
+| `CreatedAt` | TEXT (ISO-8601) | NOT NULL |
+| `UpdatedAt` | TEXT (ISO-8601) | NOT NULL (bumped on refreshable-kind upsert; FR-INT-009) |
+
+Artifact bytes/content are never inlined in this table; `ContentReference` is resolved through `IArtifactStore` (SQLite-backed BLOB store for the first release; see [`docs/features/artifacts.md`](../features/artifacts.md)), keeping a future filesystem- or object-storage-backed implementation a swap of that one interface.
+
+#### Table: `IssueLinks` (new)
+
+| Column | Type | Constraints |
+|---|---|---|
+| `Id` | TEXT (UUID) | PK |
+| `SourceIssueId` | TEXT (UUID) | FK → `Issues.Id`, NOT NULL |
+| `TargetIssueId` | TEXT (UUID) | FK → `Issues.Id`, NOT NULL |
+| `Type` | TEXT | NOT NULL, free-form (e.g. `RELATED`, `PARENT`, `CHILD`, `DUPLICATE_OF`, `MENTIONED_IN`, `BLOCKS`) |
+| `Description` | TEXT | NOT NULL, defaults to empty string (free-form detail, e.g. `"same parent"`) |
+| `CreatedById` | TEXT | NULL (member ID; NULL when added by an automation/hook) |
+| `CreatedAt` | TEXT (ISO-8601) | NOT NULL |
+
+Unique constraint on `(SourceIssueId, TargetIssueId, Type)` to prevent duplicate identical links. The relationship is stored directionally (`SourceIssueId` → `TargetIssueId`) but the API/UI surfaces it from both issues (FR-LNK-001 AC1), with `BLOCKS` additionally projected onto issue detail as advisory `Blocks[]`/`BlockedBy[]` (FR-WRK-012). No cascade behavior (ownership, workflow, or notification derivation) is attached to any `Type` value, including `BLOCKS` — dependencies are never enforced (FR-LNK-001 AC3, FR-WRK-012 AC2).
+
+#### Table: `ActivityEvents` (new)
+
+| Column | Type | Constraints |
+|---|---|---|
+| `Id` | TEXT (UUID) | PK |
+| `IssueId` | TEXT (UUID) | FK → `Issues.Id`, NOT NULL |
+| `WorkspaceId` | TEXT (UUID) | FK → `Workspaces.Id`, NOT NULL (denormalized for workspace-scoped query/index) |
+| `TemplateKey` | TEXT | NOT NULL (host-owned, versioned template identifier, e.g. `issue.linked`; FR-WRK-013) |
+| `ActorId` | TEXT | NULL (member ID or agent principal identifier; NULL when system-generated) |
+| `Parameters` | TEXT (JSON) | NOT NULL (safe display values substituted into the template) |
+| `References` | TEXT (JSON) | NOT NULL (typed target list, each `{ type: Issue\|Artifact\|ExternalWorkItem\|Actor, id }`, resolved to clickable links in the UI; FR-WRK-013) |
+| `CreatedAt` | TEXT (ISO-8601) | NOT NULL |
+
+One row per `RecordAndDispatchAsync` call, persisted in the same transaction as the mutation it describes (§8.1 Issue & Board Service). Unresolvable/missing `References` entries render a safe plain-text fallback rather than failing the timeline.
+
+#### Table: `SyncConflicts` (new)
+
+| Column | Type | Constraints |
+|---|---|---|
+| `Id` | TEXT (UUID) | PK (`conflictId` in the resolve endpoint route) |
+| `IssueId` | TEXT (UUID) | FK → `Issues.Id`, NOT NULL |
+| `Provider` | TEXT | NOT NULL |
+| `RemotePayloadSnapshot` | TEXT (JSON) | NOT NULL (the incoming remote payload preserved instead of applied) |
+| `DetectedAt` | TEXT (ISO-8601) | NOT NULL |
+| `ResolvedAt` | TEXT (ISO-8601) | NULL (NULL = still pending) |
+| `Resolution` | TEXT | NULL (`keep-local`, `apply-remote`, or `merge`; set on resolution) |
+| `ResolvedById` | TEXT | NULL (member ID of the resolving actor) |
+
+Durable record of a detected mutable-field conflict (FR-INT-005), created by the sync coordinator and resolved via `POST /api/v1/issues/{id}/sync-conflicts/{conflictId}/resolve`. Only non-additive, mutable-field divergence reaches this table — additive comments/artifacts/links merge unconditionally beforehand and never appear here.
+
+#### Table: `PluginConfig` (new)
+
+| Column | Type | Constraints |
+|---|---|---|
+| `WorkspaceId` | TEXT (UUID) | FK → `Workspaces.Id`, PK (composite with `PluginKey`, `ConfigKey`) |
+| `PluginKey` | TEXT | PK (composite; the owning plugin's manifest identity) |
+| `ConfigKey` | TEXT | PK (composite) |
+| `Value` | TEXT | NOT NULL (routed through the same secret-provider abstraction as integration credentials when `IsSecret` is set; never returned unredacted) |
+| `IsSecret` | INTEGER (bool) | NOT NULL DEFAULT 0 |
+| `UpdatedAt` | TEXT (ISO-8601) | NOT NULL |
+
+Admin-writable configuration behind `IPluginConfigStore` (FR-INT-007), namespaced per `(WorkspaceId, PluginKey)` so a plugin never owns its own schema/migration.
+
+#### Table: `PluginState` (new)
+
+| Column | Type | Constraints |
+|---|---|---|
+| `WorkspaceId` | TEXT (UUID) | FK → `Workspaces.Id`, PK (composite with `PluginKey`, `StateKey`) |
+| `PluginKey` | TEXT | PK (composite) |
+| `StateKey` | TEXT | PK (composite) |
+| `Value` | TEXT (JSON) | NOT NULL |
+| `UpdatedAt` | TEXT (ISO-8601) | NOT NULL |
+
+Plugin-writable runtime state behind `IPluginStateStore` (FR-INT-007), e.g. a GitHub PR-to-issue correlation cache, namespaced per `(WorkspaceId, PluginKey)`.
 
 ### 10.2 ER Diagram
 
@@ -603,15 +735,32 @@ erDiagram
     WORKSPACE ||--o{ WORKFLOW_STATE : configures
     WORKSPACE ||--o{ WORKFLOW_TRANSITION : configures
     WORKFLOW_STATE ||--o{ WORKFLOW_TRANSITION : "from/to"
+    WORKSPACE ||--o{ ISSUE : owns
     WORKFLOW_STATE ||--o{ ISSUE : current_state
     WORKSPACE ||--o{ AUDIT_EVENT : records
     WORKSPACE ||--o{ IDEMPOTENCY_RECORD : scopes
+    WORKSPACE ||--o{ ACTIVITY_EVENT : contains
+    WORKSPACE ||--o{ PLUGIN_CONFIG : scopes
+    WORKSPACE ||--o{ PLUGIN_STATE : scopes
     ISSUE ||--o{ EXTERNAL_LINK : maps
+    ISSUE ||--o{ COMMENT : has
+    COMMENT ||--o{ COMMENT : replies_to
+    ISSUE ||--o{ ARTIFACT : has
+    ISSUE ||--o{ ISSUE_LINK : "source of"
+    ISSUE ||--o{ ISSUE_LINK : "target of"
+    ISSUE ||--o{ ACTIVITY_EVENT : records
+    ISSUE ||--o{ SYNC_CONFLICT : has
     ISSUE {
         uuid Id PK
         uuid WorkspaceId FK
         uuid WorkflowStateId FK
+        string Type
+        string Priority
+        string SessionStateTitle
+        string SessionStateDescription
+        datetime ArchivedAt
         integer Version
+        datetime CreatedAt
         datetime UpdatedAt
     }
     WORKFLOW_STATE {
@@ -620,6 +769,71 @@ erDiagram
         string Key
         integer Order
         boolean IsTerminal
+    }
+    COMMENT {
+        uuid Id PK
+        uuid IssueId FK
+        uuid ParentCommentId FK
+        string Body
+        datetime CreatedAt
+    }
+    ARTIFACT {
+        uuid Id PK
+        uuid IssueId FK
+        string Kind
+        string ContentReference
+        string Source
+        string DedupKey
+        string Metadata
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    ISSUE_LINK {
+        uuid Id PK
+        uuid SourceIssueId FK
+        uuid TargetIssueId FK
+        string Type
+        string Description
+        datetime CreatedAt
+    }
+    EXTERNAL_LINK {
+        uuid Id PK
+        uuid IssueId FK
+        integer LastSyncedVersion
+    }
+    ACTIVITY_EVENT {
+        uuid Id PK
+        uuid IssueId FK
+        uuid WorkspaceId FK
+        string TemplateKey
+        string ActorId
+        string Parameters
+        string References
+        datetime CreatedAt
+    }
+    SYNC_CONFLICT {
+        uuid Id PK
+        uuid IssueId FK
+        string Provider
+        string RemotePayloadSnapshot
+        datetime DetectedAt
+        datetime ResolvedAt
+        string Resolution
+    }
+    PLUGIN_CONFIG {
+        uuid WorkspaceId PK
+        string PluginKey PK
+        string ConfigKey PK
+        string Value
+        boolean IsSecret
+        datetime UpdatedAt
+    }
+    PLUGIN_STATE {
+        uuid WorkspaceId PK
+        string PluginKey PK
+        string StateKey PK
+        string Value
+        datetime UpdatedAt
     }
     AUDIT_EVENT {
         uuid Id PK
@@ -641,11 +855,22 @@ erDiagram
 
 | Table | Index | Purpose |
 |---|---|---|
-| `Issues` | `(WorkspaceId, WorkflowStateId)` | Board filter by state within workspace. |
+| `Issues` | `(WorkspaceId, WorkflowStateId)` with a partial filter `ArchivedAt IS NULL` | Default board filter by state within workspace while excluding archived issues. |
 | `Issues` | `(WorkspaceId, Key)` unique | Deduplicate/lookup by human-readable key. |
+| `Issues` | `(WorkspaceId, Type)` | List/board grouping by free-form type. |
 | `ExternalLinks` | `(Provider, SourceKey)` unique | Deduplicate provider ingestion. |
 | `AuditEvents` | `(WorkspaceId, OccurredAt)` | Chronological audit queries per workspace. |
+| `ActivityEvents` | `(IssueId, CreatedAt)` | Render an issue's chronological activity timeline. |
+| `ActivityEvents` | `(WorkspaceId, CreatedAt)` | Workspace-scoped activity queries and real-time recovery. |
+| `SyncConflicts` | `(IssueId, ResolvedAt, DetectedAt)` | Find pending issue conflicts and present them in detection order. |
+| `PluginConfig` | `(WorkspaceId, PluginKey, ConfigKey)` unique | Namespaced configuration lookup. |
+| `PluginState` | `(WorkspaceId, PluginKey, StateKey)` unique | Namespaced plugin runtime-state lookup. |
 | `IdempotencyRecords` | `(WorkspaceId, ActorId, Operation, Key)` unique | Idempotent replay lookup and reuse detection. |
+| `Comments` | `(IssueId, ParentCommentId)` | Thread rendering: fetch a top-level comment and its replies together. |
+| `Artifacts` | `(IssueId)` | List artifacts attached to an issue. |
+| `Artifacts` | `(IssueId, DedupKey)` unique when `DedupKey` is not NULL | Idempotent upsert of refreshable provider artifacts such as GitHub pull requests. |
+| `IssueLinks` | `(SourceIssueId, TargetIssueId, Type)` unique | Prevent duplicate typed links; source-side lookup. |
+| `IssueLinks` | `(TargetIssueId)` | Target-side lookup for bidirectional display. |
 
 ### 10.4 Migration Strategy
 
@@ -654,6 +879,11 @@ erDiagram
 3. Add `Issues.WorkflowStateId` (nullable) and `Issues.Version` in a second migration; backfill `WorkflowStateId` from the existing `Status` column using the seeded mapping; then make `WorkflowStateId` NOT NULL.
 4. Ship one release with both `Status` (deprecated) and `WorkflowStateId` populated and readable, to allow rollback.
 5. Drop the `Status` column in a subsequent migration only after confirming no consumer depends on it (tracked as OQ-003).
+6. Add `Issues.Type`, convert `Issues.Priority` from enum to free-form `TEXT` (migrating the five existing enum values in place as literal strings), and add `Issues.SessionStateTitle`/`SessionStateDescription` plus nullable `ArchivedAt` (all additive/compatible; FR-WRK-005/006/011).
+7. Add `Comments.ParentCommentId` (nullable FK → `Comments.Id`) and `ExternalLinks.LastSyncedVersion` (nullable INTEGER, backfilled from each row's current `Issues.Version` at migration time so pre-existing synced issues are treated as already-synced rather than immediately conflicted).
+8. Add new `Artifacts` and `IssueLinks` tables via an additive migration; include the `pull_request` artifact kind, `DedupKey`, `Metadata`, and `UpdatedAt` from the first migration so provider upserts are idempotent. No backfill is required because both are new concepts.
+9. Add `ActivityEvents`, `SyncConflicts`, `PluginConfig`, and `PluginState` as additive tables. Their initial migration has no backfill: events are recorded prospectively, conflicts are created only on future divergence, and plugin configuration/state begin empty. Create the indexes from §10.3 in the same migration.
+10. Deploy the API/dashboard support for archive filtering, timeline rendering, conflict resolution, and plugin config/state only after step 9 is applied. Retain all rows on archive and sync-conflict resolution for history; neither workflow migration nor later cleanup cascades them.
 
 ## 11. Security Design
 
@@ -699,6 +929,8 @@ erDiagram
 |---|---|---|
 | Board/list query | p95 ≤ 2s | NFR-PERF-001 |
 | Single-issue detail | p95 ≤ 1s | NFR-PERF-001 |
+| Post-commit mutation → connected client delivery (fan-out lag) | p95 ≤ 2s under pilot-scale concurrent connections | NFR-PERF-002 |
+| Committed mutation latency impact attributable to real-time publication | 0 (publication is non-blocking; never awaited by the mutating request) | NFR-PERF-002 |
 
 ### 12.2 Caching Strategy
 
@@ -708,6 +940,7 @@ No application-level cache is introduced in this design pass; SQLite with the in
 
 - Dashboard aggregation reuses the indexed board query (§7.5 Computation Rules) instead of a separate materialized view, avoiding a second optimization surface to maintain.
 - If pilot measurements show the 2-second target is at risk, the first optimization to evaluate is targeted read-model indexes before introducing a cache layer.
+- Real-time fan-out (`IRealtimeUpdatePublisher`) dispatches compact envelopes to workspace-scoped SignalR groups off the mutation's request path (fire-and-forget with bounded, monitored queueing); a slow or disconnected client is coalesced or dropped per `realtime-updates.md` rather than allowed to add latency to other clients or to the originating mutation (NFR-PERF-002).
 
 ## 13. Observability
 
@@ -719,6 +952,8 @@ Structured logging (existing `Microsoft.Extensions.Logging.Abstractions` depende
 
 - Integration sync-health (last attempt, last success, failure count) is exposed both as product data (dashboard) and as an operational signal an administrator can inspect without a separate monitoring stack, consistent with the low-operational-cost constraint.
 - Request-level metrics (latency, error rate by code) are recorded per channel (REST/CLI/MCP) to validate NFR-PERF-001 and the error catalog in §7.7.
+- Real-time connection metrics (active connections per workspace group, fan-out lag, coalesced/dropped-slow-client counts) are recorded to validate NFR-PERF-002 and to distinguish a healthy-but-quiet dashboard from a stalled publisher.
+- `HOOK_BUDGET_EXCEEDED` occurrences are recorded as a diagnostic/audit counter per lifecycle point and plugin, never surfaced as a caller-facing REST error, so an operator can identify a runaway or slow plugin hook without affecting the originating mutation's response.
 
 ### 13.3 Alerting Rules
 
@@ -743,8 +978,13 @@ Because §10.4 retains the deprecated `Status` column for one release, a rollbac
 - **Unit tests:** Workflow transition validation, error-taxonomy translation, idempotency key reuse detection, authorization decision logic.
 - **Integration tests:** REST/CLI/MCP contract equivalence (same symbolic values, same error codes), workspace isolation (cross-workspace access denial), EF Core migration correctness against seeded legacy-shaped data.
 - **End-to-end tests:** Board filter → issue detail → transition → activity/audit reconciliation; GitHub/Linear sync-health degrade-and-recover scenario.
-- **Performance tests:** Board/list p95 against pilot reference dataset (NFR-PERF-001).
-- **Security tests:** Cross-workspace authorization suite (NFR-SEC-002), secret-redaction verification across API/UI/logs/audit/backup (NFR-SEC-001).
+- **Performance tests:** Board/list p95 against pilot reference dataset (NFR-PERF-001); real-time fan-out lag under pilot-scale concurrent connections, and confirmation that publication never blocks the originating mutation (NFR-PERF-002).
+- **Security tests:** Cross-workspace authorization suite (NFR-SEC-002), secret-redaction verification across API/UI/logs/audit/backup (NFR-SEC-001), real-time workspace-group join authorization (a client cannot join or receive another workspace's group).
+- **Archive tests:** Idempotent archive/unarchive, exclusion from default board/list/dashboard results, inclusion via `includeArchived=true`, and preservation of comments/artifacts/links/activity/external links.
+- **Activity/reference tests:** Structured `ActivityEvent` reference resolution (issue/artifact/external-work-item/actor) rendering a clickable reference, and safe fallback rendering for an unresolved/missing reference.
+- **Sync-merge/conflict tests:** Additive list-union merge of comments/artifacts/links producing zero collisions on resync; non-additive field conflicts flagged as `SYNC_CONFLICT`; each of `keep-local`/`apply-remote`/merge resolution paths; `SessionState` edits excluded from conflict detection.
+- **Lifecycle-hook tests:** Each `Pre*`/`Post*` lifecycle point invoked with the correct `HookContext<TEvent, TMetadata>`; a `Pre*` veto/exception blocks the mutation; a `Post*` exception or budget exhaustion is caught, logged as `HOOK_BUDGET_EXCEEDED`, and never rolls back the already-committed mutation.
+- **PR artifact tests:** GitHub PR artifact creation on first correlation and upsert-in-place (no duplicate) on a subsequent status refresh, keyed by `DedupKey`.
 
 Detailed test cases are tracked separately; see [`docs/anvilboard/test-cases.md`](test-cases.md).
 
@@ -755,10 +995,16 @@ Detailed test cases are tracked separately; see [`docs/anvilboard/test-cases.md`
 | M1: Workspace & Auth Foundation | Workspace/role model, auth middleware, cross-workspace isolation tests | 3 weeks | Not Started |
 | M2: Configurable Workflow | `WorkflowState`/`WorkflowTransition` model, migration from `IssueStatus`, transition enforcement | 2 weeks | Not Started |
 | M3: Unified Board & Audit | Board/list/dashboard queries with new filters, `AuditEvents` wiring across all mutations | 2 weeks | Not Started |
+| M3.5: Extended Ticket Model & List View | Free-form type/priority migration, session-state fields, threaded comments, Linear-style list view w/ grouping and ordering | 2 weeks | Not Started |
 | M4: Automation Contract Normalization | Shared symbolic DTOs across REST/CLI/MCP, idempotency records, error taxonomy | 2 weeks | Not Started |
+| M4.5: Artifacts & Issue Linking | `Artifacts`/`IssueLinks` schema (`Type`+`Description`, `BLOCKS` dependency projection), `IArtifactStore` abstraction (SQLite-backed), artifact/link CRUD endpoints | 2 weeks | Not Started |
 | M5: Integration Provenance & Health | Sync-condition derivation, health surfacing on board/dashboard, secret redaction audit | 2 weeks | Not Started |
-| M6: Backup/Restore | Backup export, restore integrity verification, audited recovery drill | 1 week | Not Started |
-| M7: Hardening & Pilot Readiness | Security review, performance validation, documentation propagation | 1 week | Not Started |
+| M5.5: Lifecycle Hooks & Sync-Conflict Handling | `ILifecycleHook<TEvent>` contract, lifecycle points (`Pre/PostIngest`, `Pre/PostResync`, `Pre/PostPhaseChange`, `Pre/PostAddComment`, `Pre/PostAddAttachment`), execution budget diagnostics, artifact-expansion via the same hook pattern (e.g. Slack thread), `LastSyncedVersion`-based conflict detection, additive list-union merge, and dashboard-driven resolution endpoint | 2 weeks | Not Started |
+| M6: Archive & Activity History | `Issues.ArchivedAt` archive/unarchive operations, `includeArchived` filtering, structured `ActivityEvents` with typed references and clickable UI rendering | 1 week | Not Started |
+| M6.5: Real-Time Dashboard & Plugin Events | `IRealtimeUpdatePublisher` (SignalR), workspace-group authorization, bounded/non-blocking delivery, reconnect re-fetch behavior, `IPluginEventPublisher` | 2 weeks | Not Started |
+| M6.7: GitHub PR Artifacts & Plugin Persistence | GitHub plugin PR correlation/refresh as a `pull_request` artifact, `IPluginConfigStore`/`IPluginStateStore` abstractions | 1 week | Not Started |
+| M7: Backup/Restore | Backup export, restore integrity verification, audited recovery drill | 1 week | Not Started |
+| M8: Hardening & Pilot Readiness | Security review, performance validation, documentation propagation | 1 week | Not Started |
 
 ## 17. Open Questions & Decision Records
 
@@ -770,6 +1016,12 @@ Detailed test cases are tracked separately; see [`docs/anvilboard/test-cases.md`
 | OQ-004 | What secret-at-rest storage mechanism is required for the target deployment profile (local encrypted file vs. external key management)? | Open | — | — |
 | OQ-005 | Is container packaging (Docker) required for the initial release, or is a bare-process deployment sufficient? | Open | — | — |
 | OQ-006 | What is the target pilot cohort size/profile used to validate NFR-PERF-001 and NFR-AVL-001? | Open | — | — |
+| OQ-007 | Should `Issues.Priority` remain a fixed enum or become workspace-configurable free-form text? | Resolved | Free-form `TEXT`, seeded with the prior five-value option set per workspace, per PRD §19 OQ-7 and FR-WRK-005. | This change |
+| OQ-008 | How should LLM-driven intake/triage preprocessing and artifact expansion participate in the lifecycle model? | Resolved | All lifecycle extension points, including intake preprocessing and artifact expansion, are modeled uniformly as `ILifecycleHook<TEvent>` invocations at named `Pre*`/`Post*` points (`PreIngest`/`PostIngest`, `PrePhaseChange`/`PostPhaseChange`, `PreAddAttachment`/`PostAddAttachment`, etc.), each receiving a strongly-typed `HookContext<TEvent, TMetadata>`. `Pre*` points are mutation-capable and can veto; `Post*` points are best-effort/non-vetoing and budget-bounded. Per PRD §19 OQ-8 and FR-INT-004. | This change |
+| OQ-009 | What is the default behavior when a resync detects the local issue and the remote provider record both changed since the last sync? | Resolved | Flag as `SYNC_CONFLICT` and preserve both versions pending explicit actor resolution (keep-local / accept-remote / field-level merge) via a dashboard-exposed resolve endpoint; never silently overwrite. Comments, artifacts, and issue links are list-union merged additively before conflict detection so they do not themselves produce collisions; `SessionState` edits are excluded from conflict detection entirely. Per PRD §19 OQ-9 and FR-INT-005. | This change |
+| OQ-010 | Should the archive state be a separate top-level model (e.g., its own table) or a lightweight marker on `Issues`? | Resolved | Lightweight nullable `Issues.ArchivedAt` timestamp, orthogonal to `WorkflowStateId`/`IsTerminal`; explicit idempotent `ArchiveAsync`/`UnarchiveAsync` operations exclude archived issues from default board/list/dashboard results (`includeArchived=false` default) while preserving all related sub-resources and history. Per FR-WRK-011. | This change |
+| OQ-011 | Should `Blocks`/`BlockedBy` dependencies be a distinct persisted relationship separate from `IssueLinks`? | Resolved | No separate table: `BLOCKS` is a recognized `IssueLinks.Type` value; the dependency projection (`Blocks[]`/`BlockedBy[]`) is derived at read time from directional `BLOCKS`-typed links, and remains advisory-only with zero workflow enforcement. Per FR-WRK-012 and FR-LNK-001. | This change |
+| OQ-012 | What transport delivers real-time dashboard updates, and how are workspace subscriptions authorized? | Resolved | SignalR is the default web transport behind a transport-neutral `IRealtimeUpdatePublisher` contract; a connection is placed into a server-derived `workspace:{workspaceId}` group at connect time using the caller's already-authorized workspace memberships — a client cannot request an arbitrary workspace group. Per PRD §19 (real-time) and FR-WRK-013/FR-WRK-014. | This change |
 
 These mirror the PRD §19 open questions and must be resolved before the corresponding milestone in §16 begins, not discovered mid-implementation.
 
@@ -780,7 +1032,21 @@ These mirror the PRD §19 open questions and must be resolved before the corresp
 | FR-WS-001, NFR-SEC-002 | §6, §8.1 Workspace & Authorization, §11.2 | [`docs/features/workspace-authorization.md`](../features/workspace-authorization.md) |
 | FR-WS-002, FR-WS-003 | §7.5 State Machine, §10.4 Migration Strategy | [`docs/features/workflow-engine.md`](../features/workflow-engine.md) |
 | FR-WRK-001, FR-WRK-002, FR-WRK-003, FR-WRK-004 | §8.1 Issue & Board Service, §9, §12 | [`docs/features/issue-board-service.md`](../features/issue-board-service.md) |
+| FR-WS-004 | §10.1 `WorkflowStates.IsTerminal` | [`docs/features/workflow-engine.md`](../features/workflow-engine.md) |
+| FR-WRK-005, FR-WRK-006, FR-WRK-009 | §10.1 `Issues` (modified), §10.4 Migration Strategy step 6 | [`docs/features/issue-board-service.md`](../features/issue-board-service.md) |
+| FR-WRK-007, FR-WRK-008 | §9.1 API Design, §10.3 Index Strategy | [`docs/features/issue-board-service.md`](../features/issue-board-service.md) |
+| FR-WRK-010 | §10.1 `Comments` (modified), §10.4 Migration Strategy step 7 | [`docs/features/issue-board-service.md`](../features/issue-board-service.md) |
+| FR-ART-001, FR-ART-002 | §8.1 Issue Artifacts, §10.1 `Artifacts`, §9.1 API Design | [`docs/features/artifacts.md`](../features/artifacts.md) |
+| FR-LNK-001 | §8.1 Issue Linking, §10.1 `IssueLinks` (`Type`/`Description`), §9.1 API Design | [`docs/features/issue-linking.md`](../features/issue-linking.md) |
+| FR-INT-004 | §8.1, §8.2 Component Interaction, §7.7 `HOOK_BUDGET_EXCEEDED` | [`docs/features/integration-and-plugin-platform.md`](../features/integration-and-plugin-platform.md) |
+| FR-INT-005 | §10.1 `ExternalLinks` (modified), §7.7 `SYNC_CONFLICT`, §9.1 sync-conflict endpoint | [`docs/features/integration-and-plugin-platform.md`](../features/integration-and-plugin-platform.md) |
 | FR-INT-001, FR-INT-002, FR-INT-003, NFR-REL-002 | §8.1 Integration & Plugin Platform, §7.6 Retry & Circuit Breaker | [`docs/features/integration-and-plugin-platform.md`](../features/integration-and-plugin-platform.md) |
+| FR-WRK-011 | §8.1 Archive & Housekeeping, §10.1 `Issues.ArchivedAt`, §9.1 archive/unarchive endpoints, §16 M6 | [`docs/features/issue-board-service.md`](../features/issue-board-service.md) |
+| FR-WRK-012 | §8.1 Issue Linking, §10.1 `IssueLinks.Type` (`BLOCKS`), §9.1 API Design | [`docs/features/issue-linking.md`](../features/issue-linking.md) |
+| FR-WRK-013 | §8.1 Activity History, §10.1 `ActivityEvents`, §9.1 activity endpoint, §16 M6 | [`docs/features/issue-board-service.md`](../features/issue-board-service.md) |
+| FR-WRK-014, NFR-PERF-002 | §8.1 Real-time Updates, §8.2 Component Interaction, §12 NFR-PERF-002, §13 real-time connection metrics, §16 M6.5 | [`docs/features/realtime-updates.md`](../features/realtime-updates.md) |
+| FR-INT-006 | §8.1 Plugin Event Publishing, §9.1 API Design, §16 M6.5 | [`docs/features/integration-and-plugin-platform.md`](../features/integration-and-plugin-platform.md) |
+| FR-INT-007 | §8.1 GitHub PR Artifacts, §10.1 `Artifacts` (`pull_request`, `DedupKey`, `Metadata`), §9.1 API Design, §16 M6.7 | [`docs/features/integration-and-plugin-platform.md`](../features/integration-and-plugin-platform.md) |
 | FR-AUT-001, FR-AUT-002, FR-AUT-003 | §7.3, §7.6, §9, §10.1 `IdempotencyRecords` | [`docs/features/agent-and-automation-surface.md`](../features/agent-and-automation-surface.md) |
 | FR-OPS-001, FR-OPS-002, NFR-AVL-001 | §10.1 `AuditEvents`, §11.4, §14.3 | [`docs/features/audit-and-recovery.md`](../features/audit-and-recovery.md) |
 | NFR-PERF-001 | §12 | [`docs/features/issue-board-service.md`](../features/issue-board-service.md) |

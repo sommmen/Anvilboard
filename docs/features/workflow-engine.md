@@ -30,6 +30,7 @@ The Workflow Engine defines and validates a workspace's configurable, ordered `W
 - Authorizing *who* may configure a workflow or request a transition — enforced upstream by `workspace-authorization.md` before this component is ever called.
 - Persisting the `Issue.WorkflowStateId`/`Issue.Version` change itself, or emitting the resulting activity/audit event — both are the Issue & Board Service's responsibility (`issue-board-service.md`); this component only returns Allowed/Denied.
 - Dashboard aggregation over workflow states (`issue-board-service.md`).
+- Dispatching `PrePhaseChange`/`PostPhaseChange` `ILifecycleHook<TEvent>` invocations — this component is a pure validation gate with no hook-registry dependency; the Issue & Board Service calls `ValidateTransitionAsync` and dispatches `PrePhaseChange` *before* that call (a `Deny` short-circuits before this component is even consulted) and `PostPhaseChange` only after both `ValidateTransitionAsync` returns `Allowed` and the `Issue` row is durably committed (`integration-and-plugin-platform.md` FR-INT-004).
 
 ## Core Responsibilities
 
@@ -81,6 +82,8 @@ sequenceDiagram
         end
     end
 ```
+
+**Lifecycle-hook placement (planned; new)**: this diagram intentionally shows only this component's own validation logic. The Issue & Board Service wraps the call shown above with `PrePhaseChange`/`PostPhaseChange` `ILifecycleHook<TEvent>` dispatch it owns directly: `PrePhaseChange` hooks run *before* `ValidateTransitionAsync` is even invoked (a `Deny` from a `Pre*` hook short-circuits the whole request — this component never sees it), and `PostPhaseChange` hooks run only after `ValidateTransitionAsync` returns `Allowed` **and** the `Issue.WorkflowStateId` change is durably committed. See `integration-and-plugin-platform.md`'s `ILifecycleHook<TEvent>` contract and `issue-board-service.md`'s phase-change flow for the full sequence including hook dispatch.
 
 ## Key Behaviors
 
@@ -155,6 +158,7 @@ Archiving with open issues and no replacement is rejected (`VALIDATION_FAILED`) 
 - **Migration is rollback-safe**: both `Issues.Status` (deprecated) and `Issues.WorkflowStateId` remain populated for one full release before `Status` is dropped (§10.4 step 4/5, OQ-003).
 - **Ordering guarantee**: the Issue & Board Service must call and receive `Allowed` from `ValidateTransitionAsync` strictly before persisting any `Issue.WorkflowStateId`/`Issue.Version` change — this component never mutates `Issues` itself, so the guarantee is enforced by call order, not by a shared transaction.
 - **Audit emission is downstream**: a successful transition's activity/audit record (actor, timestamp, correlation ID — FR-WS-003 AC3) is written by the Issue & Board Service after this component returns `Allowed`, not by the Workflow Engine.
+- **Hook dispatch is out of scope (new)**: `PrePhaseChange`/`PostPhaseChange` `ILifecycleHook<TEvent>` dispatch (`integration-and-plugin-platform.md`) is owned entirely by the Issue & Board Service around its call to `ValidateTransitionAsync`; this component has no dependency on the hook registry and never invokes a hook itself.
 
 ## Acceptance Criteria
 
@@ -173,6 +177,9 @@ Archiving with open issues and no replacement is rejected (`VALIDATION_FAILED`) 
 | AC-207 | P1 | Given a `WorkflowState` with `Key = "in_progress"`, when it is serialized on any REST/CLI/MCP response | The symbolic value `"IN_PROGRESS"` is produced identically across all three channels | Cross-channel contract test comparing REST/CLI/MCP serialized output for the same state |
 | AC-208 | P1 | Given any configuration mutation (create/update/archive state, or create/remove transition) | The caller emits exactly one audit event carrying the mutation type and affected id, consumed by `audit-and-recovery.md` | Integration: assert one `IAuditService` call per configuration mutation |
 | AC-209 | P0 | Given `currentStateId` or `targetStateId` exists but has `IsArchived = true` in the workspace, when `ValidateTransitionAsync` is called | Returns `Denied(INVALID_WORKFLOW_TRANSITION)` naming the archived state id and "state is archived" — never `REFERENCED_ENTITY_NOT_FOUND`, per tech-design §7.7 | Unit: `ValidateTransitionAsync_ArchivedState_ReturnsInvalidWorkflowTransition` |
+| AC-210 | P1 | Given a `WorkflowState` with `IsTerminal = true` (e.g., "Done" or "Won't fix"), when an issue currently in that state is rendered on the board, list view, or dashboard | The issue is presented with a documented inactive/complete visual treatment (e.g., muted styling, no "active work" affordances) identically across all three surfaces, with no change to `Issue.WorkflowStateId` or any other stored field | Cross-surface UI test asserting the terminal-state CSS class/attribute is present on board, list, and dashboard renderings for the same issue |
+| AC-211 | P1 | Given a workspace already has one `WorkflowState` with `IsTerminal = true`, when `CreateWorkflowStateAsync` is called with a second `isTerminal=true` state | The second terminal state is created successfully; both states are independently marked terminal (e.g., "Done" and "Won't fix" coexist) | Unit: `CreateWorkflowStateAsync_SecondTerminalState_Succeeds` |
+| AC-212 | P1 | Given a `WorkflowState`, when `UpdateWorkflowStateAsync` toggles `IsTerminal` from `false` to `true` or vice versa | The change is persisted and the caller emits exactly one audit event naming the state id and the before/after `IsTerminal` value, per AC-208's pattern | Unit: `UpdateWorkflowStateAsync_ToggleIsTerminal_EmitsAuditEvent` |
 
 ## Error Handling
 
