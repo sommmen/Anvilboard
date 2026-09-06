@@ -99,10 +99,10 @@ sequenceDiagram
     participant RT as Realtime Updates
 
     Caller->>IBS: RequestTransition(issueId, targetWorkflowStateId, expectedVersion)
-    IBS->>WF: ValidateTransitionAsync(workspaceId, currentStateId, targetStateId)
-    WF-->>IBS: TransitionValidationResult: Allowed() | Denied(INVALID_WORKFLOW_TRANSITION)
     IBS->>Hooks: PrePhaseChange(metadata) [sequential; may deny]
     Hooks-->>IBS: Allow() | Deny(reason)
+    IBS->>WF: ValidateTransitionAsync(workspaceId, currentStateId, targetStateId)
+    WF-->>IBS: TransitionValidationResult: Allowed() | Denied(INVALID_WORKFLOW_TRANSITION)
     IBS->>DB: Update Issue.WorkflowStateId, increment Version; insert ActivityEvent
     DB-->>IBS: Persisted
     IBS-->>Caller: Result(issue, correlationId)
@@ -130,8 +130,8 @@ Replaces the current enum-based `ChangeStatusAsync(IssueId, IssueStatus, ...)` w
 
 1. Load the issue; if not found, return `REFERENCED_ENTITY_NOT_FOUND`.
 2. If `issue.Version != expectedVersion`, return `CONCURRENCY_CONFLICT` with the current version.
-3. Call `IWorkflowService.ValidateTransitionAsync(workspaceId, issue.WorkflowStateId, targetWorkflowStateId, ct)`; on `Denied(INVALID_WORKFLOW_TRANSITION, ...)` return that result unchanged — naming current state, requested state, and the violated rule — with no version increment (tech-design AC-004; `workflow-engine.md` AC-004).
-4. Invoke registered `PrePhaseChange` hooks sequentially with `PhaseChangeMetadata(FromPhase, ToPhase)`; the first `HookResult.Deny(reason)` returns a validation-style denial to the initiating caller without persisting or incrementing the issue. A hook budget breach is the same forced denial (`HOOK_BUDGET_EXCEEDED`).
+3. Invoke registered `PrePhaseChange` hooks sequentially with `PhaseChangeMetadata(FromPhase, ToPhase)`; the first `HookResult.Deny(reason)` returns `VALIDATION_FAILED` (409) to the initiating caller without consulting the workflow engine or persisting the issue. A pre-hook budget breach is also treated as a denial (`VALIDATION_FAILED`). A `Pre*` hook may short-circuit this entire transition request by denying it before any validation occurs.
+4. Call `IWorkflowService.ValidateTransitionAsync(workspaceId, issue.WorkflowStateId, targetWorkflowStateId, ct)`; on `Denied(INVALID_WORKFLOW_TRANSITION, ...)` return that result unchanged — naming current state, requested state, and the violated rule — with no version increment (tech-design AC-004; `workflow-engine.md` AC-004).
 5. Apply `issue.WorkflowStateId = targetWorkflowStateId`, increment `issue.Version`, set `issue.UpdatedAt`; if the target state `IsTerminal`, set `CompletedAt` (mirrors the existing `IsTerminal()` logic in `IssueStatusExtensions`, moved to operate on `WorkflowState.IsTerminal`).
 6. Persist the issue and templated `ActivityEvent(StatusChanged)` within one transaction, return the committed result, then invoke `PostPhaseChange` hooks concurrently under their lifecycle budget and publish the compact real-time change event. Post-commit work cannot alter this successful transition result.
 

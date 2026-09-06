@@ -454,7 +454,7 @@ graph TD
 | Issue | Contributor, coordinator, authorized agent | Authorized member/agent | Authorized actor under rules | Archive only; retention policy applies | Contributor, coordinator, agent |
 | Comment (optionally threaded) | Authorized actor, authorized agent (enrichment hook) | Authorized member/agent | Policy-defined; initial release append-only preferred | Policy-defined archive | Contributor, coordinator, agent |
 | Artifact | Authorized actor, authorized agent (enrichment hook) | Authorized member/agent | Metadata only (e.g., title); content is replace-by-new-attachment | Authorized actor; audited | Contributor, coordinator, agent |
-| Issue link | Authorized actor, authorized agent | Authorized member/agent | Reason text | Authorized actor; audited | Contributor, coordinator, agent |
+| Issue link | Authorized actor, authorized agent | Authorized member/agent | Type and Description text | Authorized actor; audited | Contributor, coordinator, agent |
 | Integration | Administrator | Administrator and authorized health readers | Administrator | Pause/remove | Administrator |
 | Plugin (incl. enrichment hook) | Administrator | Administrator | Administrator | Deactivate/remove | Administrator |
 | Audit event | System | Authorized auditor/administrator | Never | Retention-managed only | System |
@@ -645,7 +645,8 @@ erDiagram
       uuid id PK
       uuid source_issue_id FK
       uuid target_issue_id FK
-      string reason
+      string type
+      string description
       datetime created_at
     }
     EXTERNAL_LINK {
@@ -688,7 +689,8 @@ erDiagram
 | artifact.content_reference | String | Opaque reference resolved via the persistence abstraction | Points at stored content; never a raw filesystem path assumption. |
 | artifact.source | String | e.g. "manual" or an integration/enrichment-hook identity | Distinguishes manual attachment from automated expansion (FR-ART-002). |
 | issue_link.id | UUID | PK, immutable | Internal issue-link identifier. |
-| issue_link.reason | String | Free-form; suggested vocabulary: parent of, child of, related, sub-issue of, mentioned in | Non-hierarchical relationship description; carries no cascade semantics. |
+| issue_link.type | String | Free-form; suggested vocabulary: PARENT, CHILD, RELATED, DUPLICATE, MENTIONED_IN, BLOCKS | Link type token; carries no cascade semantics. |
+| issue_link.description | String, nullable | Free-form optional annotation | Human-readable link relationship details (e.g., `RELATED` — "same parent", `PARENT` — "", `BLOCKS` — "waiting on API completion"). |
 | external_link.provider + source_key | String pair | Unique within workspace/provider integration mapping | Deduplication identity for imported record. |
 | external_link.last_success_at | Timestamp | Nullable for never-successful import | Last successful synchronization time. |
 | external_link.last_synced_version | Integer, nullable | Compared against issue.version to detect divergence | Snapshot of the local issue.version at the last successful sync, used for `SYNC_CONFLICT` detection (FR-INT-005). |
