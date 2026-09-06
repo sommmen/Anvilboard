@@ -5,10 +5,10 @@
 | Field | Value |
 |---|---|
 | PRD ID | PRD-ANV-001 |
-| Version | 0.1 |
+| Version | 0.2 |
 | Author | Anvilboard maintainers |
 | Reviewers | Product, engineering, operations, and early adopters |
-| Date | 2026-03-25 |
+| Date | 2026-09-05 |
 | Status | Draft |
 
 ## 2. Revision History
@@ -16,6 +16,7 @@
 | Version | Date | Author | Changes |
 |---|---|---|---|
 | 0.1 | 2026-03-25 | Anvilboard maintainers | Initial future-state product requirements, grounded in the existing proof of concept. |
+| 0.2 | 2026-09-05 | Anvilboard maintainers | Added PRD-ANV-019 (archive/housekeeping), PRD-ANV-020 (real-time dashboard updates), and PRD-ANV-021 (GitHub PR artifacts and plugin config/state persistence); updated feature architecture and timeline accordingly. |
 
 ## 3. Executive Summary
 
@@ -158,6 +159,8 @@ Provide a deployer-controlled workspace where authorized humans and agents can c
 - Arbitrary third-party code execution without an installation, compatibility, and failure-isolation policy.
 - Autonomous agent authority beyond explicitly granted workspace-scoped permissions.
 - Native mobile clients in the first release.
+- A formal sub-issue/parent-child hierarchy with ownership or completion cascades; related work is expressed only through free-form typed issue links (§12, PRD-ANV-016).
+- Replacing the assignment/ownership authority of the upstream provider; team and owner fields are informational only and are not used for access control or notification routing in this release.
 
 ## 10. Consumer Analysis
 
@@ -282,6 +285,15 @@ As a delivery automation agent, I want stable error codes and retry guidance so 
 | PRD-ANV-010 | Plugin platform | The product shall support versioned ingestion, webhook, and post-commit extension contracts with lifecycle validation, isolation, and health reporting. | P1 | Extensibility preserves the small core and supports new providers, but GitHub and Linear can launch via first-party integrations. | Proposed |
 | PRD-ANV-011 | External write-back | The product shall support explicitly configured provider write-back and conflict handling for selected fields. | P2 | Valuable for reducing duplicate updates, but read/import plus local work is a viable initial workflow and conflict semantics need validation. | Proposed |
 | PRD-ANV-012 | Saved views and notifications | Users shall save shareable board views and receive configurable notifications for assignments, mentions, and sync failures. | P2 | Improves retention and responsiveness, but manual filters and health checks remain an acceptable first-release workaround. | Proposed |
+| PRD-ANV-013 | Extensible ticket taxonomy | The product shall let each workspace define a free-form, optional Type field (bug/feature/task/etc.) and generalize Priority from a fixed enum to a workspace-configurable, free-form value with a documented default set, alongside free-form labels and an optional "session state" sub-phase note (short title plus description) shown on an issue. | P1 | Broad ticketing sources use inconsistent taxonomies; forcing a fixed enum blocks reuse across projects, but the board remains usable without it at launch. | Proposed |
+| PRD-ANV-014 | List view | The web application shall offer a dense, sortable list view of workspace issues — grouped and ordered by phase, type, priority, or other configured fields — as an alternative to the kanban board over the same underlying query. | P1 | Kanban does not scale to high issue volumes or precise ordering/triage work; a list view is a materially different but non-blocking consumption mode. | Proposed |
+| PRD-ANV-015 | Issue artifacts | Authorized users and automation shall attach files, links, and deployment references to an issue as artifacts, stored behind a persistence abstraction that defaults to the workspace SQLite store and can be swapped for filesystem or object storage without changing the artifact contract. | P1 | Work is frequently anchored to evidence (logs, screenshots, deploy links); losing this to ad hoc comment text degrades triage quality, but issues remain trackable without it. | Proposed |
+| PRD-ANV-016 | Issue linking and dependencies | Authorized users and automation shall link two issues together with a free-form `Type` (e.g., `RELATED`, `PARENT`, `CHILD`, `MENTIONED_IN`, `BLOCKS`) and an optional descriptive text (e.g., `RELATED` — "same parent"), without introducing a formal sub-issue hierarchy or ownership cascade; a `BLOCKS` link additionally surfaces as an advisory `Blocks`/`BlockedBy` dependency marker that informs planning but never gates a workflow transition. | P2 | Related-work traceability and lightweight prerequisite awareness materially help large boards, but are additive polish over a working single-issue lifecycle. | Proposed |
+| PRD-ANV-017 | Automation lifecycle hooks | The product shall expose generic, typed lifecycle hooks (`Pre*`/`Post*` around named operations such as ingest, resync, phase change, add comment, and add attachment) so approved automation (e.g., an LLM performing intake triage or expanding a linked Slack thread into an artifact) can create comments, artifacts, and links or propose a workflow transition under the same authorization and audit rules as a human actor; `Pre*` points are bounded and mutation-capable/veto-capable, `Post*` points remain best-effort and non-vetoing. | P1 | The customer-specific "fetch → preprocess → triage" flow is the stated end goal; without mutation-capable pre-commit hooks the plugin platform cannot support it, but a manually operated board remains viable meanwhile. | Proposed |
+| PRD-ANV-018 | Inbound sync conflict awareness | When a linked provider record changes upstream after a local edit to the same issue, the product shall detect the potential conflict, preserve both versions' information, and require an explicit resolution rather than silently overwriting local changes. | P1 | Silent overwrite of local comments/decisions during resync would destroy trust in the unified view; deferring this risks data loss as soon as two-way attention exists on the same ticket. | Proposed |
+| PRD-ANV-019 | Issue archiving and housekeeping | Authorized users and automation shall explicitly archive and unarchive an issue, removing it from default board/list/dashboard queries while preserving its comments, artifacts, links, and activity history, and the product shall raise housekeeping lifecycle events other components can observe. | P2 | Long-lived workspaces accumulate stale/finished work that clutters day-to-day views; deferring archiving is tolerable because manual filtering is a workable, if inconvenient, launch substitute. | Proposed |
+| PRD-ANV-020 | Real-time dashboard updates | The web application shall reflect committed issue, comment, activity, and dashboard-summary changes to connected users within a low, bounded latency using a persistent push channel, without introducing visible list/board jitter or blocking the originating request on client delivery. | P1 | Coordinators and automation act on the same live board; a page that only updates on manual refresh materially degrades the coordination goal, but a refresh-driven UI remains a viable interim fallback. | Proposed |
+| PRD-ANV-021 | GitHub pull-request artifacts and plugin persistence | The product shall let the GitHub plugin correlate a pull request to an issue and attach/refresh it as a status-bearing artifact, and shall provide a general configuration/state persistence abstraction any approved plugin can use for its own settings and durable working data. | P2 | Seeing PR status alongside an issue closes a common manual-lookup gap and unlocks richer plugins, but issues remain trackable via comments/links without it at launch. | Proposed |
 
 **Priority legend:** P0 = required for trusted launch; P1 = significant launch-following capability; P2 = planned enhancement after pilot validation.
 
@@ -336,6 +348,8 @@ graph LR
     OBS[Health, logs, metrics, correlation] --> APP
     OBS --> SYNC
     BAK[Backup and restore operations] --> DB
+    APP --> RT[Real-time update publisher]
+    RT --> W
 ```
 
 The technical design defines the exact trust boundaries, data model, lifecycle, deployment, and extension contracts. The web API, CLI, and MCP server remain parallel clients of shared application services so domain behavior does not diverge by channel.
@@ -370,6 +384,7 @@ gantt
     section Pilot and expansion
     Pilot hardening and recovery drill         :p6, after p3, 28d
     Plugin lifecycle and dashboard expansion   :p7, after p6, 28d
+    Real-time updates, archive, PR artifacts   :p9, after p4, 28d
     Evaluate write-back and notifications      :p8, after p7, 21d
 ```
 
@@ -383,6 +398,8 @@ gantt
 | RISK-004 | Configurable workflows break reports, integrations, or historical interpretation. | M | M | Use stable state identifiers, explicit transition rules, versioned migration, archived state mappings, and compatibility tests. | Domain owner |
 | RISK-005 | SQLite backup/restore or concurrent use is misunderstood in deployment. | M | H | Publish supported deployment limits, integrity-checked backup/restore tooling, lock/concurrency guidance, and drill recovery in pilot. | Operations owner |
 | RISK-006 | Scope expands into a replacement for external trackers before trusted core is complete. | H | M | Hold P0 boundary, run pilot gates, and require a separate product decision for provider write-back or enterprise features. | Product owner |
+| RISK-007 | A mutation-capable `Pre*` lifecycle hook (PRD-ANV-017) is misused to bypass workflow/authorization rules or to loop on the same issue. | M | H | Route all hook-driven writes through the same domain services and audit trail as human actors, require per-integration approval and an execution budget, and require idempotency keys on hook-driven mutations. | Platform owner |
+| RISK-008 | Resync conflict handling (PRD-ANV-018) is ignored or misconfigured, causing either silent data loss or a flood of unresolved conflicts that blocks triage. | M | M | Default to "flag and preserve both, do not overwrite" behavior, auto-merge additive collections (comments, artifacts, links) with no collision potential, surface remaining true conflicts prominently on the board/dashboard with a dedicated resolve action (keep-local/apply-remote/merge), and document the resolution workflow before enabling two-way sync on the same records. | Domain owner |
 
 ## 18. Dependencies
 
@@ -392,6 +409,8 @@ gantt
 - The data model needs a workspace boundary, roles, workflow configuration, stable state mappings, integration configuration, sync health, audit records, and migration strategy.
 - The Angular application needs authenticated workspace navigation, board filtering, issue activity, integration health, and administrator flows.
 - The delivery process needs automated contract/integration testing and an operational runbook for deployment, backup, restore, and incident diagnosis.
+- The application layer needs a persistence abstraction for issue artifacts (files, links, deployment references) so the default SQLite-backed store can later be swapped for filesystem or object storage without changing the artifact contract.
+- The plugin platform needs a second, bounded, mutation-capable hook category (distinct from the existing best-effort post-commit hook) so approved automation can perform intake triage, RCA comments, and artifact expansion under normal authorization/audit rules.
 
 ### External Dependencies
 
@@ -409,6 +428,13 @@ gantt
 | 4 | What backup target, retention period, encryption expectation, and restore RPO/RTO are required for pilot workspaces? | Operations and pilot users | Before pilot | Open |
 | 5 | What exact pilot cohort and observed task baseline will validate the value hypothesis in §6 and §15? | Product | Before pilot recruitment | Open |
 | 6 | What plugin trust and distribution model is acceptable for third-party assemblies in self-hosted deployments? | Security and platform | Before third-party plugin support | Open |
+| 7 | Should Priority remain a fixed enum or become a workspace-configurable free-form value like Type? | Product and domain | Resolved for this cycle | Resolved — Priority becomes workspace-configurable free-form text with a seeded default set (None/Low/Medium/High/Urgent) for backward compatibility; see PRD-ANV-013 and `srs.md` FR-WRK-005. |
+| 8 | How should lifecycle processing distinguish gating work from post-commit reactive work? | Architecture | Resolved for this cycle | Resolved — hooks are unified as generic, typed `ILifecycleHook<TEvent>` invocations at named `Pre*`/`Post*` lifecycle points (e.g. `PreIngest`/`PostIngest`, `PrePhaseChange`/`PostPhaseChange`, `PreAddAttachment`/`PostAddAttachment`); `Pre*` points are mutation-capable and can veto, while `Post*` points remain best-effort/non-vetoing and budget-bounded. See PRD-ANV-017 and `integration-and-plugin-platform.md`. |
+| 9 | On a detected inbound sync conflict, should the system auto-merge, prefer local, prefer remote, or require explicit resolution? | Product and domain | Resolved for this cycle | Resolved — additive collections (comments, artifacts, links) auto-merge as a list union with no collision handling required; true field-level conflicts flag and preserve both versions' data, blocking silent overwrite until an authorized actor resolves via a dedicated dashboard action (keep-local/apply-remote/merge); `SessionState` edits are excluded from conflict detection entirely. See PRD-ANV-018 and `srs.md` FR-INT-005. |
+| 10 | Should archiving be a distinct entity/table or a marker on the existing issue? | Architecture | Resolved for this cycle | Resolved — archiving is a nullable `ArchivedAt` timestamp marker on the issue, not a separate table; archived issues are excluded from default queries but remain fully intact (comments, artifacts, links, activity history) and can be unarchived. See PRD-ANV-019 and `tech-design.md` OQ-010. |
+| 11 | Should `Blocks`/`BlockedBy` dependencies be modeled as a separate relationship type from issue linking? | Architecture | Resolved for this cycle | Resolved — `BLOCKS` is a value of the free-form `IssueLinks.Type` field (not a separate dependency table); it additionally projects to `Blocks[]`/`BlockedBy[]` on the issue for display, and remains advisory only — no workflow transition is gated on it. See PRD-ANV-016 and `tech-design.md` OQ-011. |
+| 12 | What real-time transport should the dashboard use, and how is workspace access authorized for a live connection? | Architecture | Resolved for this cycle | Resolved — SignalR is the default transport behind an `IRealtimeUpdatePublisher` abstraction so it can be swapped later; group membership (`workspace:{workspaceId}`) is derived server-side from the connected user's authorized workspaces, not requested by the client. See PRD-ANV-020 and `tech-design.md` OQ-012. |
+
 
 ## 20. Appendix
 
@@ -422,6 +448,11 @@ gantt
 - **Plugin:** An approved extension implementing Anvilboard's published ingestion, webhook, or post-commit contracts.
 - **MCP:** Model Context Protocol, used here as a stdio JSON-RPC automation surface.
 - **Idempotency key:** Client-provided identifier that ensures a supported mutation replay does not duplicate side effects.
+- **Session state:** An optional, free-form sub-phase note (short title plus description) on an issue describing current in-progress work, e.g. "reviewing — checking AST before continuing implementation".
+- **Artifact:** A file, link, or deployment reference attached to an issue as supporting evidence, stored behind a persistence abstraction.
+- **Issue link:** A typed, free-form, non-hierarchical relationship between two issues (e.g., related, parent of, mentioned in) that carries no ownership or cascade semantics.
+- **Enrichment hook:** A bounded, mutation-capable automation hook, distinct from the best-effort post-commit hook, used for LLM-driven intake triage and artifact expansion.
+- **Sync conflict:** A detected divergence between a local edit and an upstream provider change to the same issue that requires explicit resolution rather than silent overwrite.
 
 ### 20.2 Traceability
 
@@ -431,3 +462,5 @@ gantt
 - Technical design: [`docs/anvilboard/tech-design.md`](tech-design.md)
 - Integration platform feature specification: [`docs/features/integration-and-plugin-platform.md`](../features/integration-and-plugin-platform.md)
 - Agent and automation feature specification: [`docs/features/agent-and-automation-surface.md`](../features/agent-and-automation-surface.md)
+- Issue artifact feature specification: [`docs/features/artifacts.md`](../features/artifacts.md)
+- Issue linking feature specification: [`docs/features/issue-linking.md`](../features/issue-linking.md)
