@@ -45,8 +45,18 @@ public static class IssueEndpoints
 
         group.MapPatch("/{id:guid}/status", async (Guid id, ChangeStatusRequest request, IssueService service, CancellationToken ct) =>
         {
-            var issue = await service.ChangeStatusAsync(new IssueId(id), request.Status, ct: ct);
-            return Results.Ok(issue);
+            try
+            {
+                var issue = await service.ChangeStatusAsync(new IssueId(id), request.Status, ct: ct);
+                return Results.Ok(issue);
+            }
+            catch (WorkflowTransitionDeniedException ex)
+            {
+                var statusCode = ex.ErrorCode == "REFERENCED_ENTITY_NOT_FOUND"
+                    ? StatusCodes.Status404NotFound
+                    : StatusCodes.Status409Conflict;
+                return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: statusCode);
+            }
         });
 
         group.MapPatch("/{id:guid}/assignee", async (Guid id, AssignRequest request, IssueService service, CancellationToken ct) =>

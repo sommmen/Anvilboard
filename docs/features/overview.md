@@ -18,7 +18,7 @@ feature needs more granular coverage.
 |---|---|---|---|---|
 | 1 | [`workspace-authorization.md`](./workspace-authorization.md) | P0 | — | `FR-WS-001`, `NFR-SEC-002` |
 | 2 | [`workflow-engine.md`](./workflow-engine.md) | P0 | — | `FR-WS-002`, `FR-WS-003` |
-| 3 | [`issue-board-service.md`](./issue-board-service.md) | P0 | Workspace Authorization, Workflow Engine, Real-time Updates | `FR-WRK-001`–`FR-WRK-014`, `NFR-PERF-001`, `NFR-PERF-002`, `NFR-USB-001` |
+| 3 | [`issue-board-service.md`](./issue-board-service.md) | P0 | Workspace Authorization, Workflow Engine | `FR-WRK-001`–`FR-WRK-014`, `NFR-PERF-001`, `NFR-PERF-002`, `NFR-USB-001` |
 | 4 | [`integration-and-plugin-platform.md`](./integration-and-plugin-platform.md) | P0 | Issue & Board Service, Workspace Authorization, Real-time Updates | `FR-INT-001`–`FR-INT-007`, `NFR-REL-002`, `NFR-SEC-001` |
 | 5 | [`agent-and-automation-surface.md`](./agent-and-automation-surface.md) | P0 | Workspace Authorization, Workflow Engine, Issue & Board Service, Integration & Plugin Platform | `FR-AUT-001`–`FR-AUT-003`, `NFR-MNT-001` |
 | 6 | [`audit-and-recovery.md`](./audit-and-recovery.md) | P0 | All other components | `FR-OPS-001`, `FR-OPS-002`, `NFR-AVL-001`, `NFR-REL-001` |
@@ -38,7 +38,9 @@ The dependency order above is also the recommended build order:
    surface's transition operations, both depend on `WorkflowState`/`WorkflowTransition` existing
    and on the legacy `IssueStatus` migration path being defined.
 3. **Issue & Board Service** — the core CRUD/query/dashboard surface that both the web UI and the
-   automation surface consume; depends on the first two being in place.
+   automation surface consume; depends on the first two being in place. (Its "Depends On" column
+   above previously listed Real-time Updates in error; corrected — see step 4 and
+   `issue-board-service.md`'s front-matter note.)
 4. **Real-time Updates** follows the Issue & Board Service's authoritative query and authorization
    paths; its publisher/hub boundary should be in place before dashboard clients consume live
    changes, while the service remains able to make mutations if a real-time transport is degraded.
