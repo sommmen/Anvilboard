@@ -45,8 +45,15 @@ public static class IssueEndpoints
 
         group.MapPatch("/{id:guid}/status", async (Guid id, ChangeStatusRequest request, IssueService service, CancellationToken ct) =>
         {
-            var issue = await service.ChangeStatusAsync(new IssueId(id), request.Status, ct: ct);
-            return Results.Ok(issue);
+            try
+            {
+                var issue = await service.ChangeStatusAsync(new IssueId(id), request.Status, ct: ct);
+                return Results.Ok(issue);
+            }
+            catch (WorkflowTransitionDeniedException ex)
+            {
+                return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
         });
 
         group.MapPatch("/{id:guid}/assignee", async (Guid id, AssignRequest request, IssueService service, CancellationToken ct) =>

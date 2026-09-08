@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Anvilboard.Application.Workflows;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
 using Anvilboard.Plugins.Abstractions;
@@ -17,8 +18,26 @@ namespace Anvilboard.Application.Issues;
 public sealed class IssueService(
     AnvilboardDbContext db,
     IPluginRegistry plugins,
+    IWorkflowService workflowService,
     ILogger<IssueService> logger)
 {
+    /// <summary>
+    /// Maps the legacy <see cref="IssueStatus"/> enum to the lower-snake <c>WorkflowState.Key</c>
+    /// seeded for every workspace by the <c>AddWorkflowStates</c> migration, so callers that still
+    /// speak the legacy enum (the current REST/CLI/MCP surfaces) can be routed through
+    /// <see cref="IWorkflowService.ValidateTransitionAsync"/> without a public API change.
+    /// </summary>
+    private static string ToWorkflowStateKey(IssueStatus status) => status switch
+    {
+        IssueStatus.Backlog => "backlog",
+        IssueStatus.Todo => "todo",
+        IssueStatus.InProgress => "in_progress",
+        IssueStatus.InReview => "in_review",
+        IssueStatus.Done => "done",
+        IssueStatus.Cancelled => "cancelled",
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+    };
+
     public async Task<Issue?> GetAsync(IssueId id, CancellationToken ct = default) =>
         await db.Issues.AsNoTracking().FirstOrDefaultAsync(i => i.Id == id, ct);
 
@@ -83,7 +102,18 @@ public sealed class IssueService(
         return issue;
     }
 
-    /// <summary>Moves an issue to a new workflow status, recording the transition and firing hooks.</summary>
+    /// <summary>
+    /// Moves an issue to a new workflow status, delegating legality of the transition to
+    /// <see cref="IWorkflowService.ValidateTransitionAsync"/> before mutating anything, then
+    /// recording the transition and firing hooks. Updates both the deprecated <see cref="IssueStatus"/>
+    /// enum and the authoritative <see cref="Issue.WorkflowStateId"/>/<see cref="Issue.Version"/>
+    /// fields so the two remain in sync during the workflow-state migration window
+    /// (see <c>docs/features/workflow-engine.md</c> "Legacy status migration").
+    /// </summary>
+    /// <exception cref="WorkflowTransitionDeniedException">
+    /// The requested transition was denied by <see cref="IWorkflowService"/> (e.g. no configured
+    /// transition rule, or a referenced workflow state is archived/missing).
+    /// </exception>
     public async Task<Issue> ChangeStatusAsync(IssueId id, IssueStatus newStatus, MemberId? actorId = null, CancellationToken ct = default)
     {
         var issue = await db.Issues.FirstOrDefaultAsync(i => i.Id == id, ct)
@@ -94,10 +124,28 @@ public sealed class IssueService(
             return issue;
         }
 
+        var team = await db.Teams.AsNoTracking().FirstOrDefaultAsync(t => t.Id == issue.TeamId, ct)
+            ?? throw new InvalidOperationException($"Team {issue.TeamId} does not exist.");
+
+        var targetKey = ToWorkflowStateKey(newStatus);
+        var targetState = await db.WorkflowStates.AsNoTracking().FirstOrDefaultAsync(
+            state => state.WorkspaceId == team.WorkspaceId && state.Key == targetKey, ct)
+            ?? throw new InvalidOperationException(
+                $"Workspace {team.WorkspaceId} has no workflow state with key '{targetKey}'.");
+
+        var validation = await workflowService.ValidateTransitionAsync(
+            team.WorkspaceId, issue.WorkflowStateId, targetState.Id, ct);
+        if (!validation.IsAllowed)
+        {
+            throw new WorkflowTransitionDeniedException(validation.ErrorCode!, validation.Message!);
+        }
+
         var oldStatus = issue.Status;
         issue.Status = newStatus;
+        issue.WorkflowStateId = targetState.Id;
+        issue.Version++;
         issue.UpdatedAt = DateTimeOffset.UtcNow;
-        if (newStatus.IsTerminal())
+        if (targetState.IsTerminal)
         {
             issue.CompletedAt ??= issue.UpdatedAt;
         }

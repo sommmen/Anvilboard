@@ -35,6 +35,13 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ### Fixed
 
+- `IssueService.ChangeStatusAsync` now delegates transition legality to
+  `IWorkflowService.ValidateTransitionAsync` instead of mutating the legacy `IssueStatus` enum
+  unconditionally: it resolves the requested status to the workspace's seeded `WorkflowState`,
+  validates the transition, and only on approval updates `Status`, `WorkflowStateId`, and
+  increments `Version`, throwing `WorkflowTransitionDeniedException` (mapped to HTTP 409 by
+  `IssueEndpoints`) on denial. Closes the integration gap between the Issue & Board Service and the
+  Workflow Engine foundation (`Anvilboard.Application`, `Anvilboard.Api`).
 - `anvilboard-web/proxy.conf.json` pointed `ng serve`'s dev proxy at port `5289`, which doesn't
   match `Anvilboard.Api`'s actual `launchSettings.json` port (`5089`); corrected so the Angular
   dev server workflow described in [DEVELOPMENT.md](DEVELOPMENT.md) works out of the box.

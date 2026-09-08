@@ -10,12 +10,22 @@
 | Priority | P0 |
 | SRS Refs | FR-WRK-001, FR-WRK-002, FR-WRK-003, FR-WRK-004, FR-WRK-005, FR-WRK-006, FR-WRK-007, FR-WRK-008, FR-WRK-009, FR-WRK-010, FR-WRK-011, FR-WRK-012, FR-WRK-013, FR-WRK-014, NFR-PERF-001, NFR-PERF-002, NFR-USB-001 |
 | Tech Design Ref | §8.1 — Issue & Board Service row; also §7.5 Computation Rules, §9 API Design, §12 Performance Design |
-| Depends On | workflow-engine, workspace-authorization, realtime-updates |
-| Blocks | integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, artifacts, issue-linking |
+| Depends On | workflow-engine, workspace-authorization |
+| Blocks | integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, artifacts, issue-linking, realtime-updates |
 
 ## Purpose
 
 The Issue & Board Service is the single read/write path for issue data in Anvilboard: it creates and mutates issues, answers board/list/dashboard queries, and enforces every issue-level business rule (workflow-transition validation, optimistic concurrency, workspace scoping) exactly once so the web UI, REST API, CLI, and MCP surfaces can never observe divergent behavior. It is the write path used both by direct user/agent mutations and by the Integration & Plugin Platform's ingestion pipeline (`UpsertFromExternalAsync`), which is what guarantees identical validation, activity, and audit behavior regardless of an issue's origin (§8.4 Data Flow).
+
+> **Dependency-order note (resolved):** an earlier revision of this front-matter listed
+> `realtime-updates` as a dependency of this service. `docs/features/overview.md`'s "Execution
+> order and rationale" section builds Issue & Board Service *before* Real-time Updates and states
+> the service "remains able to make mutations if a real-time transport is degraded" — i.e. IBS only
+> depends on the *abstraction* it publishes events through (a future `IRealtimeUpdatePublisher`),
+> not on a working realtime transport/hub existing yet. The dependency is the other way around:
+> Real-time Updates consumes events IBS publishes, so it is listed under **Blocks** above instead.
+> This slice implements the workflow-transition delegation gap without adding a real-time publisher;
+> that remains scoped to the `realtime-updates` feature.
 
 ## Scope
 
@@ -125,6 +135,13 @@ Current implementation (`Anvilboard.Application/Issues/IssueService.cs`) validat
 7. Persist and call `RecordAndDispatchAsync(issue, ActivityEventType.Created, ...)`.
 
 ### `RequestTransitionAsync(IssueId, targetWorkflowStateId, expectedVersion, actorId, ct)` (planned; replaces `ChangeStatusAsync`)
+
+> **Current progress:** `ChangeStatusAsync` now delegates transition legality to
+> `IWorkflowService.ValidateTransitionAsync` and updates `WorkflowStateId`/`Version` on success
+> (closing the previous gap where it mutated the legacy `IssueStatus` enum directly). It still
+> accepts the legacy `IssueStatus` enum rather than a `WorkflowStateId`/`expectedVersion` pair and
+> does not yet implement `PrePhaseChange`/`PostPhaseChange` hooks or real-time publish below — those
+> remain planned as described in this section.
 
 Replaces the current enum-based `ChangeStatusAsync(IssueId, IssueStatus, ...)` with a `WorkflowStateId`-based transition per tech-design §7.5/§8.3:
 

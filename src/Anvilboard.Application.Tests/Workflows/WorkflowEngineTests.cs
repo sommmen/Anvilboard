@@ -18,7 +18,7 @@ public sealed class WorkflowEngineTests
         var laterState = fixture.CreateState("todo", "Todo", order: 1);
         await fixture.Db.SaveChangesAsync();
 
-        var service = new IssueService(fixture.Db, new FakePluginRegistry(), NullLogger<IssueService>.Instance);
+        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
         var issue = await service.CreateAsync(fixture.TeamId, "Plan v0.1");
 
         Assert.Equal(fixture.Current.Id, issue.WorkflowStateId);
@@ -29,7 +29,7 @@ public sealed class WorkflowEngineTests
     public async Task UpsertFromExternalAsync_AssignsLowestOrderedActiveWorkflowState()
     {
         await using var fixture = await WorkflowFixture.CreateAsync();
-        var service = new IssueService(fixture.Db, new FakePluginRegistry(), NullLogger<IssueService>.Instance);
+        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
         var normalized = new NormalizedIssue(
             IntegrationProvider.GitHub,
             "github-42",
@@ -55,7 +55,7 @@ public sealed class WorkflowEngineTests
         await using var fixture = await WorkflowFixture.CreateAsync();
         fixture.Current.IsArchived = true;
         await fixture.Db.SaveChangesAsync();
-        var service = new IssueService(fixture.Db, new FakePluginRegistry(), NullLogger<IssueService>.Instance);
+        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.CreateAsync(fixture.TeamId, "No available state"));
@@ -164,6 +164,73 @@ public sealed class WorkflowEngineTests
         Assert.Equal(replacement.Id, (await fixture.Db.Issues.SingleAsync()).WorkflowStateId);
     }
 
+    [Fact]
+    public async Task ChangeStatusAsync_AllowedTransition_UpdatesWorkflowStateVersionAndStatus()
+    {
+        await using var fixture = await WorkflowFixture.CreateAsync();
+        var backlog = fixture.CreateState("backlog", "Backlog", order: 0);
+        var todo = fixture.CreateState("todo", "Todo", order: 1);
+        fixture.Db.WorkflowTransitions.Add(new WorkflowTransition
+        {
+            Id = WorkflowTransitionId.New(),
+            WorkspaceId = fixture.WorkspaceId,
+            FromStateId = backlog.Id,
+            ToStateId = todo.Id,
+        });
+        var issue = fixture.CreateIssue(backlog.Id);
+        issue.Status = IssueStatus.Backlog;
+        fixture.Db.Issues.Add(issue);
+        await fixture.Db.SaveChangesAsync();
+
+        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+        var updated = await service.ChangeStatusAsync(issue.Id, IssueStatus.Todo);
+
+        Assert.Equal(IssueStatus.Todo, updated.Status);
+        Assert.Equal(todo.Id, updated.WorkflowStateId);
+        Assert.Equal(1, updated.Version);
+        Assert.Null(updated.CompletedAt);
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_DisallowedTransition_ThrowsWorkflowTransitionDeniedAndLeavesIssueUnchanged()
+    {
+        await using var fixture = await WorkflowFixture.CreateAsync();
+        var backlog = fixture.CreateState("backlog", "Backlog", order: 0);
+        var done = fixture.CreateState("done", "Done", order: 4, isTerminal: true);
+        var issue = fixture.CreateIssue(backlog.Id);
+        issue.Status = IssueStatus.Backlog;
+        fixture.Db.Issues.Add(issue);
+        await fixture.Db.SaveChangesAsync();
+
+        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
+            () => service.ChangeStatusAsync(issue.Id, IssueStatus.Done));
+
+        Assert.Equal("INVALID_WORKFLOW_TRANSITION", exception.ErrorCode);
+        var unchanged = await fixture.Db.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id);
+        Assert.Equal(IssueStatus.Backlog, unchanged.Status);
+        Assert.Equal(backlog.Id, unchanged.WorkflowStateId);
+        Assert.Equal(0, unchanged.Version);
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_SameStatus_IsNoOpAndDoesNotCallWorkflowService()
+    {
+        await using var fixture = await WorkflowFixture.CreateAsync();
+        var backlog = fixture.CreateState("backlog", "Backlog", order: 0);
+        var issue = fixture.CreateIssue(backlog.Id);
+        issue.Status = IssueStatus.Backlog;
+        fixture.Db.Issues.Add(issue);
+        await fixture.Db.SaveChangesAsync();
+
+        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+        var result = await service.ChangeStatusAsync(issue.Id, IssueStatus.Backlog);
+
+        Assert.Equal(0, result.Version);
+        Assert.Equal(backlog.Id, result.WorkflowStateId);
+    }
+
     private sealed class FakePluginRegistry : IPluginRegistry
     {
         public IReadOnlyList<IAnvilboardPlugin> All { get; } = [];
@@ -253,7 +320,7 @@ public sealed class WorkflowEngineTests
         public Issue CreateIssue(WorkflowStateId workflowStateId) => new()
         {
             Id = IssueId.New(),
-            TeamId = TeamId.New(),
+            TeamId = TeamId,
             Key = "TST-1",
             Title = "Test issue",
             Status = IssueStatus.Backlog,
