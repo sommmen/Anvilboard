@@ -40,7 +40,7 @@ The Integration & Plugin Platform owns the lifecycle of external connectors (Git
 - Workflow-state legality and transition rules applied to synced issues (owned by `workflow-engine`; ingestion supplies only a *suggested* status/priority).
 - Authenticating the administrator configuring an integration or authorizing which role may do so (owned by `workspace-authorization`; this component receives an already-authorized request).
 - Audit-record persistence and retention (owned by `audit-and-recovery`; this component emits health/lifecycle events for that component to record).
-- Untrusted/sandboxed plugin code execution and remote marketplace distribution — first-party plugins ship in the product; optional third-party packages must be administrator-installed from a local signed package, pass manifest/contract/capability validation, and are treated as trusted in-process code.
+- Sandboxed/isolated plugin execution and remote marketplace distribution (out of scope for the pilot). Optional third-party plugins are instead administrator-installed from a local signed package, must pass manifest/contract/capability validation, and then run as trusted in-process code alongside first-party plugins — no sandbox boundary is implemented.
 - Artifact content storage/retrieval mechanics (owned by `artifacts.md`; this component only calls `IArtifactService` from within an enrichment hook).
 - Sync-conflict resolution UI/decision logic (owned by `issue-board-service`'s `/sync-conflicts/{conflictId}/resolve` endpoint; this component only detects and raises the conflict).
 

@@ -161,7 +161,7 @@ Logic steps for `RestoreAsync` (fail-closed, per AC-012):
 - **Zero secret exposure**: `ResultSummary` and backup manifests are both in scope for the NFR-SEC-001 zero-exposure target; redaction happens before the first write, not at read time.
 - **Fail-closed restore**: any integrity or compatibility failure must leave the target workspace unusable/unchanged rather than partially applied (AC-012); there is no "best-effort" restore path.
 - **Elevated authorization + explicit confirmation**: restore requires both an Administrator-level role check and an explicit workspace-identifying confirmation value; neither alone is sufficient.
-- **Recovery objectives**: pilot targets are RPO ≤ 24 hours and RTO ≤ 4 hours. Scheduled backups retain at least 7 daily and 4 weekly copies when enabled, and a verified restore drill is required before each pilot release candidate.
+- **Recovery objectives**: pilot targets are RPO ≤ 24 hours and RTO ≤ 4 hours. When an operator schedules the supported export externally (per Scope above), the retention target is at least 7 daily and 4 weekly copies; a verified restore drill is required before each pilot release candidate.
 - **Outcome-after-audit ordering**: backup/restore audit events are emitted after the outcome is determined, never speculatively before validation completes.
 
 ## Acceptance Criteria
