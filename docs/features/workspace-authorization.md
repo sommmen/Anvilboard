@@ -30,7 +30,7 @@ Workspace Authorization is the single, non-duplicated enforcement point that aut
 **Excluded:**
 - Workflow state/transition validation rules (see `workflow-engine.md`).
 - Persisting the `AuditEvents` row itself — this component only raises the decision (see `audit-and-recovery.md`).
-- An external identity provider / SSO integration — the exact credential mechanism is an open decision (`docs/anvilboard/tech-design.md` §11.1); this component implements the local-credential path only.
+- An external identity provider / SSO integration — the initial release implements local credentials and leaves an `ICredentialProvider` seam for a future OIDC/SSO adapter.
 - Per-field business-rule guards on issues, workflows, or integrations (enforced by their own components once Workspace Authorization has already granted access).
 
 ## Core Responsibilities
@@ -140,8 +140,8 @@ sequenceDiagram
 - **Single enforcement point**: `WorkspaceAuthorizationService` lives in `Anvilboard.Application` and is invoked identically by REST middleware, CLI command dispatch, and MCP tool-call dispatch — no endpoint, command, or tool handler may perform its own ad hoc authorization check (§11.2).
 - **No cross-workspace queries**: every repository call scoped through this component carries `WorkspaceId`; a query that could span workspaces is a defect, not a configuration choice (§11.2).
 - **Secret handling**: raw API tokens and session values are never persisted, logged, or returned after issuance; only the salted hash is stored (NFR-SEC-001).
-- **Open decision — credential mechanism**: local username/password vs. a pluggable SSO-ready provider abstraction is unresolved (`docs/anvilboard/tech-design.md` §11.1); this spec implements the local-credential path and leaves an `ICredentialProvider` seam for the future SSO decision.
-- **Open decision — access-denied status code**: whether cross-workspace access should uniformly return 403 `WORKSPACE_ACCESS_DENIED` or 404 in some contexts is tracked as OQ-001 (`docs/anvilboard/tech-design.md` §17); this spec defaults to the uniform 403 behavior described in AC-002/§7.7 until that decision is finalized.
+- **Credential mechanism decision**: use local username/password credentials for human access and workspace-scoped API tokens for automation, behind an `ICredentialProvider` seam for future OIDC/SSO.
+- **Access-denied status decision**: authenticated actors outside a workspace or lacking permission always receive `403 WORKSPACE_ACCESS_DENIED`; `404 REFERENCED_ENTITY_NOT_FOUND` is reserved for missing resources inside an authorized workspace.
 - **Transport security**: TLS 1.2+ is required for REST in supported production deployments (§11.3); local/dev loopback exceptions are documented separately.
 
 ## Acceptance Criteria

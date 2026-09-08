@@ -59,7 +59,7 @@ This SRS excludes mandatory cloud hosting, broad enterprise portfolio management
 
 ### 3.5 Overview
 
-Section 4 places Anvilboard in its operating context. Section 5 defines functional requirements and use cases. Section 6 states measurable quality constraints. Sections 7 and 8 define data and interface requirements. Section 9 maps requirements to their PRD sources and planned verification artifacts. Open decisions remain explicitly identified rather than silently assumed.
+Section 4 places Anvilboard in its operating context. Section 5 defines functional requirements and use cases. Section 6 states measurable quality constraints. Sections 7 and 8 define data and interface requirements. Section 9 maps requirements to their PRD sources and planned verification artifacts. Decision records are kept explicit and traceable rather than silently assumed.
 
 ## 4. Overall Description
 
@@ -118,7 +118,7 @@ graph TD
 - A deployment has an approved identity/token approach before multi-user or agent access is enabled.
 - GitHub and Linear credentials and API access are available when their integrations are enabled.
 - Users understand that an imported issue may be read-only for provider-controlled fields in the initial release.
-- The technical design will set exact credential storage, encryption, retention, RPO/RTO, and API version compatibility values for unresolved product decisions.
+- The technical design records the exact credential storage, encryption, retention, RPO/RTO, and API version compatibility decisions that govern implementation.
 
 ## 5. Functional Requirements
 
@@ -130,7 +130,7 @@ graph TD
 |---|---|
 | Priority | P0 |
 | Source | PRD-ANV-001 |
-| Description | The system shall authenticate every non-bootstrap human and programmatic request and authorize it against a workspace-scoped role before reading or mutating workspace data. |
+| Description | The system shall authenticate every non-bootstrap human and programmatic request and authorize it against a workspace-scoped role before reading or mutating workspace data. The initial deployment shall support local username/password credentials for humans and workspace-scoped API tokens for automation, behind a replaceable credential-provider abstraction. |
 | Acceptance criteria | (1) A request without valid credentials is rejected with a machine-readable authentication error. (2) A valid actor cannot read or mutate a workspace for which it lacks permission. (3) A role grants only documented operations. (4) Authorization decisions are auditable for mutations and security-relevant configuration actions. |
 
 **Primary actor:** Human user or automation agent.
@@ -145,7 +145,7 @@ graph TD
 
 **Alternative flows:**
 - **AF-1 Invalid or missing credential:** The system returns `AUTHENTICATION_REQUIRED` without exposing workspace existence.
-- **AF-2 Valid credential, missing workspace permission:** The system returns `WORKSPACE_ACCESS_DENIED` and a correlation ID; it does not return workspace data.
+- **AF-2 Valid credential, missing workspace permission:** The system returns `WORKSPACE_ACCESS_DENIED` with HTTP 403 and a correlation ID; it does not return workspace data. A 404 is reserved for a missing entity inside an already-authorized workspace.
 - **AF-3 Credential revoked or expired:** The system returns `CREDENTIAL_INVALID_OR_EXPIRED`; an agent treats this as non-retryable until a human refreshes authorization.
 
 #### FR-WS-002: Workspace configuration and workflow governance
@@ -540,7 +540,7 @@ The technical design shall define at-rest protection appropriate to the chosen d
 |---|---|
 | Priority | P0 |
 | Metric | Documented recovery drill |
-| Target | A pilot workspace completes a verified backup/restore drill at least once per release candidate; target RPO/RTO remain open decisions until pilot requirements are agreed. |
+| Target | A pilot workspace completes a verified backup/restore drill at least once per release candidate, with RPO ≤ 24 hours and RTO ≤ 4 hours. |
 | Threshold rationale | A recovery procedure proven once is the minimum evidence for a local-first product; fabricated availability percentages would not reflect the deployment model. |
 | Measurement | Signed operational checklist and automated integrity verification output. |
 
@@ -670,6 +670,10 @@ erDiagram
     }
 ```
 
+### 7.1.1 Persistence Technology Requirement
+
+The supported persistence path shall use Entity Framework Core with the SQLite provider (`Microsoft.EntityFrameworkCore.Sqlite`) to connect to the local workspace database. Application, API, agent, integration, audit, and backup workflows shall access persisted data through the shared `AnvilboardDbContext`/application-service boundary rather than opening independent raw SQLite connections for business mutations.
+
 ### 7.2 Data Dictionary
 
 | Field | Type | Constraints | Description |
@@ -780,4 +784,4 @@ The open questions in PRD §19 remain binding downstream decisions. In particula
 
 ### C. Requirement Quality Check
 
-Each P0/P1 requirement above has a unique stable ID, source, declarative shall statement, observable acceptance criteria, and a verification destination. Unresolved numerical operational thresholds are deliberately labeled as decisions rather than invented.
+Each P0/P1 requirement above has a unique stable ID, source, declarative shall statement, observable acceptance criteria, and a verification destination. Operational thresholds are stated where the current decision record has made them measurable; future changes must update the linked decision record and downstream tests.

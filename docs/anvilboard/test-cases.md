@@ -28,14 +28,15 @@
 | 5 | `SyncCoordinator`, webhook receivers, plugin registry | integration boundary | `Application.Tests/Sync/SyncCoordinatorTests.cs`; provider and infrastructure test projects | No | None |
 | 6 | idempotency, API v1, CLI and MCP contract adapters | application / transport | `Application.Tests/Automation/IdempotencyServiceTests.cs`; `Api.Tests/V1/AutomationSurfaceContractTests.cs`; `Agent.Tests/ContractEquivalenceTests.cs` | No | None |
 | 7 | audit redaction, backup and restore | operations services | `Application.Tests/Audit/AuditServiceTests.cs`; `Infrastructure.Tests/Audit/BackupServiceTests.cs` | No | None |
+| 8 | `AnvilboardDbContext` EF Core/SQLite registration and migrations | infrastructure boundary | `Infrastructure.Tests/Persistence/AnvilboardDbContextRegistrationTests.cs`; migration tests | No | None |
 
 ### 1.3 Coverage Summary
 
 | Metric | Value |
 |---|---:|
-| Target testable boundaries | 7 |
+| Target testable boundaries | 8 |
 | Boundaries with existing automated tests | 0 |
-| Planned test cases | 46 |
+| Planned test cases | 52 |
 | Current automated coverage | 0% (no test projects exist) |
 
 ### 1.4 Interaction Map
@@ -95,6 +96,7 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 | TC-AUTH-004 | Authorization | Viewer cannot mutate issue or workflow configuration | viewer role | `403 WORKSPACE_ACCESS_DENIED`; no state or audit mutation is written. | P0 | SQLite fixture | Planned |
 | TC-AUTH-005 | Authorization | Cross-workspace read and mutation are denied without disclosure | another workspace | `403 WORKSPACE_ACCESS_DENIED`; protected entity identifiers/details are not disclosed. | P0 | two-workspace fixture | Planned |
 | TC-AUTH-006 | Authorization | First administrator bootstrap is one-time and auditable | bootstrap | First valid bootstrap succeeds; a second bootstrap is rejected and cannot elevate another actor. | P0 | SQLite fixture | Planned |
+| TC-AUTH-007 | Authorization | Authenticated cross-workspace denial uses the uniform public contract | authorized actor, foreign workspace | Returns HTTP `403 WORKSPACE_ACCESS_DENIED` without resource fields; a missing entity inside an authorized workspace uses `404 REFERENCED_ENTITY_NOT_FOUND`. | P0 | REST/CLI/MCP fixture | Planned |
 | TC-WF-001 | Workflow | Allowed transition updates issue state and activity | allowed target | State changes to target and emits required activity/audit intent. | P0 | domain + SQLite fixture | Planned |
 | TC-WF-002 | Workflow | Disallowed transition returns cataloged conflict | disallowed target | `409 INVALID_WORKFLOW_TRANSITION` identifies current state, target, and rule; issue remains unchanged. | P0 | domain fixture | Planned |
 | TC-WF-003 | Workflow | Archived or inactive state cannot be selected | inactive state | `409 INVALID_WORKFLOW_TRANSITION`; no issue update occurs. | P0 | SQLite fixture | Planned |
@@ -125,6 +127,7 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 | TC-WEBHOOK-001 | Webhook | Invalid GitHub or Linear signature is rejected before ingestion | invalid signature | Request is rejected without calling the sync/issue service or persisting payload. | P0 | signed request fixture | Planned |
 | TC-PLUGIN-001 | Plugins | Incompatible plugin contract version is skipped safely | incompatible plugin | Plugin is unavailable with diagnostic health state; host process and compatible plugins continue. | P0 | plugin fixture | Planned |
 | TC-PLUGIN-002 | Plugins | Throwing plugin hook is isolated from committed mutation | hook exception | Primary issue mutation and audit commit remain successful; failure is observable without an unhandled exception. | P0 | throwing plugin fixture | Planned |
+| TC-PLUGIN-003 | Plugins | Third-party plugin package requires local administrator installation and validation | signed package, incompatible manifest | Unsigned, incompatible, or undeclared-capability packages are rejected and do not load; no remote marketplace lookup occurs. | P1 | package fixture | Planned |
 
 ### 3.4 Automation contracts
 
@@ -137,6 +140,7 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 | TC-AUTO-005 | REST API | v1 responses include declared API version and machine-readable error envelope | REST v1 | Success/error response contains contract version, stable code, safe message and correlation ID. | P0 | `WebApplicationFactory` | Planned |
 | TC-AUTO-006 | MCP | MCP stdout remains protocol-pure under successful and failing requests | MCP | stdout contains only protocol messages; diagnostics/logs go to the approved diagnostic sink. | P0 | MCP process harness | Planned |
 | TC-AUTO-007 | Rate limiter | Exceeded channel limit returns retryable catalog contract | rate limited | `429 RATE_LIMITED` includes `Retry-After`; no raw middleware response replaces catalog envelope. | P1 | fake clock | Planned |
+| TC-AUTO-008 | Idempotency | Terminal idempotency outcomes expire only after the documented retention window | retention | A replay within 30 days returns the stored outcome; an expired record is purged and a new request may execute with a new outcome. | P1 | deterministic clock + SQLite | Planned |
 
 ### 3.5 Audit and recovery
 
@@ -148,6 +152,8 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 | TC-BACKUP-001 | Backup | Verified backup restores a consistent authorized workspace round trip | valid backup | Restore reproduces selected supported data and emits audit event; authorization is rechecked before restore. | P0 | SQLite artifact fixture | Planned |
 | TC-BACKUP-002 | Backup | Corrupt, incompatible, schema-invalid, or checksum-invalid artifact fails closed | corrupt backup | `422 BACKUP_INTEGRITY_INVALID`; target data remains unchanged. | P0 | corrupted artifact matrix | Planned |
 | TC-BACKUP-003 | Backup | Unauthorized actor cannot restore a valid artifact | insufficient role | `403 WORKSPACE_ACCESS_DENIED`; artifact is not applied and no restore audit is written. | P0 | role fixture | Planned |
+| TC-BACKUP-004 | Backup | Backup and restore meet pilot recovery objectives without secret exposure | pilot recovery | Valid backup restores within 4 hours, represents no more than 24 hours of data loss, and contains no plaintext provider secrets (redacted at write time). | P1 | isolated host + secret provider | Planned |
+| TC-PERSIST-001 | Persistence | Infrastructure registration uses EF Core with the SQLite provider | application startup | `AnvilboardDbContext` is registered with `Microsoft.EntityFrameworkCore.Sqlite`, applies EF Core migrations, and business writes do not open an independent raw SQLite mutation path. | P0 | service-provider + temp SQLite fixture | Planned |
 
 ### 3.6 Performance and availability
 
@@ -155,6 +161,7 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 |---|---|---|---|---|---:|---|---|
 | TC-PERF-001 | Board/dashboard | Authorized interactive board query and summary meet SRS latency target at documented representative data volume | query load | p95 meets `NFR-PERF-001`; result correctness remains intact under concurrent reads. | P1 | production-like SQLite fixture | Planned |
 | TC-PERF-002 | Recovery | Supported single-host recovery completes within the documented recovery objective | valid backup | Restored instance becomes operational within `NFR-AVL-001` target with integrity verification retained. | P1 | isolated host fixture | Planned |
+| TC-PERF-003 | Pilot | Representative pilot cohort validates performance and adoption gates | 5–10 workspaces, 20–50 users, 1,000+ issues | Board and issue-detail latency targets pass and baseline comparison shows improvement in at least two of the three target outcomes. | P1 | pilot-like dataset | Planned |
 
 ## 4. Test Cases — Combination
 
@@ -244,10 +251,10 @@ AC identifiers are intentionally qualified with their source document because se
 
 | Metric | Value |
 |---|---:|
-| Total planned test cases | 46 |
-| P0 critical cases | 39 |
-| P1 important cases | 7 |
-| Unit/boundary cases | 41 |
+| Total planned test cases | 52 |
+| P0 critical cases | 41 |
+| P1 important cases | 11 |
+| Unit/boundary cases | 47 |
 | Combination cases | 5 |
 | Security-focused cases | 12 |
 | Persistence/recovery integrity cases | 11 |

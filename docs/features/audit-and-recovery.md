@@ -28,9 +28,9 @@ Audit & Recovery is the append-only accountability layer for every mutating comp
 
 **Excluded:**
 - Deciding *which* authorization/business-rule event is audit-worthy (owned by each respective mutating component); this component only records what it is told
-- Secret-at-rest storage algorithm/key management for integration credentials themselves (owned by `integration-and-plugin-platform`; open decision OQ-004)
+- Secret-at-rest storage algorithm/key management for integration credentials themselves (owned by `integration-and-plugin-platform`; implemented through the `ISecretStore`/Data Protection decision in tech-design §11.3)
 - Backup/restore administration UI (owned by `anvilboard-web`; this spec covers the backend service only)
-- Automated backup scheduling policy (not part of the initial release; §17 OQ-005/OQ-006 remain open)
+- Automated backup scheduling policy (not part of the initial release; operators may schedule the supported export externally — see this spec's Constraints for the retention target and PRD §19 decision row 4; the RPO/RTO validation cohort is defined in tech-design §17, OQ-006)
 
 ## Core Responsibilities
 
@@ -48,7 +48,7 @@ Audit & Recovery is the append-only accountability layer for every mutating comp
 - **`RestoreRequest`** (Administrator only) — workspace ID, backup artifact reference, confirmed workspace slug, requesting actor ID.
 
 ### Outputs
-- **`AuditEvents` row** (`Anvilboard.Infrastructure`/SQLite) — persisted, queryable, never mutated after insert.
+- **`AuditEvents` row** (`Anvilboard.Infrastructure` via EF Core/SQLite) — persisted, queryable, never mutated after insert.
 - **`AuditQueryResult`** (caller) — workspace-scoped, permission-gated page of audit records.
 - **Backup archive + manifest** (filesystem backup store, tech-design §6) — timestamped copy of the data store plus `backup-manifest.json`.
 - **`RestoreResult`** (caller) — success, or a specific `BACKUP_INTEGRITY_INVALID` cause; the target workspace is left unchanged on any failure.
@@ -161,7 +161,7 @@ Logic steps for `RestoreAsync` (fail-closed, per AC-012):
 - **Zero secret exposure**: `ResultSummary` and backup manifests are both in scope for the NFR-SEC-001 zero-exposure target; redaction happens before the first write, not at read time.
 - **Fail-closed restore**: any integrity or compatibility failure must leave the target workspace unusable/unchanged rather than partially applied (AC-012); there is no "best-effort" restore path.
 - **Elevated authorization + explicit confirmation**: restore requires both an Administrator-level role check and an explicit workspace-identifying confirmation value; neither alone is sufficient.
-- **Open recovery objectives**: exact RPO/RTO values remain an open decision (NFR-AVL-001); only a verified drill cadence of at least one per release candidate is currently committed.
+- **Recovery objectives**: pilot targets are RPO ≤ 24 hours and RTO ≤ 4 hours. When an operator schedules the supported export externally (per Scope above), the retention target is at least 7 daily and 4 weekly copies; a verified restore drill is required before each pilot release candidate.
 - **Outcome-after-audit ordering**: backup/restore audit events are emitted after the outcome is determined, never speculatively before validation completes.
 
 ## Acceptance Criteria

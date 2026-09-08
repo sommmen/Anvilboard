@@ -40,7 +40,7 @@ The Integration & Plugin Platform owns the lifecycle of external connectors (Git
 - Workflow-state legality and transition rules applied to synced issues (owned by `workflow-engine`; ingestion supplies only a *suggested* status/priority).
 - Authenticating the administrator configuring an integration or authorizing which role may do so (owned by `workspace-authorization`; this component receives an already-authorized request).
 - Audit-record persistence and retention (owned by `audit-and-recovery`; this component emits health/lifecycle events for that component to record).
-- Untrusted/sandboxed plugin code execution — only first-party-reviewed plugin packages are in scope (tech-design §3.3 non-goal).
+- Sandboxed/isolated plugin execution and remote marketplace distribution (out of scope for the pilot). Optional third-party plugins are instead administrator-installed from a local signed package, must pass manifest/contract/capability validation, and then run as trusted in-process code alongside first-party plugins — no sandbox boundary is implemented.
 - Artifact content storage/retrieval mechanics (owned by `artifacts.md`; this component only calls `IArtifactService` from within an enrichment hook).
 - Sync-conflict resolution UI/decision logic (owned by `issue-board-service`'s `/sync-conflicts/{conflictId}/resolve` endpoint; this component only detects and raises the conflict).
 
@@ -183,7 +183,7 @@ Tech-design §8.1 lists `IIntegrationService` as a public interface not yet impl
 | `EnableAsync(integrationId)` / `PauseAsync(integrationId)` | Toggles whether `SyncCoordinator` schedules polling/webhook processing for that source; a paused integration performs zero scheduled work (FR-INT-001 AC 3). | `INTEGRATION_PAUSED` returned by a sync action against an already-paused integration. |
 | `RemoveAsync(integrationId, confirm)` | Requires explicit confirmation; defines whether retained imported data is archived or remains read-only (FR-INT-001 AC 4). | `VALIDATION_FAILED` if `confirm` is absent. |
 
-Secret storage: credentials are never returned by any read method; every DTO returned by `IIntegrationService` redacts secret fields (mirrors `GitHubOptions.Token`/`WebhookSecret` today, which must move from plaintext configuration into the secret-provider abstraction per tech-design §11.3, open decision OQ-004).
+Secret storage: credentials are never returned by any read method; every DTO returned by `IIntegrationService` redacts secret fields. Values are persisted through `ISecretStore` using the ASP.NET Core Data Protection key ring defined in tech-design §11.3; provider configuration remains write-only and backups contain no plaintext secrets.
 
 ### Plugin manifest/compatibility validation (planned extension to `PluginRegistry`)
 
