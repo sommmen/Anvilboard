@@ -20,6 +20,8 @@ public sealed class AnvilboardDbContext(DbContextOptions<AnvilboardDbContext> op
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<ActivityEvent> ActivityEvents => Set<ActivityEvent>();
     public DbSet<ExternalLink> ExternalLinks => Set<ExternalLink>();
+    public DbSet<WorkflowState> WorkflowStates => Set<WorkflowState>();
+    public DbSet<WorkflowTransition> WorkflowTransitions => Set<WorkflowTransition>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

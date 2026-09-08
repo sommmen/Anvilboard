@@ -56,12 +56,14 @@ public sealed class IssueService(
         var team = await db.Teams.FirstOrDefaultAsync(t => t.Id == teamId, ct)
             ?? throw new InvalidOperationException($"Team {teamId} does not exist.");
 
+        var workflowStateId = await GetInitialWorkflowStateIdAsync(team.WorkspaceId, ct);
         var number = team.NextIssueNumber++;
         var now = DateTimeOffset.UtcNow;
         var issue = new Issue
         {
             Id = IssueId.New(),
             TeamId = teamId,
+            WorkflowStateId = workflowStateId,
             ProjectId = projectId,
             Key = $"{team.Key}-{number}",
             Title = title,
@@ -163,11 +165,13 @@ public sealed class IssueService(
         var now = DateTimeOffset.UtcNow;
         if (link is null)
         {
+            var workflowStateId = await GetInitialWorkflowStateIdAsync(team.WorkspaceId, ct);
             var number = team.NextIssueNumber++;
             issue = new Issue
             {
                 Id = IssueId.New(),
                 TeamId = team.Id,
+                WorkflowStateId = workflowStateId,
                 Key = $"{team.Key}-{number}",
                 Title = normalized.Title,
                 Description = normalized.Description,
@@ -212,6 +216,19 @@ public sealed class IssueService(
         await db.SaveChangesAsync(ct);
         await RecordAndDispatchAsync(issue, ActivityEventType.SyncedFromExternal, actorId: null, data: null, ct);
         return issue;
+    }
+
+    private async Task<WorkflowStateId> GetInitialWorkflowStateIdAsync(WorkspaceId workspaceId, CancellationToken ct)
+    {
+        var initialState = await db.WorkflowStates
+            .Where(state => state.WorkspaceId == workspaceId && !state.IsArchived)
+            .OrderBy(state => state.Order)
+            .ThenBy(state => state.Key)
+            .Select(state => (WorkflowStateId?)state.Id)
+            .FirstOrDefaultAsync(ct);
+
+        return initialState ?? throw new InvalidOperationException(
+            $"Workspace {workspaceId} has no active workflow state for new issues.");
     }
 
     private async Task RecordAndDispatchAsync(Issue issue, ActivityEventType type, MemberId? actorId, string? data, CancellationToken ct)

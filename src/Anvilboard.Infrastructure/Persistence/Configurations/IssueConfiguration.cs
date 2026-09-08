@@ -16,6 +16,9 @@ public sealed class IssueConfiguration : IEntityTypeConfiguration<Issue>
         builder.Property(i => i.ProjectId).HasConversion<StronglyTypedIdValueConverter<ProjectId>?>();
         builder.Property(i => i.AssigneeId).HasConversion<StronglyTypedIdValueConverter<MemberId>?>();
         builder.Property(i => i.CreatedById).HasConversion<StronglyTypedIdValueConverter<MemberId>?>();
+        builder.Property(i => i.WorkflowStateId)
+            .HasConversion<StronglyTypedIdValueConverter<WorkflowStateId>>()
+            .IsRequired();
         builder.Property(i => i.Key).HasMaxLength(20).IsRequired();
         builder.Property(i => i.Title).HasMaxLength(500).IsRequired();
 
