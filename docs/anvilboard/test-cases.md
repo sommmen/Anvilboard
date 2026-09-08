@@ -251,10 +251,10 @@ AC identifiers are intentionally qualified with their source document because se
 
 | Metric | Value |
 |---|---:|
-| Total planned test cases | 46 |
-| P0 critical cases | 39 |
-| P1 important cases | 7 |
-| Unit/boundary cases | 41 |
+| Total planned test cases | 52 |
+| P0 critical cases | 41 |
+| P1 important cases | 11 |
+| Unit/boundary cases | 47 |
 | Combination cases | 5 |
 | Security-focused cases | 12 |
 | Persistence/recovery integrity cases | 11 |
