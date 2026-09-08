@@ -127,15 +127,30 @@ is no separate migration command to run by hand.
 
 ## Testing
 
-There is no automated test project in the solution yet (`Anvilboard.slnx` currently has eight
-non-test projects only). Verification so far has been manual/smoke-test based: exercising the REST
-API, the Angular UI, and every agent CLI/MCP operation end-to-end against a real SQLite database.
-The canonical test strategy and coverage plan going forward is
-[`docs/anvilboard/test-cases.md`](docs/anvilboard/test-cases.md).
+Two xUnit projects cover the Workflow Engine (the first area with automated coverage):
 
-If you're adding a non-trivial feature, adding a proper test project (`Anvilboard.Application.Tests`
-against `IssueService`/`DashboardService` is the highest-value starting point, since both front
-ends depend on that layer) is a welcome contribution — see [CONTRIBUTING.md](CONTRIBUTING.md).
+| Project | What it covers |
+|---|---|
+| `src/Anvilboard.Application.Tests` | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior. No database — uses EF Core's in-memory-ish SQLite (`DataSource=:memory:`) per test. |
+| `src/Anvilboard.Infrastructure.Tests` | Migration integration test: seeds a legacy pre-workflow SQLite schema, runs the real EF Core migrations against it, and asserts the default workflow states/transitions were seeded and existing issues were backfilled to the matching workflow state. |
+
+Run everything except `Anvilboard.Agent` (which needs the `dotnet-agent-surface` sibling checkout
+described above) with:
+
+```powershell
+dotnet test src/Anvilboard.Application.Tests/Anvilboard.Application.Tests.csproj
+dotnet test src/Anvilboard.Infrastructure.Tests/Anvilboard.Infrastructure.Tests.csproj
+```
+
+`dotnet test Anvilboard.slnx` also works once `dotnet-agent-surface` is checked out next to this
+repo, since the full solution build includes `Anvilboard.Agent`.
+
+Beyond the Workflow Engine, most of the codebase (`IssueService`, `DashboardService`, the API
+endpoints, the agent surface) still has no automated coverage. The canonical test strategy and
+coverage plan going forward is
+[`docs/anvilboard/test-cases.md`](docs/anvilboard/test-cases.md). If you're adding a non-trivial
+feature elsewhere, adding tests for it (following the pattern in
+`Anvilboard.Application.Tests`) is a welcome contribution — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Coding conventions
 

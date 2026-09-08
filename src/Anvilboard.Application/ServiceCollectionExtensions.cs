@@ -1,6 +1,7 @@
 using Anvilboard.Application.Dashboard;
 using Anvilboard.Application.Issues;
 using Anvilboard.Application.Sync;
+using Anvilboard.Application.Workflows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -19,6 +20,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<IssueService>();
         services.AddScoped<DashboardService>();
+        services.AddScoped<IWorkflowService, WorkflowEngine>();
 
         return services;
     }

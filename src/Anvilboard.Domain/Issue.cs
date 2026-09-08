@@ -18,7 +18,19 @@ public sealed class Issue
     public required string Title { get; set; }
     public string? Description { get; set; }
 
+    /// <summary>
+    /// Deprecated legacy status retained while the workflow-state migration is rolled out.
+    /// New state changes will be coordinated through <see cref="WorkflowStateId"/> by the
+    /// Issue &amp; Board Service.
+    /// </summary>
     public IssueStatus Status { get; set; } = IssueStatus.Backlog;
+
+    /// <summary>The required, workspace-configured workflow state for this issue.</summary>
+    public WorkflowStateId WorkflowStateId { get; set; }
+
+    /// <summary>Optimistic-concurrency version incremented by the future Issue &amp; Board Service.</summary>
+    public int Version { get; set; }
+
     public IssuePriority Priority { get; set; } = IssuePriority.None;
 
     public MemberId? AssigneeId { get; set; }

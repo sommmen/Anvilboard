@@ -63,3 +63,15 @@ public readonly record struct MemberId(Guid Value) : IStronglyTypedId
     public static MemberId New() => new(Guid.NewGuid());
     public override string ToString() => Value.ToString();
 }
+
+public readonly record struct WorkflowStateId(Guid Value) : IStronglyTypedId
+{
+    public static WorkflowStateId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString();
+}
+
+public readonly record struct WorkflowTransitionId(Guid Value) : IStronglyTypedId
+{
+    public static WorkflowTransitionId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString();
+}
