@@ -1,0 +1,64 @@
+Build started 08/09/2026 21:16:18.
+     1>Project "C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\Anvilboard.slnx" on node 1 (VSTest target(s)).
+     1>ValidateSolutionConfiguration:
+         Building solution configuration "Release|Any CPU".
+Test run for C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Application.Tests\bin\Release\net10.0\Anvilboard.Application.Tests.dll (.NETCoreApp,Version=v10.0)
+Test run for C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Infrastructure.Tests\bin\Release\net10.0\Anvilboard.Infrastructure.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.11)
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.11)
+[xUnit.net 00:00:00.05]   Discovering: Anvilboard.Infrastructure.Tests
+[xUnit.net 00:00:00.05]   Discovering: Anvilboard.Application.Tests
+[xUnit.net 00:00:00.07]   Discovered:  Anvilboard.Infrastructure.Tests
+[xUnit.net 00:00:00.08]   Discovered:  Anvilboard.Application.Tests
+[xUnit.net 00:00:00.09]   Starting:    Anvilboard.Infrastructure.Tests
+[xUnit.net 00:00:00.09]   Starting:    Anvilboard.Application.Tests
+[xUnit.net 00:00:00.91]   Finished:    Anvilboard.Infrastructure.Tests
+  Passed Anvilboard.Infrastructure.Tests.Migrations.LegacyStatusMigrationTests.LegacyStatusMigration_SeedsWorkflowAndBackfillsIssueStates [793 ms]
+
+Test Run Successful.
+Total tests: 1
+     Passed: 1
+ Total time: 1,2544 Seconds
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.CreateWorkflowStateAsync_DuplicateKey_ThrowsValidationFailed [752 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.CreateLinkAsync_UnlistedTypeIsAcceptedVerbatim [779 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.CreateLinkAsync_DescriptionDefaultsToEmptyString [32 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.CreateLinkAsync_BlankType_ThrowsValidationFailed [6 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.CreateLinkAsync_CrossWorkspaceIssues_ThrowsReferencedEntityNotFound [6 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.ArchiveWorkflowStateAsync_DependentIssueWithoutReplacement_ThrowsValidationFailed [85 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.BlocksType_NeverGatesPhaseTransition [24 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.RemoveLinkAsync_LinkNotAssociatedWithIssue_ThrowsReferencedEntityNotFound [19 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.CreateAsync_AssignsLowestOrderedActiveWorkflowState [36 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.CreateLinkAsync_InverseDirection_IsPermitted [11 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.CreateAsync_WithoutActiveWorkflowState_Throws [7 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.CreateLinkAsync_MissingTargetIssue_ThrowsReferencedEntityNotFound [7 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.CreateLinkAsync_SelfLink_ThrowsValidationFailed [5 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.ListLinksAsync_OrdersByCreatedAtAscending [18 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.UpsertFromExternalAsync_AssignsLowestOrderedActiveWorkflowState [33 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.ArchiveWorkflowStateAsync_DependentIssueWithActiveReplacement_ReassignsAndArchives [17 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.RemoveLinkAsync_DeletesLinkAndRecordsActivityEvent [25 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.CreateLinkAsync_DirectionalDuplicate_ThrowsResourceAlreadyExists [7 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.ChangeStatusAsync_SameStatus_IsNoOpAndDoesNotCallWorkflowService [11 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.ListLinksAsync_ReturnsLinksForBothEndpointsWithComputedDirection [8 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.ValidateTransitionAsync_SameState_ReturnsAllowedNoOp [18 ms]
+  Passed Anvilboard.Application.Tests.Issues.IssueLinkServiceTests.CreateLinkAsync_PersistsDirectionalLinkAndActivityEvent [23 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.ValidateTransitionAsync_ConfiguredTransition_ReturnsAllowed [18 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.ChangeStatusAsync_TargetWorkflowStateMissing_ThrowsReferencedEntityNotFound [15 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.ValidateTransitionAsync_UnknownState_ReturnsReferencedEntityNotFound [5 ms]
+[xUnit.net 00:00:01.13]   Finished:    Anvilboard.Application.Tests
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.ChangeStatusAsync_DisallowedTransition_ThrowsWorkflowTransitionDeniedAndLeavesIssueUnchanged [6 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.ValidateTransitionAsync_UnconfiguredTransition_ReturnsInvalidWorkflowTransition [5 ms]
+  Passed Anvilboard.Application.Tests.Workflows.WorkflowEngineTests.ChangeStatusAsync_AllowedTransition_UpdatesWorkflowStateVersionAndStatus [7 ms]
+
+Test Run Successful.
+Total tests: 28
+     Passed: 28
+ Total time: 1,4540 Seconds
+     1>Done Building Project "C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\Anvilboard.slnx" (VSTest target(s)).
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:02.15

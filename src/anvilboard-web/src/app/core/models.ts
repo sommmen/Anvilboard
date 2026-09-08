@@ -102,6 +102,22 @@ export interface Comment {
   createdAt: string;
 }
 
+export enum IssueLinkDirection {
+  Outgoing = 0,
+  Incoming = 1,
+}
+
+export interface IssueLink {
+  id: string;
+  sourceIssueId: string;
+  targetIssueId: string;
+  type: string;
+  description: string;
+  createdById?: string | null;
+  createdAt: string;
+  direction: IssueLinkDirection;
+}
+
 export interface DashboardSummary {
   issuesByStatus: Record<string, number>;
   issuesBySource: Record<string, number>;

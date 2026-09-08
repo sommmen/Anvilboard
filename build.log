@@ -1,0 +1,19 @@
+  Anvilboard.Domain -> C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Domain\bin\Release\net10.0\Anvilboard.Domain.dll
+  Anvilboard.Plugins.Abstractions -> C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Plugins.Abstractions\bin\Release\net10.0\Anvilboard.Plugins.Abstractions.dll
+  Anvilboard.Integrations.GitHub -> C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Integrations.GitHub\bin\Release\net10.0\Anvilboard.Integrations.GitHub.dll
+  Anvilboard.Integrations.Linear -> C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Integrations.Linear\bin\Release\net10.0\Anvilboard.Integrations.Linear.dll
+  Anvilboard.Infrastructure -> C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Infrastructure\bin\Release\net10.0\Anvilboard.Infrastructure.dll
+  Anvilboard.Application -> C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Application\bin\Release\net10.0\Anvilboard.Application.dll
+  DotNetAgentSurface.Core -> C:\repos\Anvilboard.worktrees\dotnet-agent-surface\src\DotNetAgentSurface.Core\bin\Debug\net10.0\DotNetAgentSurface.Core.dll
+  Anvilboard.Application.Tests -> C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Application.Tests\bin\Release\net10.0\Anvilboard.Application.Tests.dll
+  Anvilboard.Infrastructure.Tests -> C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Infrastructure.Tests\bin\Release\net10.0\Anvilboard.Infrastructure.Tests.dll
+  Anvilboard.Api -> C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Api\bin\Release\net10.0\Anvilboard.Api.dll
+  DotNetAgentSurface.Mcp -> C:\repos\Anvilboard.worktrees\dotnet-agent-surface\src\DotNetAgentSurface.Mcp\bin\Debug\net10.0\DotNetAgentSurface.Mcp.dll
+  DotNetAgentSurface.CommandLine -> C:\repos\Anvilboard.worktrees\dotnet-agent-surface\src\DotNetAgentSurface.CommandLine\bin\Debug\net10.0\DotNetAgentSurface.CommandLine.dll
+  Anvilboard.Agent -> C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Agent\bin\Release\net10.0\Anvilboard.Agent.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:01.47

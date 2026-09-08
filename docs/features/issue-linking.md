@@ -8,6 +8,7 @@
 |-------|-------|
 | Component | issue-linking |
 | Priority | P2 |
+| Status | Implemented (all three operations: `CreateLinkAsync`, `ListLinksAsync`, `RemoveLinkAsync`) |
 | SRS Refs | FR-LNK-001 |
 | Tech Design Ref | §8.1 — Issue Linking row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `IssueLinks` table |
 | Depends On | issue-board-service, workspace-authorization |
@@ -45,9 +46,9 @@ Issue Linking lets an authorized actor or automation record a directional relati
 ## Interfaces
 
 ### Inputs
-- **`CreateLinkAsync(sourceIssueId, targetIssueId, type, description?, actorId?)`** — via `POST /api/v1/issues/{id}/links` and equivalent CLI/MCP operations; `description` defaults to an empty string when omitted; `actorId` is omitted when created by an automation/hook.
-- **`ListLinksAsync(issueId)`** — via `GET /api/v1/issues/{id}/links`; returns links where the given issue is either the source or the target.
-- **`RemoveLinkAsync(issueId, linkId, actorId)`** — via `DELETE /api/v1/issues/{id}/links/{linkId}`.
+- **`CreateLinkAsync(sourceIssueId, targetIssueId, type, description?, actorId?)`** — via `POST /api/issues/{id}/links` and equivalent CLI/MCP operations; `description` defaults to an empty string when omitted; `actorId` is omitted when created by an automation/hook.
+- **`ListLinksAsync(issueId)`** — via `GET /api/issues/{id}/links`; returns links where the given issue is either the source or the target.
+- **`RemoveLinkAsync(issueId, linkId, actorId)`** — via `DELETE /api/issues/{id}/links/{linkId}`.
 
 ### Outputs
 - **`IssueLink` DTO** — `(id, sourceIssueId, targetIssueId, type, description, createdById, createdAt, direction)`, where `direction` is a response-shaping field (`outgoing`/`incoming`) computed relative to the issue the list request was scoped to, so callers can render "this issue is a `PARENT` of that issue" (outgoing) versus "this issue is a child of that issue" (incoming, same row) correctly without re-deriving direction client-side.
@@ -83,7 +84,7 @@ sequenceDiagram
 
 ## Key Behaviors
 
-### `CreateLinkAsync(sourceIssueId, targetIssueId, type, description?, actorId?)` (planned; new)
+### `CreateLinkAsync(sourceIssueId, targetIssueId, type, description?, actorId?)` (implemented)
 
 1. Validate `sourceIssueId` and `targetIssueId` both resolve to existing issues in the same, caller-authorized workspace — `REFERENCED_ENTITY_NOT_FOUND` if either does not.
 2. Validate `sourceIssueId != targetIssueId` — `VALIDATION_FAILED` (an issue cannot link to itself).
@@ -93,14 +94,14 @@ sequenceDiagram
 6. Emit `IssueLinkCreated` audit/activity event with `(sourceIssueId, targetIssueId, type, description)`.
 7. Return the `IssueLink` DTO.
 
-### `ListLinksAsync(issueId)` (planned; new)
+### `ListLinksAsync(issueId)` (implemented)
 
 1. Validate `issueId` resolves to an existing issue in the caller's authorized workspace — `REFERENCED_ENTITY_NOT_FOUND` otherwise.
 2. Query all `IssueLink` rows where `issueId` matches either `SourceIssueId` or `TargetIssueId`.
 3. For each result, compute `direction`: `outgoing` when `issueId == SourceIssueId`, `incoming` when `issueId == TargetIssueId` — this is how bidirectional exposure is implemented without duplicating storage (FR-LNK-001 AC4). Clients combine `type` + `direction` to render type-appropriate inverse phrasing (e.g. `PARENT`/`outgoing` → "parent of", `PARENT`/`incoming` → "child of"; `BLOCKS`/`outgoing` → "blocks", `BLOCKS`/`incoming` → "blocked by") — this component does not maintain separate inverse-phrase strings server-side.
 4. Return the list ordered by `CreatedAt` ascending.
 
-### `RemoveLinkAsync(issueId, linkId, actorId)` (planned; new)
+### `RemoveLinkAsync(issueId, linkId, actorId)` (implemented)
 
 1. Validate the link exists and has `issueId` as either its `SourceIssueId` or `TargetIssueId` — `REFERENCED_ENTITY_NOT_FOUND` otherwise (removal can be initiated from either linked issue, consistent with bidirectional exposure).
 2. Delete the `IssueLink` row. Removal is a single-row delete — it never cascades to the linked issue itself or to any other link that issue participates in (zero cascade guarantee).

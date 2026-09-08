@@ -1,0 +1,21 @@
+
+> anvilboard-web@0.0.0 build
+> ng build
+
+> Building...
+√ Building...
+Initial chunk files | Names          |  Raw size | Estimated transfer size
+chunk-2ODWODEI.js   | -              | 157.91 kB |                46.32 kB
+main-76P2K7R6.js    | main           |  96.98 kB |                24.69 kB
+styles-2DWWTMZT.css | styles         |   1.92 kB |               625 bytes
+
+                    | Initial total  | 256.81 kB |                71.64 kB
+
+Lazy chunk files    | Names          |  Raw size | Estimated transfer size
+chunk-LYIBQ6AJ.js   | board-page     |  18.13 kB |                 4.44 kB
+chunk-QCYAJEQW.js   | dashboard-page |   4.94 kB |                 1.53 kB
+
+Application bundle generation complete. [1.708 seconds] - 2026-09-08T19:17:01.742Z
+
+Output location: C:\repos\Anvilboard.worktrees\feature-implementation-from-docs\src\Anvilboard.Api\wwwroot
+

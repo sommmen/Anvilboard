@@ -19,6 +19,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddAnvilboardApplication(this IServiceCollection services)
     {
         services.AddScoped<IssueService>();
+        services.AddScoped<IssueLinkService>();
         services.AddScoped<DashboardService>();
         services.AddScoped<IWorkflowService, WorkflowEngine>();
 

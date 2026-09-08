@@ -13,7 +13,7 @@ namespace Anvilboard.Agent;
 /// surface package, and lets this layer shape parameters/results (plain scalars, no EF entities)
 /// the way <see cref="OperationCatalog.Discover"/>'s reflection-based binding expects.
 /// </summary>
-public sealed class BoardAgentService(IssueService issues, DashboardService dashboard)
+public sealed class BoardAgentService(IssueService issues, IssueLinkService issueLinks, DashboardService dashboard)
 {
     [AgentOperation("list-issues", "Lists issues, optionally filtered by team, status, or assignee", Category = "issues", IsIdempotent = true)]
     public async Task<IReadOnlyList<IssueSummary>> ListIssuesAsync(
@@ -76,6 +76,19 @@ public sealed class BoardAgentService(IssueService issues, DashboardService dash
     {
         return await dashboard.GetSummaryAsync(teamId is { } t ? new TeamId(t) : null, cancellationToken);
     }
+
+    [AgentOperation("list-issue-links", "Lists links involving an issue, in either direction", Category = "issues", IsIdempotent = true)]
+    public async Task<IReadOnlyList<IssueLinkDto>> ListIssueLinksAsync(Guid issueId, CancellationToken cancellationToken = default) =>
+        await issueLinks.ListLinksAsync(new IssueId(issueId), cancellationToken);
+
+    [AgentOperation("create-issue-link", "Creates a directional, typed link from one issue to another", Category = "issues", Examples = ["create-issue-link issueId=... targetIssueId=... type=RELATED"])]
+    public async Task<IssueLinkDto> CreateIssueLinkAsync(
+        Guid issueId, Guid targetIssueId, string type, string? description = null, CancellationToken cancellationToken = default) =>
+        await issueLinks.CreateLinkAsync(new IssueId(issueId), new IssueId(targetIssueId), type, description, actorId: null, cancellationToken);
+
+    [AgentOperation("remove-issue-link", "Removes a link from an issue", Category = "issues")]
+    public async Task RemoveIssueLinkAsync(Guid issueId, Guid linkId, CancellationToken cancellationToken = default) =>
+        await issueLinks.RemoveLinkAsync(new IssueId(issueId), new IssueLinkId(linkId), actorId: null, cancellationToken);
 }
 
 public sealed record IssueSummary(

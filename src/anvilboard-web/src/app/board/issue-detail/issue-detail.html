@@ -32,6 +32,58 @@
       <span class="panel-value">{{ issue().assigneeId ?? 'Unassigned' }}</span>
     </div>
 
+    <div class="panel-links">
+      <span class="panel-label">Links</span>
+      @for (link of links(); track link.id) {
+        <div class="issue-link">
+          <span class="issue-link-type">{{ link.type }}</span>
+          <span class="issue-link-target">{{ linkedIssueLabel(link) }}</span>
+          @if (link.description) {
+            <span class="issue-link-description">{{ link.description }}</span>
+          }
+          <button class="issue-link-remove" (click)="removeLink(link)" title="Remove link">
+            ✕
+          </button>
+        </div>
+      } @empty {
+        <p class="panel-empty">No links yet.</p>
+      }
+
+      <div class="link-composer">
+        <input
+          type="text"
+          class="link-key-input"
+          placeholder="Issue key (e.g. ABC-12)"
+          [value]="linkTargetKey()"
+          (input)="linkTargetKey.set($any($event.target).value)"
+        />
+        <input
+          type="text"
+          class="link-type-input"
+          list="link-type-suggestions"
+          placeholder="Type (e.g. RELATED)"
+          [value]="linkType()"
+          (input)="linkType.set($any($event.target).value)"
+        />
+        <datalist id="link-type-suggestions">
+          @for (type of suggestedLinkTypes; track type) {
+            <option [value]="type"></option>
+          }
+        </datalist>
+        <input
+          type="text"
+          class="link-description-input"
+          placeholder="Description (optional)"
+          [value]="linkDescription()"
+          (input)="linkDescription.set($any($event.target).value)"
+        />
+        @if (linkError()) {
+          <p class="panel-error">{{ linkError() }}</p>
+        }
+        <button class="ab-btn ab-btn-primary" (click)="submitLink()">Add link</button>
+      </div>
+    </div>
+
     <div class="panel-comments">
       <span class="panel-label">Comments</span>
       @for (comment of comments(); track comment.id) {

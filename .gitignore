@@ -24,6 +24,7 @@ npm-debug.log*
 
 # IDEs / editors
 .idea/
+.serena/
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
