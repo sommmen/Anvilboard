@@ -116,7 +116,7 @@ Logic steps for `TryBeginAsync`:
 2. If no record exists, return `New`; the caller proceeds to execute the use case.
 3. If a record exists and its `RequestHash` matches the caller-supplied `canonicalRequestHash`, return `ReplayOriginal` carrying the stored `ResultPayload` — no mutation is re-executed (AC-007).
 4. If a record exists and `RequestHash` differs, return `KeyReusedWithDifferentPayload`; the caller translates this to `IDEMPOTENCY_KEY_REUSED` (409) and performs no mutation (AC-008).
-5. `CommitAsync` persists the row only once the wrapped use case has committed, setting `ExpiresAt = CreatedAt + retention` (the exact retention duration is open decision OQ-002; it must be documented and observable to clients per FR-AUT-002 criterion 4 regardless of the final value).
+5. `CommitAsync` persists the row only once the wrapped use case has committed, setting `ExpiresAt = CreatedAt + 30 days`; the retention policy is documented and observable to clients per FR-AUT-002 criterion 4.
 
 The canonical request hash is computed by serializing the request DTO with a stable, deterministic property order (existing `System.Text.Json` conventions, no incidental whitespace) and hashing with SHA-256; the actor identity is part of the same key tuple so two different actors sharing a key can never collide (§7.4 Edge Case Handling).
 
@@ -168,7 +168,7 @@ public static class ErrorCatalogTranslator
 ## Constraints
 
 - **Protocol isolation**: MCP stdout is reserved exclusively for JSON-RPC responses; all logs/diagnostics go to stderr (existing invariant preserved, not renegotiated by this feature).
-- **Idempotency retention**: the exact retention window is an open decision (OQ-002); implementation must keep it finite and documented regardless of the value chosen.
+- **Idempotency retention**: retain terminal outcomes for 30 days, then purge them through maintenance. A reused key with a changed actor or canonical payload is rejected as `IDEMPOTENCY_KEY_REUSED`.
 - **Error surface discipline**: `500 INTERNAL_ERROR` is reserved exclusively for unanticipated faults and is never a documented contract response; every anticipated failure has a stable §7.7 code.
 - **Versioning**: REST routes are versioned under `/api/v1`; a breaking contract change requires a new version segment, not an in-place change (NFR-MNT-001).
 - **Rate limiting**: `RATE_LIMITED` (429) responses must supply `Retry-After`; exact limit thresholds are deployment-configurable and out of scope for this spec.

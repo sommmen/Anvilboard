@@ -33,7 +33,7 @@ The dependency order above is also the recommended build order:
 1. **Workspace Authorization** first — every other component's endpoints, CLI operations, and MCP
    tools assume an already-authenticated, workspace-scoped actor. Building anything else first
    would mean retrofitting authorization checks later, which is exactly the "bolted-on later"
-   failure mode the technical design's `OQ-001`/§3.2 rationale calls out.
+   failure mode the technical design's resolved `OQ-001`/§3.2 rationale calls out.
 2. **Workflow Engine** next — the Issue & Board Service's status transitions, and the automation
    surface's transition operations, both depend on `WorkflowState`/`WorkflowTransition` existing
    and on the legacy `IssueStatus` migration path being defined.

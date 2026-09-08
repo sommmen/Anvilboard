@@ -106,7 +106,7 @@ flowchart TB
     System -->|"Loads and invokes"| Plugin
 ```
 
-Anvilboard is the system under design. Human users and automation agents are the only consumers; GitHub, Linear, and approved plugins are external systems the integration platform depends on. There is no external identity provider in the initial release — authentication is self-hosted (see §11.1 for the open decision on identity approach).
+Anvilboard is the system under design. Human users and automation agents are the only consumers; GitHub, Linear, and approved plugins are external systems the integration platform depends on. There is no external identity provider in the initial release — authentication is self-hosted through local credentials and workspace-scoped API tokens (see §11.1).
 
 ## 5. Solution Design
 
@@ -235,7 +235,9 @@ The container structure mirrors the current `src/` project layout. `Anvilboard.A
 | Frontend language | TypeScript | ~6.0.2 | Already pinned in `anvilboard-web/package.json`. |
 | Agent/automation host | .NET console host (CLI + MCP stdio JSON-RPC) | .NET 10 | Already in use in `Anvilboard.Agent`; extended, not replaced. |
 | Testing framework | xUnit (backend), existing Angular test runner (frontend) | Target-state choice; no backend test project exists yet | No backend test project exists yet (see DEVELOPMENT.md §Testing); xUnit is the chosen framework to adopt when one is added. Frontend keeps its existing Angular test runner; no new framework introduced. |
-| Containerization | Not currently containerized | N/A | Deployment packaging is an open decision (§17, OQ-005); single-host process deployment is the documented minimum. |
+| Containerization | Not currently containerized | N/A | Bare-process deployment is the supported pilot path; container packaging is optional and not a runtime prerequisite (§17, OQ-005). |
+
+Entity Framework Core with `Microsoft.EntityFrameworkCore.Sqlite` is the required application data-access path for the default local store. `Anvilboard.Infrastructure` owns `AnvilboardDbContext`, EF Core entity configuration, migrations, and SQLite connection configuration; higher layers consume persistence through application services or injected `AnvilboardDbContext` scopes. Raw SQLite connections are reserved for bounded operational routines that EF Core cannot model directly, such as WAL checkpointing before backup, and must not bypass domain validation, authorization, idempotency, or audit emission for business writes.
 
 ### 7.2 Naming Conventions
 
@@ -296,7 +298,7 @@ The container structure mirrors the current `src/` project layout. `Anvilboard.A
 | Limit | Value | Rationale |
 |---|---|---|
 | Board/list page size | Max 100 items per page (default 25) | Matches NFR-PERF-001 interactive target; consistent with template pagination defaults. |
-| Idempotency key retention | Documented, finite window (exact value: open decision OQ-002) | Bounds storage growth while covering realistic client retry windows. |
+| Idempotency key retention | 30 days for terminal outcomes | Bounds storage growth while covering realistic client retry windows; expired rows are purged by maintenance. |
 | Workflow states per workspace | No hard cap; UI/validation warns above a practical threshold (e.g., 25) | Configurable workflows must not be artificially constrained, but extreme counts indicate misconfiguration. |
 
 #### Edge Case Handling
@@ -874,11 +876,13 @@ erDiagram
 
 ### 10.4 Migration Strategy
 
+All schema changes are delivered as EF Core migrations in `Anvilboard.Infrastructure` against the SQLite provider; manual SQL scripts are not the primary deployment mechanism for the supported single-host path.
+
 1. Add new tables (`WorkflowStates`, `WorkflowTransitions`, `AuditEvents`, `IdempotencyRecords`) via an additive EF Core migration; no existing table is altered in this step.
 2. Seed one default workflow per existing workspace whose states/order exactly mirror the current `IssueStatus` enum (`Backlog`, `Todo`, `InProgress`, `InReview`, `Done`, `Cancelled`), preserving stable keys so historical reports remain interpretable.
 3. Add `Issues.WorkflowStateId` (nullable) and `Issues.Version` in a second migration; backfill `WorkflowStateId` from the existing `Status` column using the seeded mapping; then make `WorkflowStateId` NOT NULL.
 4. Ship one release with both `Status` (deprecated) and `WorkflowStateId` populated and readable, to allow rollback.
-5. Drop the `Status` column in a subsequent migration only after confirming no consumer depends on it (tracked as OQ-003).
+5. Drop the `Status` column in a subsequent migration only after one complete release, migration verification, a successful backup/restore drill, and confirmation that no API, UI, CLI, MCP, import, or report consumer depends on it.
 6. Add `Issues.Type`, convert `Issues.Priority` from enum to free-form `TEXT` (migrating the five existing enum values in place as literal strings), and add `Issues.SessionStateTitle`/`SessionStateDescription` plus nullable `ArchivedAt` (all additive/compatible; FR-WRK-005/006/011).
 7. Add `Comments.ParentCommentId` (nullable FK → `Comments.Id`) and `ExternalLinks.LastSyncedVersion` (nullable INTEGER, backfilled from each row's current `Issues.Version` at migration time so pre-existing synced issues are treated as already-synced rather than immediately conflicted).
 8. Add new `Artifacts` and `IssueLinks` tables via an additive migration; include the `pull_request` artifact kind, `DedupKey`, `Metadata`, and `UpdatedAt` from the first migration so provider upserts are idempotent. No backfill is required because both are new concepts.
@@ -889,7 +893,7 @@ erDiagram
 
 ### 11.1 Authentication
 
-- **Method:** Open decision (OQ-001). Candidates: local username/password with hashed credentials for the first release, or a pluggable credential provider abstraction to support future SSO. The PRD's small-team self-hosted framing favors starting with local credentials plus API tokens for agents.
+- **Method:** Local username/password credentials for humans and opaque workspace-scoped API tokens for agents, with an `ICredentialProvider` abstraction reserved for a future OIDC/SSO adapter.
 - **Token format (agents):** Opaque workspace-scoped API tokens, hashed at rest; not JWTs unless a future SSO decision requires them.
 - **Token storage (web):** HTTP-only secure session cookie for the SPA; bearer token for REST/CLI/MCP agent callers.
 - **Token revocation:** Administrator can revoke a member's session or an agent's API token immediately; revocation is audited.
@@ -911,7 +915,7 @@ erDiagram
 
 ### 11.3 Data Encryption
 
-**At Rest:** Integration secrets are stored via a secret-provider abstraction (not plaintext columns); exact algorithm/key-management choice is an open decision (OQ-004) since it depends on the deployment's ability to manage an external key store versus a local encrypted file. SQLite file-level encryption (e.g., host-disk encryption) is a documented deployment recommendation, not an application-layer guarantee, for the initial release.
+**At Rest:** Integration secrets are stored via `ISecretStore`, never in plaintext columns. The pilot implementation uses ASP.NET Core Data Protection with an administrator-provided key ring: the key ring is protected by the host's OS key store where available, and deployments without an OS key store must provide a protected key-ring location and explicit operator-managed access. Secret values are encrypted before persistence, are write-only through the application contract, and are excluded from logs, API responses, and backups unless encrypted inside the secret-store envelope. SQLite file-level encryption remains a deployment recommendation, not the sole application-layer control.
 
 **In Transit:** TLS 1.2+ is required for REST in supported production deployments; local/dev loopback exceptions are documented separately. Provider adapters use each provider's required TLS/webhook-signature scheme.
 
@@ -963,7 +967,7 @@ Formal alerting infrastructure is out of scope for the initial release given the
 
 ### 14.1 Environments
 
-Development, pilot/staging, and production, all using the same single-host deployable; environment separation is by configuration (connection string, secret provider, log level), not by architecture.
+Development, pilot/staging, and production, all using the same single-host bare-process deployable; environment separation is by configuration (connection string, secret provider, log level), not by architecture. Container packaging is optional and must not become a pilot prerequisite.
 
 ### 14.2 CI/CD Pipeline
 
@@ -1010,13 +1014,13 @@ Detailed test cases are tracked separately; see [`docs/anvilboard/test-cases.md`
 
 | ID | Question / Decision | Status | Decision | Date |
 |---|---|---|---|---|
-| OQ-001 | Should unauthorized workspace access return 403 (`WORKSPACE_ACCESS_DENIED`) uniformly, or 404 to avoid confirming workspace existence in some contexts? | Open | — | — |
-| OQ-002 | What is the exact idempotency-key retention window? | Open | — | — |
-| OQ-003 | When is it safe to drop the deprecated `Issues.Status` column after the workflow-state migration? | Open | — | — |
-| OQ-004 | What secret-at-rest storage mechanism is required for the target deployment profile (local encrypted file vs. external key management)? | Open | — | — |
-| OQ-005 | Is container packaging (Docker) required for the initial release, or is a bare-process deployment sufficient? | Open | — | — |
-| OQ-006 | What is the target pilot cohort size/profile used to validate NFR-PERF-001 and NFR-AVL-001? | Open | — | — |
-| OQ-007 | Should `Issues.Priority` remain a fixed enum or become workspace-configurable free-form text? | Resolved | Free-form `TEXT`, seeded with the prior five-value option set per workspace, per PRD §19 OQ-7 and FR-WRK-005. | This change |
+| OQ-001 | Should unauthorized workspace access return 403 (`WORKSPACE_ACCESS_DENIED`) uniformly, or 404 to avoid confirming workspace existence in some contexts? | Resolved | Return uniform `403 WORKSPACE_ACCESS_DENIED` for authenticated actors lacking membership or permission. Return `404 REFERENCED_ENTITY_NOT_FOUND` only for a resource that does not exist inside an already-authorized workspace. This keeps all channels consistent and prevents data disclosure through response bodies. | 2026-09-07 |
+| OQ-002 | What is the exact idempotency-key retention window? | Resolved | Retain successful and failed terminal outcomes for 30 days, keyed by actor, workspace, operation, and canonical request hash. Replays within the window return the stored outcome; payload or actor changes return `IDEMPOTENCY_KEY_REUSED`. Expired rows may be purged by a scheduled maintenance job and are never reused silently. | 2026-09-07 |
+| OQ-003 | When is it safe to drop the deprecated `Issues.Status` column after the workflow-state migration? | Resolved | Keep the compatibility column for one complete release after migration, require migration verification plus a successful backup/restore drill, and remove it only when API, UI, CLI, MCP, imports, and reports have no remaining reads or writes. | 2026-09-07 |
+| OQ-004 | What secret-at-rest storage mechanism is required for the target deployment profile (local encrypted file vs. external key management)? | Resolved | Use `ISecretStore` backed by ASP.NET Core Data Protection and an administrator-provided key ring; protect the key ring with the host OS key store where available, otherwise require an operator-managed protected location. No plaintext secret persistence or remote secret service is required for the pilot. | 2026-09-07 |
+| OQ-005 | Is container packaging (Docker) required for the initial release, or is a bare-process deployment sufficient? | Resolved | Bare-process deployment is the supported pilot and initial release path (`dotnet run` or a published executable plus the Angular assets). Container packaging is optional documentation work and cannot add a required runtime dependency or alter the backup contract. | 2026-09-07 |
+| OQ-006 | What is the target pilot cohort size/profile used to validate NFR-PERF-001 and NFR-AVL-001? | Resolved | Use 5–10 workspaces, 20–50 active users, and at least 1,000 imported issues over a 4-week pilot. Validate board p95 ≤ 2 seconds, single-issue p95 ≤ 1 second, RPO ≤ 24 hours, and RTO ≤ 4 hours before broadening rollout. | 2026-09-07 |
+| OQ-007 | Should `Issues.Priority` remain a fixed enum or become workspace-configurable free-form text? | Resolved | Free-form `TEXT`, seeded with the prior five-value option set per workspace, per PRD §19 OQ-7 and FR-WRK-005. | 2026-09-05 |
 | OQ-008 | How should LLM-driven intake/triage preprocessing and artifact expansion participate in the lifecycle model? | Resolved | All lifecycle extension points, including intake preprocessing and artifact expansion, are modeled uniformly as `ILifecycleHook<TEvent>` invocations at named `Pre*`/`Post*` points (`PreIngest`/`PostIngest`, `PrePhaseChange`/`PostPhaseChange`, `PreAddAttachment`/`PostAddAttachment`, etc.), each receiving a strongly-typed `HookContext<TEvent, TMetadata>`. `Pre*` points are mutation-capable and can veto; `Post*` points are best-effort/non-vetoing and budget-bounded. Per PRD §19 OQ-8 and FR-INT-004. | This change |
 | OQ-009 | What is the default behavior when a resync detects the local issue and the remote provider record both changed since the last sync? | Resolved | Flag as `SYNC_CONFLICT` and preserve both versions pending explicit actor resolution (keep-local / accept-remote / field-level merge) via a dashboard-exposed resolve endpoint; never silently overwrite. Comments, artifacts, and issue links are list-union merged additively before conflict detection so they do not themselves produce collisions; `SessionState` edits are excluded from conflict detection entirely. Per PRD §19 OQ-9 and FR-INT-005. | This change |
 | OQ-010 | Should the archive state be a separate top-level model (e.g., its own table) or a lightweight marker on `Issues`? | Resolved | Lightweight nullable `Issues.ArchivedAt` timestamp, orthogonal to `WorkflowStateId`/`IsTerminal`; explicit idempotent `ArchiveAsync`/`UnarchiveAsync` operations exclude archived issues from default board/list/dashboard results (`includeArchived=false` default) while preserving all related sub-resources and history. Per FR-WRK-011. | This change |

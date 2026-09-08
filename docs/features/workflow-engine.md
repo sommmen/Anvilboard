@@ -121,7 +121,7 @@ sequenceDiagram
 2. For each existing `Workspace`, seed exactly six `WorkflowState` rows using the field mapping below, preserving the stable keys so historical reports remain interpretable.
 3. Seed the default `WorkflowTransition` adjacency mirroring the legacy linear progression (`backlog→todo`, `todo→in_progress`, `in_progress→in_review`, `in_review→done`, `in_review→cancelled`, plus any state may transition to `cancelled`), so migrated workspaces are immediately usable without administrator configuration.
 4. Add `Issues.WorkflowStateId` (nullable) and `Issues.Version` in a second migration; backfill `WorkflowStateId` from `Issues.Status` using the mapping below, then make `WorkflowStateId` `NOT NULL`.
-5. Ship one release with both `Status` (deprecated) and `WorkflowStateId` populated and readable, to allow rollback; `Status` is dropped only in a later migration once no consumer depends on it (tracked as OQ-003).
+5. Ship one complete release with both `Status` (deprecated) and `WorkflowStateId` populated and readable, to allow rollback; `Status` is dropped only after migration verification, a successful backup/restore drill, and a repository-wide consumer check confirms no remaining reads or writes.
 
 **Field mapping — legacy `IssueStatus` → seeded `WorkflowState`:**
 
@@ -155,7 +155,7 @@ Archiving with open issues and no replacement is rejected (`VALIDATION_FAILED`) 
 - **No hardcoded enum ordering**: transitions are validated only against the adjacency list in `WorkflowTransitions`; a hardcoded `IssueStatus`-shaped ordering must never reappear in this component (§7.5).
 - **No hard cap on states per workspace**; UI/validation surfaces a warning above a practical threshold (e.g., 25) but does not reject (§7.4 System Limits).
 - **Authorization is not this component's concern**: every configuration or transition request reaching `WorkflowEngine` has already passed `workspace-authorization.md`'s `AuthorizeAsync`; this component does not re-check role permissions.
-- **Migration is rollback-safe**: both `Issues.Status` (deprecated) and `Issues.WorkflowStateId` remain populated for one full release before `Status` is dropped (§10.4 step 4/5, OQ-003).
+- **Migration is rollback-safe**: both `Issues.Status` (deprecated) and `Issues.WorkflowStateId` remain populated for one full release before `Status` is dropped (§10.4 step 4/5).
 - **Ordering guarantee**: the Issue & Board Service must call and receive `Allowed` from `ValidateTransitionAsync` strictly before persisting any `Issue.WorkflowStateId`/`Issue.Version` change — this component never mutates `Issues` itself, so the guarantee is enforced by call order, not by a shared transaction.
 - **Audit emission is downstream**: a successful transition's activity/audit record (actor, timestamp, correlation ID — FR-WS-003 AC3) is written by the Issue & Board Service after this component returns `Allowed`, not by the Workflow Engine.
 - **Hook dispatch is out of scope (new)**: `PrePhaseChange`/`PostPhaseChange` `ILifecycleHook<TEvent>` dispatch (`integration-and-plugin-platform.md`) is owned entirely by the Issue & Board Service around its call to `ValidateTransitionAsync`; this component has no dependency on the hook registry and never invokes a hook itself.
