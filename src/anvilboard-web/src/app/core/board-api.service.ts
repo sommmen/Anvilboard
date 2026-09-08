@@ -5,6 +5,7 @@ import {
   Comment,
   DashboardSummary,
   Issue,
+  IssueLink,
   IssuePriority,
   IssueStatus,
   Member,
@@ -72,6 +73,31 @@ export class BoardApiService {
 
   addComment(issueId: string, body: string, authorId?: string): Observable<Comment> {
     return this.http.post<Comment>(`/api/issues/${issueId}/comments`, { body, authorId });
+  }
+
+  listIssueLinks(issueId: string): Observable<IssueLink[]> {
+    return this.http.get<IssueLink[]>(`/api/issues/${issueId}/links`);
+  }
+
+  createIssueLink(
+    issueId: string,
+    targetIssueId: string,
+    type: string,
+    description?: string,
+    actorId?: string,
+  ): Observable<IssueLink> {
+    return this.http.post<IssueLink>(`/api/issues/${issueId}/links`, {
+      targetIssueId,
+      type,
+      description,
+      actorId,
+    });
+  }
+
+  removeIssueLink(issueId: string, linkId: string, actorId?: string): Observable<void> {
+    const params: Record<string, string> = {};
+    if (actorId) params['actorId'] = actorId;
+    return this.http.delete<void>(`/api/issues/${issueId}/links/${linkId}`, { params });
   }
 
   getDashboardSummary(teamId?: string): Observable<DashboardSummary> {

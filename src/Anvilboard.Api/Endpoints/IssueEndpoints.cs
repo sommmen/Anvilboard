@@ -71,6 +71,49 @@ public static class IssueEndpoints
                 new IssueId(id), request.Body, request.AuthorId is { } a ? new MemberId(a) : null, ct);
             return Results.Created($"/api/issues/{id}/comments/{comment.Id.Value}", comment);
         });
+
+        group.MapGet("/{id:guid}/links", async (Guid id, IssueLinkService service, CancellationToken ct) =>
+        {
+            var links = await service.ListLinksAsync(new IssueId(id), ct);
+            return Results.Ok(links);
+        });
+
+        group.MapPost("/{id:guid}/links", async (Guid id, CreateIssueLinkRequest request, IssueLinkService service, CancellationToken ct) =>
+        {
+            try
+            {
+                var link = await service.CreateLinkAsync(
+                    new IssueId(id),
+                    new IssueId(request.TargetIssueId),
+                    request.Type,
+                    request.Description,
+                    request.ActorId is { } a ? new MemberId(a) : null,
+                    ct);
+                return Results.Created($"/api/issues/{id}/links/{link.Id}", link);
+            }
+            catch (IssueLinkException ex)
+            {
+                return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: ex.ErrorCode switch
+                {
+                    "REFERENCED_ENTITY_NOT_FOUND" => StatusCodes.Status404NotFound,
+                    "RESOURCE_ALREADY_EXISTS" => StatusCodes.Status409Conflict,
+                    _ => StatusCodes.Status400BadRequest,
+                });
+            }
+        });
+
+        group.MapDelete("/{id:guid}/links/{linkId:guid}", async (Guid id, Guid linkId, Guid? actorId, IssueLinkService service, CancellationToken ct) =>
+        {
+            try
+            {
+                await service.RemoveLinkAsync(new IssueId(id), new IssueLinkId(linkId), actorId is { } a ? new MemberId(a) : null, ct);
+                return Results.NoContent();
+            }
+            catch (IssueLinkException ex)
+            {
+                return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: StatusCodes.Status404NotFound);
+            }
+        });
     }
 }
 
@@ -78,3 +121,4 @@ public sealed record CreateIssueRequest(Guid TeamId, string Title, string? Descr
 public sealed record ChangeStatusRequest(IssueStatus Status);
 public sealed record AssignRequest(Guid? AssigneeId);
 public sealed record AddCommentRequest(string Body, Guid? AuthorId = null);
+public sealed record CreateIssueLinkRequest(Guid TargetIssueId, string Type, string? Description = null, Guid? ActorId = null);

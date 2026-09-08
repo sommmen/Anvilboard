@@ -27,4 +27,6 @@ public enum ActivityEventType
     CommentAdded,
     LabelsChanged,
     SyncedFromExternal,
+    IssueLinkCreated,
+    IssueLinkRemoved,
 }
