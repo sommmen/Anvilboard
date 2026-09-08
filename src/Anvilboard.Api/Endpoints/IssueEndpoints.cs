@@ -52,7 +52,10 @@ public static class IssueEndpoints
             }
             catch (WorkflowTransitionDeniedException ex)
             {
-                return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
+                var statusCode = ex.ErrorCode == "REFERENCED_ENTITY_NOT_FOUND"
+                    ? StatusCodes.Status404NotFound
+                    : StatusCodes.Status409Conflict;
+                return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: statusCode);
             }
         });
 

@@ -231,6 +231,28 @@ public sealed class WorkflowEngineTests
         Assert.Equal(backlog.Id, result.WorkflowStateId);
     }
 
+    [Fact]
+    public async Task ChangeStatusAsync_TargetWorkflowStateMissing_ThrowsReferencedEntityNotFound()
+    {
+        await using var fixture = await WorkflowFixture.CreateAsync();
+        var backlog = fixture.CreateState("backlog", "Backlog", order: 0);
+        var issue = fixture.CreateIssue(backlog.Id);
+        issue.Status = IssueStatus.Backlog;
+        fixture.Db.Issues.Add(issue);
+        await fixture.Db.SaveChangesAsync();
+
+        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
+            () => service.ChangeStatusAsync(issue.Id, IssueStatus.Todo));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", exception.ErrorCode);
+        var unchanged = await fixture.Db.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id);
+        Assert.Equal(IssueStatus.Backlog, unchanged.Status);
+        Assert.Equal(backlog.Id, unchanged.WorkflowStateId);
+        Assert.Equal(0, unchanged.Version);
+    }
+
     private sealed class FakePluginRegistry : IPluginRegistry
     {
         public IReadOnlyList<IAnvilboardPlugin> All { get; } = [];

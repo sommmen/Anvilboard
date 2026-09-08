@@ -130,7 +130,8 @@ public sealed class IssueService(
         var targetKey = ToWorkflowStateKey(newStatus);
         var targetState = await db.WorkflowStates.AsNoTracking().FirstOrDefaultAsync(
             state => state.WorkspaceId == team.WorkspaceId && state.Key == targetKey, ct)
-            ?? throw new InvalidOperationException(
+            ?? throw new WorkflowTransitionDeniedException(
+                "REFERENCED_ENTITY_NOT_FOUND",
                 $"Workspace {team.WorkspaceId} has no workflow state with key '{targetKey}'.");
 
         var validation = await workflowService.ValidateTransitionAsync(
