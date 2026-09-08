@@ -41,7 +41,9 @@
           @if (link.description) {
             <span class="issue-link-description">{{ link.description }}</span>
           }
-          <button class="issue-link-remove" (click)="removeLink(link)" title="Remove link">✕</button>
+          <button class="issue-link-remove" (click)="removeLink(link)" title="Remove link">
+            ✕
+          </button>
         </div>
       } @empty {
         <p class="panel-empty">No links yet.</p>

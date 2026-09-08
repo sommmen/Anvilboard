@@ -94,7 +94,9 @@ export class IssueDetail {
           this.linkDescription.set('');
         },
         error: (err) => {
-          this.linkError.set(err?.error?.detail ?? err?.error?.title ?? 'Could not create the link.');
+          this.linkError.set(
+            err?.error?.detail ?? err?.error?.title ?? 'Could not create the link.',
+          );
         },
       });
   }
@@ -111,7 +113,8 @@ export class IssueDetail {
   }
 
   linkedIssueLabel(link: IssueLink): string {
-    const linkedId = link.direction === IssueLinkDirection.Outgoing ? link.targetIssueId : link.sourceIssueId;
+    const linkedId =
+      link.direction === IssueLinkDirection.Outgoing ? link.targetIssueId : link.sourceIssueId;
     return this.linkableIssues().find((candidate) => candidate.id === linkedId)?.key ?? linkedId;
   }
 
