@@ -168,7 +168,7 @@ public static class ErrorCatalogTranslator
 ## Constraints
 
 - **Protocol isolation**: MCP stdout is reserved exclusively for JSON-RPC responses; all logs/diagnostics go to stderr (existing invariant preserved, not renegotiated by this feature).
-- **Idempotency retention**: retain terminal outcomes for 30 days, then purge them through maintenance. A reused key with a changed actor or canonical payload is rejected as `IDEMPOTENCY_KEY_REUSED`.
+- **Idempotency retention**: retain terminal outcomes for 30 days, then purge them through maintenance. A reused key with a changed canonical payload (same `WorkspaceId`/`ActorId`/`Operation`/`Key` tuple) is rejected as `IDEMPOTENCY_KEY_REUSED`; a changed actor produces a distinct key tuple entirely (a `New` outcome), never a reuse rejection.
 - **Error surface discipline**: `500 INTERNAL_ERROR` is reserved exclusively for unanticipated faults and is never a documented contract response; every anticipated failure has a stable §7.7 code.
 - **Versioning**: REST routes are versioned under `/api/v1`; a breaking contract change requires a new version segment, not an in-place change (NFR-MNT-001).
 - **Rate limiting**: `RATE_LIMITED` (429) responses must supply `Retry-After`; exact limit thresholds are deployment-configurable and out of scope for this spec.
