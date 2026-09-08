@@ -30,7 +30,7 @@ Audit & Recovery is the append-only accountability layer for every mutating comp
 - Deciding *which* authorization/business-rule event is audit-worthy (owned by each respective mutating component); this component only records what it is told
 - Secret-at-rest storage algorithm/key management for integration credentials themselves (owned by `integration-and-plugin-platform`; implemented through the `ISecretStore`/Data Protection decision in tech-design §11.3)
 - Backup/restore administration UI (owned by `anvilboard-web`; this spec covers the backend service only)
-- Automated backup scheduling policy (not part of the initial release; operators may schedule the supported export externally, while the pilot's recovery objectives and retention targets are defined in tech-design §17)
+- Automated backup scheduling policy (not part of the initial release; operators may schedule the supported export externally — see this spec's Constraints for the retention target and PRD §19 decision row 4; the RPO/RTO validation cohort is defined in tech-design §17, OQ-006)
 
 ## Core Responsibilities
 
