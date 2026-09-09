@@ -35,11 +35,30 @@ public sealed class PluginRegistry : IPluginRegistry
                 var assembly = Assembly.LoadFrom(path);
                 foreach (var pluginType in assembly.GetTypes().Where(IsPluginImplementation))
                 {
-                    var plugin = (IAnvilboardPlugin)ActivatorUtilities.CreateInstance(serviceProvider, pluginType);
-                    _all.Add(plugin);
-                    logger.LogInformation(
-                        "Loaded plugin {PluginKey} ({PluginType}) from {AssemblyPath}",
-                        plugin.Manifest.Key, pluginType.FullName, path);
+                    try
+                    {
+                        var plugin = (IAnvilboardPlugin)ActivatorUtilities.CreateInstance(serviceProvider, pluginType);
+                        if (!StringComparer.Ordinal.Equals(plugin.Manifest.SupportedContractVersion, PluginContract.Version))
+                        {
+                            logger.LogWarning(
+                                "Skipped plugin {PluginKey} ({PluginType}) from {AssemblyPath}: contract version {PluginContractVersion} is incompatible with host version {HostContractVersion}",
+                                plugin.Manifest.Key,
+                                pluginType.FullName,
+                                path,
+                                plugin.Manifest.SupportedContractVersion,
+                                PluginContract.Version);
+                            continue;
+                        }
+
+                        _all.Add(plugin);
+                        logger.LogInformation(
+                            "Loaded plugin {PluginKey} ({PluginType}) from {AssemblyPath}",
+                            plugin.Manifest.Key, pluginType.FullName, path);
+                    }
+                    catch (Exception exception)
+                    {
+                        logger.LogWarning(exception, "Failed to load plugin type {PluginType} from {AssemblyPath}", pluginType.FullName, path);
+                    }
                 }
             }
             catch (Exception ex)

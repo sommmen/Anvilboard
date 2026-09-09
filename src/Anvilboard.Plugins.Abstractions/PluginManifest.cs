@@ -13,7 +13,18 @@ namespace Anvilboard.Plugins.Abstractions;
 /// </param>
 /// <param name="DisplayName">Human-readable name shown in the UI's integrations page.</param>
 /// <param name="Version">Informational version string, shown in diagnostics/CLI output.</param>
-public sealed record PluginManifest(string Key, string DisplayName, string Version);
+/// <param name="SupportedContractVersion">Plugin API contract version required by this plugin.</param>
+public sealed record PluginManifest(
+    string Key,
+    string DisplayName,
+    string Version,
+    string SupportedContractVersion = PluginContract.Version);
+
+/// <summary>Version of the plugin contract supported by this host release.</summary>
+public static class PluginContract
+{
+    public const string Version = "1.0";
+}
 
 /// <summary>
 /// Marker/root interface every plugin type (ingestion source, webhook receiver, or issue hook)

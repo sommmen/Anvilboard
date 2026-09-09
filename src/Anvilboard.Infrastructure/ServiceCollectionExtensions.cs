@@ -25,6 +25,9 @@ public static class ServiceCollectionExtensions
             options.UseSqlite($"Data Source={dbOptions.DatabasePath}");
         });
 
+        services.AddScoped<PluginConfigStateStore>();
+        services.AddScoped<IPluginConfigStore>(serviceProvider => serviceProvider.GetRequiredService<PluginConfigStateStore>());
+        services.AddScoped<IPluginStateStore>(serviceProvider => serviceProvider.GetRequiredService<PluginConfigStateStore>());
         services.AddSingleton<IPluginRegistry, PluginRegistry>();
 
         return services;
