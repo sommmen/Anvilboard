@@ -7,7 +7,9 @@ namespace Anvilboard.Api.Endpoints;
 /// Single dynamic route, <c>POST /webhooks/{provider}</c>, dispatching to whichever registered
 /// <see cref="IWebhookReceiver"/> claims that <see cref="IWebhookReceiver.RoutePrefix"/> — this is
 /// the only place in the API host that knows about webhooks at all; everything provider-specific
-/// (signature verification, payload shape) lives inside the plugin itself.
+/// (signature verification, payload shape) lives inside the plugin itself. Anonymous at the
+/// workspace-authorization layer (external providers hold no Anvilboard credential) — each
+/// receiver verifies its own provider-specific HMAC signature before trusting the payload.
 /// </summary>
 public static class WebhookEndpoints
 {
@@ -43,6 +45,6 @@ public static class WebhookEndpoints
             }
 
             return Results.Ok(new { accepted = true, issuesProcessed = result.Issues.Count });
-        }).WithTags("Webhooks");
+        }).WithTags("Webhooks").AllowAnonymous();
     }
 }

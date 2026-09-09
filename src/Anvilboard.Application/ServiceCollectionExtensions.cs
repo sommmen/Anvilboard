@@ -1,8 +1,10 @@
+using Anvilboard.Application.Authorization;
 using Anvilboard.Application.Dashboard;
 using Anvilboard.Application.Issues;
 using Anvilboard.Application.Sync;
 using Anvilboard.Application.Workflows;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Anvilboard.Application;
@@ -22,6 +24,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IssueLinkService>();
         services.AddScoped<DashboardService>();
         services.AddScoped<IWorkflowService, WorkflowEngine>();
+        services.AddScoped<IWorkspaceAuthorizationService, WorkspaceAuthorizationService>();
+        services.TryAddScoped<IAuditService, NoOpAuditService>();
 
         return services;
     }

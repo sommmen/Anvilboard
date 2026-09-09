@@ -81,15 +81,18 @@ them as satellite components of the Issue & Board Service.
 
 ## Status
 
-All eight feature specs are in **draft** status: authored against the current
+Feature specs were authored against the current
 [`docs/anvilboard/tech-design.md`](../anvilboard/tech-design.md) and
 [`docs/anvilboard/srs.md`](../anvilboard/srs.md), grounded in the existing `src/` codebase where
 components already exist (e.g. `IssueService`, `DashboardService`, `SyncCoordinator`,
-`BoardAgentService`) and clearly marking planned additions (e.g. `IWorkspaceAuthorizationService`,
-`WorkflowState`, `IIntegrationService`, `IArtifactService`, `IIssueLinkService`) that do not yet
-exist in code. None have been implemented or reviewed against running code yet — treat them as the
-target contract, not the current behavior, until an implementation PR lands and this line is
-updated.
+`BoardAgentService`) and clearly marking planned additions that did not yet exist in code at the
+time of authoring. Two specs have since been implemented and merged: `issue-linking.md`
+(`IIssueLinkService`) and `workspace-authorization.md` (`IWorkspaceAuthorizationService`,
+`WorkspaceAuthorizationMiddleware`). The remaining specs (`workflow-engine.md`,
+`issue-board-service.md`, `integration-and-plugin-platform.md`, `agent-and-automation-surface.md`,
+`audit-and-recovery.md`, `realtime-updates.md`, `artifacts.md`) are still in **draft** status —
+treat them as the target contract, not the current behavior, until an implementation PR lands and
+this line is updated. See each spec's own `Status` field for its individual state.
 
 ## See also
 

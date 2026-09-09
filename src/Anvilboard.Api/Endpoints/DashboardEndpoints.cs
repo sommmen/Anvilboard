@@ -1,3 +1,4 @@
+using Anvilboard.Api.Authorization;
 using Anvilboard.Application.Dashboard;
 using Anvilboard.Domain;
 
@@ -11,6 +12,6 @@ public static class DashboardEndpoints
         {
             var summary = await service.GetSummaryAsync(teamId is { } t ? new TeamId(t) : null, ct);
             return Results.Ok(summary);
-        }).WithTags("Dashboard");
+        }).WithTags("Dashboard").RequirePermission(Permission.ReadDashboard);
     }
 }
