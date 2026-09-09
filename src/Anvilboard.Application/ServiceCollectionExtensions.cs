@@ -1,4 +1,5 @@
 using Anvilboard.Application.Authorization;
+using Anvilboard.Application.Automation;
 using Anvilboard.Application.Dashboard;
 using Anvilboard.Application.Issues;
 using Anvilboard.Application.Sync;
@@ -26,6 +27,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowService, WorkflowEngine>();
         services.AddScoped<IWorkspaceAuthorizationService, WorkspaceAuthorizationService>();
         services.TryAddScoped<IAuditService, NoOpAuditService>();
+        services.AddScoped<IIdempotencyService, IdempotencyService>();
 
         return services;
     }
