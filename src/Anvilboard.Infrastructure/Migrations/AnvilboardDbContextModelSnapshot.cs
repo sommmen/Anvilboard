@@ -324,7 +324,6 @@ namespace Anvilboard.Infrastructure.Migrations
                     b.ToTable("IdempotencyRecords");
                 });
 
-<<<<<<< HEAD
             modelBuilder.Entity("Anvilboard.Domain.Integration", b =>
                 {
                     b.Property<Guid>("Id")
@@ -364,8 +363,6 @@ namespace Anvilboard.Infrastructure.Migrations
                     b.ToTable("Integrations");
                 });
 
-=======
->>>>>>> 4ad82c3 (feat(automation): add idempotency foundations)
             modelBuilder.Entity("Anvilboard.Domain.Issue", b =>
                 {
                     b.Property<Guid>("Id")

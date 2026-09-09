@@ -30,11 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<DashboardService>();
         services.AddScoped<IWorkflowService, WorkflowEngine>();
         services.AddScoped<IWorkspaceAuthorizationService, WorkspaceAuthorizationService>();
-<<<<<<< HEAD
         services.TryAddScoped<IAuditService, AuditService>();
-=======
-        services.TryAddScoped<IAuditService, NoOpAuditService>();
->>>>>>> 4ad82c3 (feat(automation): add idempotency foundations)
         services.AddScoped<IIdempotencyService, IdempotencyService>();
 
         return services;
