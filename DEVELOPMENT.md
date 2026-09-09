@@ -132,7 +132,7 @@ webhook validation:
 
 | Project | What it covers |
 |---|---|
-| `src/Anvilboard.Application.Tests` | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior. No database — uses EF Core's in-memory-ish SQLite (`DataSource=:memory:`) per test. |
+| `src/Anvilboard.Application.Tests` | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior; also covers workspace authorization, issue linking, and the automation surface foundations (`IdempotencyService` replay/reuse detection, `CorrelationContext`, `ErrorCatalogTranslator`). No database — uses EF Core's in-memory-ish SQLite (`DataSource=:memory:`) per test. |
 | `src/Anvilboard.Infrastructure.Tests` | Migration integration test: seeds a legacy pre-workflow SQLite schema, runs the real EF Core migrations against it, and asserts the default workflow states/transitions were seeded and existing issues were backfilled to the matching workflow state. |
 | `src/Anvilboard.Api.Tests` | API-host integration tests for workspace authorization endpoints. |
 | `src/Anvilboard.Agent.Tests` | Agent operation-catalog coverage; requires the sibling `dotnet-agent-surface` checkout. |
