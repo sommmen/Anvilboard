@@ -29,4 +29,7 @@ public enum ActivityEventType
     SyncedFromExternal,
     IssueLinkCreated,
     IssueLinkRemoved,
+    ArtifactAttached,
+    ArtifactRefreshed,
+    ArtifactRemoved,
 }

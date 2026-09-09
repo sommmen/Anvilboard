@@ -21,6 +21,8 @@ public sealed class AnvilboardDbContext(DbContextOptions<AnvilboardDbContext> op
     public DbSet<ActivityEvent> ActivityEvents => Set<ActivityEvent>();
     public DbSet<ExternalLink> ExternalLinks => Set<ExternalLink>();
     public DbSet<IssueLink> IssueLinks => Set<IssueLink>();
+    public DbSet<Artifact> Artifacts => Set<Artifact>();
+    public DbSet<ArtifactBlob> ArtifactBlobs => Set<ArtifactBlob>();
     public DbSet<WorkflowState> WorkflowStates => Set<WorkflowState>();
     public DbSet<WorkflowTransition> WorkflowTransitions => Set<WorkflowTransition>();
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
