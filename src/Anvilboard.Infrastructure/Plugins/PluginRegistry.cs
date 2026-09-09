@@ -26,7 +26,10 @@ public sealed class PluginRegistry : IPluginRegistry
         IOptions<PluginHostOptions> options,
         ILogger<PluginRegistry> logger)
     {
-        _all.AddRange(registeredPlugins);
+        foreach (var plugin in registeredPlugins)
+        {
+            TryAddCompatible(plugin, logger);
+        }
 
         foreach (var path in options.Value.AssemblyPaths)
         {
@@ -36,7 +39,11 @@ public sealed class PluginRegistry : IPluginRegistry
                 foreach (var pluginType in assembly.GetTypes().Where(IsPluginImplementation))
                 {
                     var plugin = (IAnvilboardPlugin)ActivatorUtilities.CreateInstance(serviceProvider, pluginType);
-                    _all.Add(plugin);
+                    if (!TryAddCompatible(plugin, logger))
+                    {
+                        continue;
+                    }
+
                     logger.LogInformation(
                         "Loaded plugin {PluginKey} ({PluginType}) from {AssemblyPath}",
                         plugin.Manifest.Key, pluginType.FullName, path);
@@ -55,6 +62,22 @@ public sealed class PluginRegistry : IPluginRegistry
     public IReadOnlyList<IIngestionSource> IngestionSources => [.. _all.OfType<IIngestionSource>()];
     public IReadOnlyList<IWebhookReceiver> WebhookReceivers => [.. _all.OfType<IWebhookReceiver>()];
     public IReadOnlyList<IIssueHook> IssueHooks => [.. _all.OfType<IIssueHook>()];
+
+    private bool TryAddCompatible(IAnvilboardPlugin plugin, ILogger<PluginRegistry> logger)
+    {
+        if (plugin.Manifest.SupportedContractVersion != PluginManifest.CurrentContractVersion)
+        {
+            logger.LogWarning(
+                "Skipped plugin {PluginKey} with unsupported contract version {PluginContractVersion}; host supports {SupportedContractVersion}",
+                plugin.Manifest.Key,
+                plugin.Manifest.SupportedContractVersion,
+                PluginManifest.CurrentContractVersion);
+            return false;
+        }
+
+        _all.Add(plugin);
+        return true;
+    }
 
     private static bool IsPluginImplementation(Type type) =>
         type is { IsClass: true, IsAbstract: false } && typeof(IAnvilboardPlugin).IsAssignableFrom(type);

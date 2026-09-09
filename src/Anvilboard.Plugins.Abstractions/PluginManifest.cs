@@ -13,7 +13,22 @@ namespace Anvilboard.Plugins.Abstractions;
 /// </param>
 /// <param name="DisplayName">Human-readable name shown in the UI's integrations page.</param>
 /// <param name="Version">Informational version string, shown in diagnostics/CLI output.</param>
-public sealed record PluginManifest(string Key, string DisplayName, string Version);
+public sealed record PluginManifest(string Key, string DisplayName, string Version)
+{
+    public const int CurrentContractVersion = 1;
+
+    public PluginManifest(string key, string displayName, string version, int supportedContractVersion)
+        : this(key, displayName, version)
+    {
+        SupportedContractVersion = supportedContractVersion;
+    }
+
+    /// <summary>
+    /// Contract version implemented by the plugin. Older three-argument manifests default to the
+    /// current version so adding this metadata remains source and binary compatible.
+    /// </summary>
+    public int SupportedContractVersion { get; init; } = CurrentContractVersion;
+}
 
 /// <summary>
 /// Marker/root interface every plugin type (ingestion source, webhook receiver, or issue hook)
