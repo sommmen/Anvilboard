@@ -28,7 +28,8 @@ public sealed class AuditServiceTests
             "issue",
             "issue-42",
             "corr-123",
-            "created with token=super-secret-value and note=ordinary prose");
+            "created with token=super-secret-value and note=ordinary prose\n"
+            + "json: {\"token\": \"escaped \\\"secret\\\" value\", \"password\": \"line one\nline two\"}");
 
         await new AuditService(db).RecordAsync(request);
 
@@ -44,6 +45,10 @@ public sealed class AuditServiceTests
         Assert.InRange(persisted.OccurredAt, occurredBefore, DateTimeOffset.UtcNow);
         Assert.Contains("***REDACTED***", persisted.ResultSummary);
         Assert.DoesNotContain("super-secret-value", persisted.ResultSummary);
+        Assert.DoesNotContain("escaped", persisted.ResultSummary);
+        Assert.DoesNotContain("secret", persisted.ResultSummary);
+        Assert.DoesNotContain("line one", persisted.ResultSummary);
+        Assert.DoesNotContain("line two", persisted.ResultSummary);
         Assert.Contains("ordinary prose", persisted.ResultSummary);
 
         var rawChannel = await db.Database.SqlQueryRaw<string>(

@@ -7,7 +7,7 @@ public static partial class SecretRedactor
     private const string Replacement = "***REDACTED***";
 
     [GeneratedRegex(
-        "[\\\"']?(?<key>secret|token|password|apiKey|credential)[\\\"']?\\s*[:=]\\s*(?:(?<quote>[\\\"'])(?<value>.+?)\\k<quote>|(?<value_unquoted>[^,;\\s}\\\"']+))",
+        @"[""']?(?<key>secret|token|password|apiKey|credential)[""']?\s*[:=]\s*(?:(?:""(?:\\[\s\S]|[^""\\])*"")|(?:'(?:\\[\s\S]|[^'\\])*')|(?<value_unquoted>[^,;\s}""']+))",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SensitiveFieldRegex();
 
