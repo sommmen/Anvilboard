@@ -42,6 +42,26 @@ public sealed class PluginConfigStateStoreTests
     }
 
     [Fact]
+    public async Task Set_RejectsEmptyAndOverlengthKeys()
+    {
+        await using var connection = await OpenDatabaseAsync();
+        await using var db = CreateContext(connection);
+        var workspace = WorkspaceId.New();
+        IPluginConfigStore configStore = new PluginConfigStateStore(db);
+        IPluginStateStore stateStore = new PluginConfigStateStore(db);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => configStore.SetAsync(workspace, "", "valid", "value"));
+        await Assert.ThrowsAsync<ArgumentException>(() => configStore.SetAsync(workspace, "valid", "", "value"));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => configStore.SetAsync(workspace, new string('p', 101), "valid", "value"));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => configStore.SetAsync(workspace, "valid", new string('c', 201), "value"));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => stateStore.SetAsync(workspace, "", "valid", "{}"));
+        await Assert.ThrowsAsync<ArgumentException>(() => stateStore.SetAsync(workspace, "valid", "", "{}"));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => stateStore.SetAsync(workspace, new string('p', 101), "valid", "{}"));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => stateStore.SetAsync(workspace, "valid", new string('s', 201), "{}"));
+    }
+
+    [Fact]
     public async Task State_UpsertsAndPersistsAcrossDbContexts()
     {
         await using var connection = await OpenDatabaseAsync();
