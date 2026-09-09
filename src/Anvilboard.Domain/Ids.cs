@@ -46,6 +46,12 @@ public readonly record struct LabelId(Guid Value) : IStronglyTypedId
     public override string ToString() => Value.ToString();
 }
 
+public readonly record struct ArtifactId(Guid Value) : IStronglyTypedId
+{
+    public static ArtifactId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString();
+}
+
 public readonly record struct CommentId(Guid Value) : IStronglyTypedId
 {
     public static CommentId New() => new(Guid.NewGuid());
