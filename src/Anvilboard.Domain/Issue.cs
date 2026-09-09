@@ -33,6 +33,12 @@ public sealed class Issue
 
     public IssuePriority Priority { get; set; } = IssuePriority.None;
 
+    /// <summary>Optional free-form issue category used for board filtering and grouping.</summary>
+    public string? Type { get; set; }
+
+    /// <summary>Set when the issue is hidden from normal board and list queries.</summary>
+    public DateTimeOffset? ArchivedAt { get; set; }
+
     public MemberId? AssigneeId { get; set; }
     public MemberId? CreatedById { get; set; }
 
