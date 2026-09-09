@@ -3,6 +3,7 @@ using System;
 using Anvilboard.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Anvilboard.Infrastructure.Migrations
 {
     [DbContext(typeof(AnvilboardDbContext))]
-    partial class AnvilboardDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260909073703_AddIdempotencyRecords")]
+    partial class AddIdempotencyRecords
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
@@ -373,65 +376,6 @@ namespace Anvilboard.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Members");
-                });
-
-            modelBuilder.Entity("Anvilboard.Domain.PluginConfig", b =>
-                {
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PluginKey")
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ConfigKey")
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsSecret")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(false);
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("WorkspaceId", "PluginKey", "ConfigKey");
-
-                    b.HasIndex("WorkspaceId");
-
-                    b.ToTable("PluginConfigs");
-                });
-
-            modelBuilder.Entity("Anvilboard.Domain.PluginState", b =>
-                {
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PluginKey")
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("StateKey")
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("WorkspaceId", "PluginKey", "StateKey");
-
-                    b.HasIndex("WorkspaceId");
-
-                    b.ToTable("PluginStates");
                 });
 
             modelBuilder.Entity("Anvilboard.Domain.Project", b =>
