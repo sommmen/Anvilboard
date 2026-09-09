@@ -64,6 +64,12 @@ public readonly record struct ActivityEventId(Guid Value) : IStronglyTypedId
     public override string ToString() => Value.ToString();
 }
 
+public readonly record struct AuditEventId(Guid Value) : IStronglyTypedId
+{
+    public static AuditEventId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString();
+}
+
 public readonly record struct ExternalLinkId(Guid Value) : IStronglyTypedId
 {
     public static ExternalLinkId New() => new(Guid.NewGuid());
