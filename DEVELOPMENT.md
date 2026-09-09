@@ -39,7 +39,7 @@ The historical PoC-era equivalents ([FUNCTIONAL_SPEC.md](FUNCTIONAL_SPEC.md),
 | `src/Anvilboard.Api` | ASP.NET Core minimal-API host; serves the REST API, webhook route, and the built SPA. |
 | `src/Anvilboard.Agent` | CLI + MCP dual-mode host, built on `dotnet-agent-surface`. |
 | `src/anvilboard-web` | Angular 22 standalone-component SPA. |
-| `Anvilboard.slnx` | Solution file referencing all eight in-repo projects. |
+| `Anvilboard.slnx` | Solution file referencing the in-repo application and test projects. |
 
 ## Building the backend
 
@@ -127,23 +127,39 @@ is no separate migration command to run by hand.
 
 ## Testing
 
-Two xUnit projects cover the Workflow Engine (the first area with automated coverage):
+The xUnit projects cover the Workflow Engine, endpoint authorization, agent-operation metadata, and
+webhook validation:
 
 | Project | What it covers |
 |---|---|
 | `src/Anvilboard.Application.Tests` | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior. No database — uses EF Core's in-memory-ish SQLite (`DataSource=:memory:`) per test. |
 | `src/Anvilboard.Infrastructure.Tests` | Migration integration test: seeds a legacy pre-workflow SQLite schema, runs the real EF Core migrations against it, and asserts the default workflow states/transitions were seeded and existing issues were backfilled to the matching workflow state. |
+| `src/Anvilboard.Api.Tests` | API-host integration tests for workspace authorization endpoints. |
+| `src/Anvilboard.Agent.Tests` | Agent operation-catalog coverage; requires the sibling `dotnet-agent-surface` checkout. |
+| `src/Anvilboard.Integrations.GitHub.Tests` | GitHub webhook signature validation and issue-event mapping. |
+| `src/Anvilboard.Integrations.Linear.Tests` | Linear webhook signature validation and issue-event mapping. |
+| `tests/Anvilboard.IntegrationTests` | Reserved for cross-cutting integration coverage, including planned real-time behavior. |
 
-Run everything except `Anvilboard.Agent` (which needs the `dotnet-agent-surface` sibling checkout
-described above) with:
+Run focused tests with:
 
 ```powershell
 dotnet test src/Anvilboard.Application.Tests/Anvilboard.Application.Tests.csproj
 dotnet test src/Anvilboard.Infrastructure.Tests/Anvilboard.Infrastructure.Tests.csproj
+dotnet test src/Anvilboard.Api.Tests/Anvilboard.Api.Tests.csproj
+dotnet test src/Anvilboard.Agent.Tests/Anvilboard.Agent.Tests.csproj
+dotnet test src/Anvilboard.Integrations.GitHub.Tests/Anvilboard.Integrations.GitHub.Tests.csproj
+dotnet test src/Anvilboard.Integrations.Linear.Tests/Anvilboard.Integrations.Linear.Tests.csproj
+dotnet test tests/Anvilboard.IntegrationTests/Anvilboard.IntegrationTests.csproj
 ```
 
 `dotnet test Anvilboard.slnx` also works once `dotnet-agent-surface` is checked out next to this
-repo, since the full solution build includes `Anvilboard.Agent`.
+repo, since the full solution build includes `Anvilboard.Agent` and its tests. The real-time
+integration project is intentionally scaffolded without tests until the corresponding production
+components exist.
+
+Frontend tests remain in `src/anvilboard-web` and run through Angular/Vitest (`npm test`). The
+feature specification paths `src/Anvilboard.Web` and `tests/Anvilboard.Web.Tests` are stale; do not
+create a separate frontend test project at those paths.
 
 Beyond the Workflow Engine, most of the codebase (`IssueService`, `DashboardService`, the API
 endpoints, the agent surface) still has no automated coverage. The canonical test strategy and
