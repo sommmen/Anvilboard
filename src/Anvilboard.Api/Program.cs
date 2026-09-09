@@ -1,3 +1,4 @@
+using Anvilboard.Api.Authorization;
 using Anvilboard.Api.Endpoints;
 using Anvilboard.Domain.Serialization;
 using Anvilboard.Application;
@@ -12,6 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new StronglyTypedIdJsonConverterFactory());
+    options.SerializerOptions.Converters.Add(new UpperSnakeCaseEnumJsonConverterFactory());
 });
 
 builder.Services.AddOpenApi();
@@ -42,17 +44,29 @@ else
     app.UseHttpsRedirection();
 }
 
+// Serves the built Angular client (wwwroot, populated by the client's production build). Placed
+// ahead of WorkspaceAuthorizationMiddleware because UseStaticFiles is terminal, physical-file
+// middleware that never reaches endpoint routing (so it would otherwise be treated as an
+// unauthenticated, endpoint-less request and rejected) — the SPA shell and its bootstrap/login
+// screens must load before any credential exists.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+// Every route mapped after this point is authenticated by WorkspaceAuthorizationMiddleware (§11.2
+// single enforcement point) unless it explicitly opts out with `.AllowAnonymous()` (bootstrap,
+// login, webhooks, and the SPA fallback route below).
+app.UseMiddleware<WorkspaceAuthorizationMiddleware>();
+
+app.MapAuthEndpoints();
 app.MapIssueEndpoints();
 app.MapTeamEndpoints();
 app.MapDashboardEndpoints();
 app.MapWebhookEndpoints();
 
-// Serves the built Angular client (wwwroot, populated by the client's production build) and falls
-// back to index.html for client-side routes, so the whole product ships and runs as one process
-// and one executable with no separate web server or reverse proxy in front of it.
-app.UseDefaultFiles();
-app.UseStaticFiles();
-app.MapFallbackToFile("index.html");
+// Falls back to index.html for client-side routes so the whole product ships and runs as one
+// process and one executable with no separate web server or reverse proxy in front of it.
+// Anonymous: an unauthenticated client-side route (e.g. the login screen) must still resolve.
+app.MapFallbackToFile("index.html").AllowAnonymous();
 
 app.Run();
 

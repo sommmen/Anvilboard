@@ -23,6 +23,7 @@ public sealed class AnvilboardDbContext(DbContextOptions<AnvilboardDbContext> op
     public DbSet<IssueLink> IssueLinks => Set<IssueLink>();
     public DbSet<WorkflowState> WorkflowStates => Set<WorkflowState>();
     public DbSet<WorkflowTransition> WorkflowTransitions => Set<WorkflowTransition>();
+    public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -1,3 +1,5 @@
+using Anvilboard.Api.Authorization;
+using Anvilboard.Application.Authorization;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -5,33 +7,33 @@ using Microsoft.EntityFrameworkCore;
 namespace Anvilboard.Api.Endpoints;
 
 /// <summary>
-/// Minimal setup endpoints for the entities a fresh workspace needs before issues can be filed:
-/// workspaces, teams, and members. Kept here directly against <see cref="AnvilboardDbContext"/>
-/// (rather than through an application service) since these are simple CRUD operations with no
-/// hooks/events to dispatch, unlike <see cref="Anvilboard.Application.Issues.IssueService"/>.
+/// Minimal setup endpoints for the entities a workspace needs before issues can be filed: teams
+/// and members. Kept here directly against <see cref="AnvilboardDbContext"/> (rather than through
+/// an application service) since these are simple CRUD operations with no hooks/events to
+/// dispatch, unlike <see cref="Anvilboard.Application.Issues.IssueService"/>. The workspace to
+/// scope every query/mutation to is always the caller's authenticated
+/// <see cref="ActorContext.WorkspaceId"/> — no route creates or falls back to a "Default"
+/// workspace; that only ever happens once, via the bootstrap flow (see `AuthEndpoints`).
 /// </summary>
 public static class TeamEndpoints
 {
     public static void MapTeamEndpoints(this IEndpointRouteBuilder app)
     {
-        var teams = app.MapGroup("/api/teams").WithTags("Teams");
+        var teams = app.MapGroup("/api/teams").WithTags("Teams").RequirePermission(Permission.ReadBoard);
 
-        teams.MapGet("/", async (AnvilboardDbContext db, CancellationToken ct) =>
-            Results.Ok(await db.Teams.AsNoTracking().ToListAsync(ct)));
-
-        teams.MapPost("/", async (CreateTeamRequest request, AnvilboardDbContext db, CancellationToken ct) =>
+        teams.MapGet("/", async (HttpContext http, AnvilboardDbContext db, CancellationToken ct) =>
         {
-            var workspace = await db.Workspaces.FirstOrDefaultAsync(ct);
-            if (workspace is null)
-            {
-                workspace = new Workspace { Id = WorkspaceId.New(), Name = "Default", Slug = "default", CreatedAt = DateTimeOffset.UtcNow };
-                db.Workspaces.Add(workspace);
-            }
+            var workspaceId = http.GetActorContext().WorkspaceId;
+            return Results.Ok(await db.Teams.AsNoTracking().Where(t => t.WorkspaceId == workspaceId).ToListAsync(ct));
+        });
 
+        teams.MapPost("/", async (CreateTeamRequest request, HttpContext http, AnvilboardDbContext db, CancellationToken ct) =>
+        {
+            var workspaceId = http.GetActorContext().WorkspaceId;
             var team = new Team
             {
                 Id = TeamId.New(),
-                WorkspaceId = workspace.Id,
+                WorkspaceId = workspaceId,
                 Name = request.Name,
                 Key = request.Key.ToUpperInvariant(),
                 CreatedAt = DateTimeOffset.UtcNow,
@@ -39,26 +41,23 @@ public static class TeamEndpoints
             db.Teams.Add(team);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/teams/{team.Id.Value}", team);
+        }).RequirePermission(Permission.ManageWorkspaceConfig);
+
+        var members = app.MapGroup("/api/members").WithTags("Members").RequirePermission(Permission.ReadBoard);
+
+        members.MapGet("/", async (HttpContext http, AnvilboardDbContext db, CancellationToken ct) =>
+        {
+            var workspaceId = http.GetActorContext().WorkspaceId;
+            return Results.Ok(await db.Members.AsNoTracking().Where(m => m.WorkspaceId == workspaceId).ToListAsync(ct));
         });
 
-        var members = app.MapGroup("/api/members").WithTags("Members");
-
-        members.MapGet("/", async (AnvilboardDbContext db, CancellationToken ct) =>
-            Results.Ok(await db.Members.AsNoTracking().ToListAsync(ct)));
-
-        members.MapPost("/", async (CreateMemberRequest request, AnvilboardDbContext db, CancellationToken ct) =>
+        members.MapPost("/", async (CreateMemberRequest request, HttpContext http, AnvilboardDbContext db, CancellationToken ct) =>
         {
-            var workspace = await db.Workspaces.FirstOrDefaultAsync(ct);
-            if (workspace is null)
-            {
-                workspace = new Workspace { Id = WorkspaceId.New(), Name = "Default", Slug = "default", CreatedAt = DateTimeOffset.UtcNow };
-                db.Workspaces.Add(workspace);
-            }
-
+            var workspaceId = http.GetActorContext().WorkspaceId;
             var member = new Member
             {
                 Id = MemberId.New(),
-                WorkspaceId = workspace.Id,
+                WorkspaceId = workspaceId,
                 DisplayName = request.DisplayName,
                 Email = request.Email,
                 IsAgent = request.IsAgent,
@@ -66,7 +65,7 @@ public static class TeamEndpoints
             db.Members.Add(member);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/members/{member.Id.Value}", member);
-        });
+        }).RequirePermission(Permission.ManageWorkspaceConfig);
     }
 }
 

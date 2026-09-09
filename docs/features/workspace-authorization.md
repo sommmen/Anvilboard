@@ -12,6 +12,7 @@
 | Tech Design Ref | §8.1 Workspace & Authorization; §11.2 Authorization |
 | Depends On | — |
 | Blocks | workflow-engine, issue-board-service, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery |
+| Status | Implemented (`WorkspaceAuthorizationService`, `WorkspaceAuthorizationMiddleware`, `AuthEndpoints`, `RequiresPermissionAttribute`); credential/session issuance, bootstrap, revocation, and RBAC enforcement covered by unit tests |
 
 ## Purpose
 

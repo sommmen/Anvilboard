@@ -81,3 +81,9 @@ public readonly record struct WorkflowTransitionId(Guid Value) : IStronglyTypedI
     public static WorkflowTransitionId New() => new(Guid.NewGuid());
     public override string ToString() => Value.ToString();
 }
+
+public readonly record struct ApiTokenId(Guid Value) : IStronglyTypedId
+{
+    public static ApiTokenId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString();
+}

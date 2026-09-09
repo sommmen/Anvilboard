@@ -88,6 +88,7 @@ public sealed class LegacyStatusMigrationTests
                 CREATE TABLE Workspaces (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, Slug TEXT NOT NULL, CreatedAt TEXT NOT NULL);
                 CREATE TABLE Teams (Id TEXT NOT NULL PRIMARY KEY, WorkspaceId TEXT NOT NULL, Name TEXT NOT NULL, Key TEXT NOT NULL, NextIssueNumber INTEGER NOT NULL, CreatedAt TEXT NOT NULL);
                 CREATE TABLE Issues (Id TEXT NOT NULL PRIMARY KEY, TeamId TEXT NOT NULL, ProjectId TEXT NULL, Key TEXT NOT NULL, Title TEXT NOT NULL, Description TEXT NULL, Status INTEGER NOT NULL, Priority INTEGER NOT NULL, AssigneeId TEXT NULL, CreatedById TEXT NULL, Source INTEGER NOT NULL, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL, CompletedAt TEXT NULL, LabelIds TEXT NOT NULL);
+                CREATE TABLE Members (Id TEXT NOT NULL PRIMARY KEY, WorkspaceId TEXT NOT NULL, DisplayName TEXT NOT NULL, Email TEXT NULL, AvatarUrl TEXT NULL, IsAgent INTEGER NOT NULL);
                 CREATE TABLE __EFMigrationsHistory (MigrationId TEXT NOT NULL PRIMARY KEY, ProductVersion TEXT NOT NULL);
                 """;
             await command.ExecuteNonQueryAsync();

@@ -1,3 +1,4 @@
+using Anvilboard.Api.Authorization;
 using Anvilboard.Application.Issues;
 using Anvilboard.Domain;
 
@@ -6,13 +7,17 @@ namespace Anvilboard.Api.Endpoints;
 /// <summary>
 /// Issue CRUD/transition endpoints. Thin HTTP adapters over <see cref="IssueService"/> — the same
 /// service the CLI/MCP agent surface calls directly, so behavior never diverges between a human
-/// using the web UI and an agent using the board.
+/// using the web UI and an agent using the board. Mutation routes accept either
+/// <see cref="Permission.ReadWriteIssues"/> (`Coordinator`/`Administrator`, workspace-wide) or
+/// <see cref="Permission.ReadWriteAssignedIssues"/> (`Contributor`, assigned/team-scoped) —
+/// per-assignment/team scoping is a per-field business rule owned by <c>IssueService</c> itself,
+/// not this component (§ Excluded).
 /// </summary>
 public static class IssueEndpoints
 {
     public static void MapIssueEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/issues").WithTags("Issues");
+        var group = app.MapGroup("/api/issues").WithTags("Issues").RequirePermission(Permission.ReadBoard);
 
         group.MapGet("/", async (IssueService service, Guid? teamId, IssueStatus? status, Guid? assigneeId, CancellationToken ct) =>
         {
@@ -41,7 +46,7 @@ public static class IssueEndpoints
                 request.AssigneeId is { } a ? new MemberId(a) : null,
                 ct: ct);
             return Results.Created($"/api/issues/{issue.Id.Value}", issue);
-        });
+        }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
 
         group.MapPatch("/{id:guid}/status", async (Guid id, ChangeStatusRequest request, IssueService service, CancellationToken ct) =>
         {
@@ -57,20 +62,20 @@ public static class IssueEndpoints
                     : StatusCodes.Status409Conflict;
                 return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: statusCode);
             }
-        });
+        }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
 
         group.MapPatch("/{id:guid}/assignee", async (Guid id, AssignRequest request, IssueService service, CancellationToken ct) =>
         {
             var issue = await service.AssignAsync(new IssueId(id), request.AssigneeId is { } a ? new MemberId(a) : null, ct: ct);
             return Results.Ok(issue);
-        });
+        }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
 
         group.MapPost("/{id:guid}/comments", async (Guid id, AddCommentRequest request, IssueService service, CancellationToken ct) =>
         {
             var comment = await service.AddCommentAsync(
                 new IssueId(id), request.Body, request.AuthorId is { } a ? new MemberId(a) : null, ct);
             return Results.Created($"/api/issues/{id}/comments/{comment.Id.Value}", comment);
-        });
+        }).RequirePermission(Permission.ReadWriteComments);
 
         group.MapGet("/{id:guid}/links", async (Guid id, IssueLinkService service, CancellationToken ct) =>
         {
@@ -100,7 +105,7 @@ public static class IssueEndpoints
                     _ => StatusCodes.Status400BadRequest,
                 });
             }
-        });
+        }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
 
         group.MapDelete("/{id:guid}/links/{linkId:guid}", async (Guid id, Guid linkId, Guid? actorId, IssueLinkService service, CancellationToken ct) =>
         {
@@ -113,7 +118,7 @@ public static class IssueEndpoints
             {
                 return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: StatusCodes.Status404NotFound);
             }
-        });
+        }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
     }
 }
 
