@@ -9,35 +9,24 @@ namespace Anvilboard.Infrastructure.Tests.Plugins;
 public sealed class PluginRegistryTests
 {
     [Fact]
-    public void Constructor_SkipsPluginsWithUnsupportedContractVersion()
+    public void IncompatibleContractVersion_SkippedWithoutCrashingHost()
     {
-        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var options = Options.Create(new PluginHostOptions
-        {
-            AssemblyPaths = [typeof(PluginRegistryTests).Assembly.Location],
-        });
+        var services = new ServiceCollection().BuildServiceProvider();
+        var options = Options.Create(new PluginHostOptions { AssemblyPaths = [typeof(IncompatibleContractPlugin).Assembly.Location] });
 
-        var registry = new PluginRegistry(
-            [],
-            serviceProvider,
-            options,
-            NullLogger<PluginRegistry>.Instance);
+        var registry = new PluginRegistry([], services, options, NullLogger<PluginRegistry>.Instance);
 
-        var loaded = Assert.Single(registry.All);
-        Assert.IsType<CompatibleTestPlugin>(loaded);
+        Assert.DoesNotContain(registry.All, plugin => plugin.Manifest.Key == "incompatible-test");
+        Assert.Contains(registry.All, plugin => plugin.Manifest.Key == "compatible-test");
     }
 
-    public sealed class CompatibleTestPlugin : IAnvilboardPlugin
+    public sealed class IncompatibleContractPlugin : IAnvilboardPlugin
     {
-        public PluginManifest Manifest { get; } = new("compatible", "Compatible", "1.0.0");
+        public PluginManifest Manifest { get; } = new("incompatible-test", "Incompatible Test", "1.0.0", "2.0");
     }
 
-    public sealed class IncompatibleTestPlugin : IAnvilboardPlugin
+    public sealed class CompatibleContractPlugin : IAnvilboardPlugin
     {
-        public PluginManifest Manifest { get; } = new(
-            "incompatible",
-            "Incompatible",
-            "1.0.0",
-            PluginManifest.CurrentContractVersion + 1);
+        public PluginManifest Manifest { get; } = new("compatible-test", "Compatible Test", "1.0.0");
     }
 }

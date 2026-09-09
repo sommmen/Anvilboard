@@ -1,9 +1,6 @@
 using Anvilboard.Infrastructure.Persistence;
 using Anvilboard.Infrastructure.Plugins;
-using Anvilboard.Infrastructure.Security;
 using Anvilboard.Plugins.Abstractions;
-using Anvilboard.Plugins.Abstractions.Security;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,10 +25,9 @@ public static class ServiceCollectionExtensions
             options.UseSqlite($"Data Source={dbOptions.DatabasePath}");
         });
 
-        services.AddDataProtection().SetApplicationName("Anvilboard");
-        services.AddSingleton<ISecretStore>(sp => new DataProtectionSecretStore(
-            sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>()
-                .CreateProtector("Anvilboard.Integrations.Secrets.v1")));
+        services.AddScoped<PluginConfigStateStore>();
+        services.AddScoped<IPluginConfigStore>(serviceProvider => serviceProvider.GetRequiredService<PluginConfigStateStore>());
+        services.AddScoped<IPluginStateStore>(serviceProvider => serviceProvider.GetRequiredService<PluginConfigStateStore>());
         services.AddSingleton<IPluginRegistry, PluginRegistry>();
 
         return services;
