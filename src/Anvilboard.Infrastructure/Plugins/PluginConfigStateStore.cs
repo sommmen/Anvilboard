@@ -15,6 +15,9 @@ public sealed class PluginConfigStateStore(AnvilboardDbContext dbContext) : IPlu
         bool isSecret = false,
         CancellationToken cancellationToken = default)
     {
+        ValidateKey(pluginKey, 100, nameof(pluginKey));
+        ValidateKey(configKey, 200, nameof(configKey));
+
         var config = await dbContext.PluginConfigs.FindAsync(
             [workspaceId, pluginKey, configKey], cancellationToken);
 
@@ -47,7 +50,7 @@ public sealed class PluginConfigStateStore(AnvilboardDbContext dbContext) : IPlu
         CancellationToken cancellationToken = default)
     {
         var config = await dbContext.PluginConfigs.AsNoTracking().SingleOrDefaultAsync(
-            config => config.WorkspaceId == workspaceId && config.PluginKey == pluginKey && config.ConfigKey == configKey,
+            candidate => candidate.WorkspaceId == workspaceId && candidate.PluginKey == pluginKey && candidate.ConfigKey == configKey,
             cancellationToken);
 
         return config is null
@@ -106,6 +109,9 @@ public sealed class PluginConfigStateStore(AnvilboardDbContext dbContext) : IPlu
         string jsonValue,
         CancellationToken cancellationToken)
     {
+        ValidateKey(pluginKey, 100, nameof(pluginKey));
+        ValidateKey(stateKey, 200, nameof(stateKey));
+
         var state = await dbContext.PluginStates.FindAsync([workspaceId, pluginKey, stateKey], cancellationToken);
 
         if (state is null)
@@ -126,6 +132,12 @@ public sealed class PluginConfigStateStore(AnvilboardDbContext dbContext) : IPlu
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void ValidateKey(string key, int maxLength, string parameterName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key, parameterName);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(key.Length, maxLength, parameterName);
     }
 
     private async Task RemoveStateAsync(
