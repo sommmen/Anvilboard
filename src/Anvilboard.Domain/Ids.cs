@@ -94,6 +94,12 @@ public readonly record struct ApiTokenId(Guid Value) : IStronglyTypedId
     public override string ToString() => Value.ToString();
 }
 
+public readonly record struct IntegrationId(Guid Value) : IStronglyTypedId
+{
+    public static IntegrationId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString();
+}
+
 public readonly record struct IdempotencyRecordId(Guid Value) : IStronglyTypedId
 {
     public static IdempotencyRecordId New() => new(Guid.NewGuid());

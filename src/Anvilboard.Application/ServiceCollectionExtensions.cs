@@ -1,6 +1,7 @@
 using Anvilboard.Application.Authorization;
 using Anvilboard.Application.Automation;
 using Anvilboard.Application.Dashboard;
+using Anvilboard.Application.Integrations;
 using Anvilboard.Application.Issues;
 using Anvilboard.Application.Sync;
 using Anvilboard.Application.Workflows;
@@ -24,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IssueService>();
         services.AddScoped<IBoardQueryService, BoardQueryService>();
         services.AddScoped<IssueLinkService>();
+        services.AddScoped<IIntegrationService, IntegrationService>();
         services.AddScoped<DashboardService>();
         services.AddScoped<IWorkflowService, WorkflowEngine>();
         services.AddScoped<IWorkspaceAuthorizationService, WorkspaceAuthorizationService>();
