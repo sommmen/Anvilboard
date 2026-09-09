@@ -131,7 +131,7 @@ Two xUnit projects cover the Workflow Engine (the first area with automated cove
 
 | Project | What it covers |
 |---|---|
-| `src/Anvilboard.Application.Tests` | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior. No database — uses EF Core's in-memory-ish SQLite (`DataSource=:memory:`) per test. |
+| `src/Anvilboard.Application.Tests` | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior; also covers workspace authorization, issue linking, and the automation surface foundations (`IdempotencyService` replay/reuse detection, `CorrelationContext`, `ErrorCatalogTranslator`). No database — uses EF Core's in-memory-ish SQLite (`DataSource=:memory:`) per test. |
 | `src/Anvilboard.Infrastructure.Tests` | Migration integration test: seeds a legacy pre-workflow SQLite schema, runs the real EF Core migrations against it, and asserts the default workflow states/transitions were seeded and existing issues were backfilled to the matching workflow state. |
 
 Run everything except `Anvilboard.Agent` (which needs the `dotnet-agent-surface` sibling checkout
