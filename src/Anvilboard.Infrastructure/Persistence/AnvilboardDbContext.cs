@@ -27,7 +27,10 @@ public sealed class AnvilboardDbContext(DbContextOptions<AnvilboardDbContext> op
     public DbSet<WorkflowState> WorkflowStates => Set<WorkflowState>();
     public DbSet<WorkflowTransition> WorkflowTransitions => Set<WorkflowTransition>();
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
+<<<<<<< HEAD
     public DbSet<Integration> Integrations => Set<Integration>();
+=======
+>>>>>>> 4ad82c3 (feat(automation): add idempotency foundations)
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
