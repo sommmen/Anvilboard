@@ -18,7 +18,13 @@ public sealed record PluginManifest(
     string Key,
     string DisplayName,
     string Version,
-    string SupportedContractVersion = PluginContract.Version);
+    string SupportedContractVersion = PluginContract.Version)
+{
+    public PluginManifest(string key, string displayName, string version)
+        : this(key, displayName, version, PluginContract.Version)
+    {
+    }
+}
 
 /// <summary>Version of the plugin contract supported by this host release.</summary>
 public static class PluginContract

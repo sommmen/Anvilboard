@@ -9,6 +9,16 @@ namespace Anvilboard.Infrastructure.Tests.Plugins;
 public sealed class PluginRegistryTests
 {
     [Fact]
+    public void ThreeArgumentManifestConstructor_DefaultsToCurrentContractVersion()
+    {
+        var manifest = new PluginManifest("test", "Test", "1.0.0");
+
+        Assert.Equal(PluginContract.Version, manifest.SupportedContractVersion);
+        Assert.NotNull(typeof(PluginManifest).GetConstructor(
+            [typeof(string), typeof(string), typeof(string)]));
+    }
+
+    [Fact]
     public void IncompatibleContractVersion_SkippedWithoutCrashingHost()
     {
         var services = new ServiceCollection().BuildServiceProvider();
