@@ -1,14 +1,21 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Anvilboard.Agent/Anvilboard.Agent.csproj" />
+    <Project Path="src/Anvilboard.Agent.Tests/Anvilboard.Agent.Tests.csproj" />
     <Project Path="src/Anvilboard.Api/Anvilboard.Api.csproj" />
+    <Project Path="src/Anvilboard.Api.Tests/Anvilboard.Api.Tests.csproj" />
     <Project Path="src/Anvilboard.Application/Anvilboard.Application.csproj" />
     <Project Path="src/Anvilboard.Application.Tests/Anvilboard.Application.Tests.csproj" />
     <Project Path="src/Anvilboard.Domain/Anvilboard.Domain.csproj" />
     <Project Path="src/Anvilboard.Infrastructure/Anvilboard.Infrastructure.csproj" />
     <Project Path="src/Anvilboard.Infrastructure.Tests/Anvilboard.Infrastructure.Tests.csproj" />
     <Project Path="src/Anvilboard.Integrations.GitHub/Anvilboard.Integrations.GitHub.csproj" />
+    <Project Path="src/Anvilboard.Integrations.GitHub.Tests/Anvilboard.Integrations.GitHub.Tests.csproj" />
     <Project Path="src/Anvilboard.Integrations.Linear/Anvilboard.Integrations.Linear.csproj" />
+    <Project Path="src/Anvilboard.Integrations.Linear.Tests/Anvilboard.Integrations.Linear.Tests.csproj" />
     <Project Path="src/Anvilboard.Plugins.Abstractions/Anvilboard.Plugins.Abstractions.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Anvilboard.IntegrationTests/Anvilboard.IntegrationTests.csproj" />
   </Folder>
 </Solution>

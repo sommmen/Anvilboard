@@ -3,6 +3,7 @@ using System;
 using Anvilboard.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Anvilboard.Infrastructure.Migrations
 {
     [DbContext(typeof(AnvilboardDbContext))]
-    partial class AnvilboardDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260909073703_AddIdempotencyRecords")]
+    partial class AddIdempotencyRecords
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
@@ -85,82 +88,6 @@ namespace Anvilboard.Infrastructure.Migrations
                     b.HasIndex("WorkspaceId");
 
                     b.ToTable("ApiTokens");
-                });
-
-            modelBuilder.Entity("Anvilboard.Domain.Artifact", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("AddedById")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ContentReference")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DedupKey")
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("IssueId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IssueId");
-
-                    b.HasIndex("IssueId", "DedupKey")
-                        .IsUnique()
-                        .HasFilter("\"DedupKey\" IS NOT NULL");
-
-                    b.ToTable("Artifacts");
-                });
-
-            modelBuilder.Entity("Anvilboard.Domain.ArtifactBlob", b =>
-                {
-                    b.Property<string>("Reference")
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<byte[]>("Bytes")
-                        .IsRequired()
-                        .HasColumnType("BLOB");
-
-                    b.Property<string>("ContentType")
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Reference");
-
-                    b.ToTable("ArtifactBlobs");
                 });
 
             modelBuilder.Entity("Anvilboard.Domain.Comment", b =>
