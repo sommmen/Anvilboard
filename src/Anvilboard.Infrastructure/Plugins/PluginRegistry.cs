@@ -26,10 +26,7 @@ public sealed class PluginRegistry : IPluginRegistry
         IOptions<PluginHostOptions> options,
         ILogger<PluginRegistry> logger)
     {
-        foreach (var plugin in registeredPlugins)
-        {
-            TryAddCompatible(plugin, logger);
-        }
+        _all.AddRange(registeredPlugins);
 
         foreach (var path in options.Value.AssemblyPaths)
         {
@@ -38,15 +35,30 @@ public sealed class PluginRegistry : IPluginRegistry
                 var assembly = Assembly.LoadFrom(path);
                 foreach (var pluginType in assembly.GetTypes().Where(IsPluginImplementation))
                 {
-                    var plugin = (IAnvilboardPlugin)ActivatorUtilities.CreateInstance(serviceProvider, pluginType);
-                    if (!TryAddCompatible(plugin, logger))
+                    try
                     {
-                        continue;
-                    }
+                        var plugin = (IAnvilboardPlugin)ActivatorUtilities.CreateInstance(serviceProvider, pluginType);
+                        if (!StringComparer.Ordinal.Equals(plugin.Manifest.SupportedContractVersion, PluginContract.Version))
+                        {
+                            logger.LogWarning(
+                                "Skipped plugin {PluginKey} ({PluginType}) from {AssemblyPath}: contract version {PluginContractVersion} is incompatible with host version {HostContractVersion}",
+                                plugin.Manifest.Key,
+                                pluginType.FullName,
+                                path,
+                                plugin.Manifest.SupportedContractVersion,
+                                PluginContract.Version);
+                            continue;
+                        }
 
-                    logger.LogInformation(
-                        "Loaded plugin {PluginKey} ({PluginType}) from {AssemblyPath}",
-                        plugin.Manifest.Key, pluginType.FullName, path);
+                        _all.Add(plugin);
+                        logger.LogInformation(
+                            "Loaded plugin {PluginKey} ({PluginType}) from {AssemblyPath}",
+                            plugin.Manifest.Key, pluginType.FullName, path);
+                    }
+                    catch (Exception exception)
+                    {
+                        logger.LogWarning(exception, "Failed to load plugin type {PluginType} from {AssemblyPath}", pluginType.FullName, path);
+                    }
                 }
             }
             catch (Exception ex)
@@ -62,22 +74,6 @@ public sealed class PluginRegistry : IPluginRegistry
     public IReadOnlyList<IIngestionSource> IngestionSources => [.. _all.OfType<IIngestionSource>()];
     public IReadOnlyList<IWebhookReceiver> WebhookReceivers => [.. _all.OfType<IWebhookReceiver>()];
     public IReadOnlyList<IIssueHook> IssueHooks => [.. _all.OfType<IIssueHook>()];
-
-    private bool TryAddCompatible(IAnvilboardPlugin plugin, ILogger<PluginRegistry> logger)
-    {
-        if (plugin.Manifest.SupportedContractVersion != PluginManifest.CurrentContractVersion)
-        {
-            logger.LogWarning(
-                "Skipped plugin {PluginKey} with unsupported contract version {PluginContractVersion}; host supports {SupportedContractVersion}",
-                plugin.Manifest.Key,
-                plugin.Manifest.SupportedContractVersion,
-                PluginManifest.CurrentContractVersion);
-            return false;
-        }
-
-        _all.Add(plugin);
-        return true;
-    }
 
     private static bool IsPluginImplementation(Type type) =>
         type is { IsClass: true, IsAbstract: false } && typeof(IAnvilboardPlugin).IsAssignableFrom(type);

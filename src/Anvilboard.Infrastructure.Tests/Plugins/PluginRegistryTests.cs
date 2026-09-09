@@ -9,35 +9,34 @@ namespace Anvilboard.Infrastructure.Tests.Plugins;
 public sealed class PluginRegistryTests
 {
     [Fact]
-    public void Constructor_SkipsPluginsWithUnsupportedContractVersion()
+    public void ThreeArgumentManifestConstructor_DefaultsToCurrentContractVersion()
     {
-        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var options = Options.Create(new PluginHostOptions
-        {
-            AssemblyPaths = [typeof(PluginRegistryTests).Assembly.Location],
-        });
+        var manifest = new PluginManifest("test", "Test", "1.0.0");
 
-        var registry = new PluginRegistry(
-            [],
-            serviceProvider,
-            options,
-            NullLogger<PluginRegistry>.Instance);
-
-        var loaded = Assert.Single(registry.All);
-        Assert.IsType<CompatibleTestPlugin>(loaded);
+        Assert.Equal(PluginContract.Version, manifest.SupportedContractVersion);
+        Assert.NotNull(typeof(PluginManifest).GetConstructor(
+            [typeof(string), typeof(string), typeof(string)]));
     }
 
-    public sealed class CompatibleTestPlugin : IAnvilboardPlugin
+    [Fact]
+    public void IncompatibleContractVersion_SkippedWithoutCrashingHost()
     {
-        public PluginManifest Manifest { get; } = new("compatible", "Compatible", "1.0.0");
+        var services = new ServiceCollection().BuildServiceProvider();
+        var options = Options.Create(new PluginHostOptions { AssemblyPaths = [typeof(IncompatibleContractPlugin).Assembly.Location] });
+
+        var registry = new PluginRegistry([], services, options, NullLogger<PluginRegistry>.Instance);
+
+        Assert.DoesNotContain(registry.All, plugin => plugin.Manifest.Key == "incompatible-test");
+        Assert.Contains(registry.All, plugin => plugin.Manifest.Key == "compatible-test");
     }
 
-    public sealed class IncompatibleTestPlugin : IAnvilboardPlugin
+    public sealed class IncompatibleContractPlugin : IAnvilboardPlugin
     {
-        public PluginManifest Manifest { get; } = new(
-            "incompatible",
-            "Incompatible",
-            "1.0.0",
-            PluginManifest.CurrentContractVersion + 1);
+        public PluginManifest Manifest { get; } = new("incompatible-test", "Incompatible Test", "1.0.0", "2.0");
+    }
+
+    public sealed class CompatibleContractPlugin : IAnvilboardPlugin
+    {
+        public PluginManifest Manifest { get; } = new("compatible-test", "Compatible Test", "1.0.0");
     }
 }

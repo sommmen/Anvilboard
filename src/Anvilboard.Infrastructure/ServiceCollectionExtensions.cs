@@ -28,10 +28,15 @@ public static class ServiceCollectionExtensions
             options.UseSqlite($"Data Source={dbOptions.DatabasePath}");
         });
 
-        services.AddDataProtection().SetApplicationName("Anvilboard");
-        services.AddSingleton<ISecretStore>(sp => new DataProtectionSecretStore(
-            sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>()
-                .CreateProtector("Anvilboard.Integrations.Secrets.v1")));
+        services.AddDataProtection();
+        services.AddScoped<ISecretStore>(serviceProvider =>
+            new DataProtectionSecretStore(
+                serviceProvider
+                    .GetRequiredService<IDataProtectionProvider>()
+                    .CreateProtector("Anvilboard.Integrations.Secrets")));
+        services.AddScoped<PluginConfigStateStore>();
+        services.AddScoped<IPluginConfigStore>(serviceProvider => serviceProvider.GetRequiredService<PluginConfigStateStore>());
+        services.AddScoped<IPluginStateStore>(serviceProvider => serviceProvider.GetRequiredService<PluginConfigStateStore>());
         services.AddSingleton<IPluginRegistry, PluginRegistry>();
 
         return services;
