@@ -19,6 +19,7 @@ public sealed class AnvilboardDbContext(DbContextOptions<AnvilboardDbContext> op
     public DbSet<Label> Labels => Set<Label>();
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<ActivityEvent> ActivityEvents => Set<ActivityEvent>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<ExternalLink> ExternalLinks => Set<ExternalLink>();
     public DbSet<IssueLink> IssueLinks => Set<IssueLink>();
     public DbSet<Artifact> Artifacts => Set<Artifact>();

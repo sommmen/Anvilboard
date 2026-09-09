@@ -1,3 +1,4 @@
+using Anvilboard.Application.Auditing;
 using Anvilboard.Domain;
 
 namespace Anvilboard.Application.Authorization;
@@ -12,6 +13,8 @@ public interface IAuditService
         string outcome,
         string correlationId,
         CancellationToken ct = default);
+
+    Task RecordAsync(AuditEventRequest request, CancellationToken ct = default);
 }
 
 internal sealed class NoOpAuditService : IAuditService
@@ -23,4 +26,6 @@ internal sealed class NoOpAuditService : IAuditService
         string outcome,
         string correlationId,
         CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task RecordAsync(AuditEventRequest request, CancellationToken ct = default) => Task.CompletedTask;
 }

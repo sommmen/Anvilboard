@@ -1,3 +1,4 @@
+using Anvilboard.Application.Auditing;
 using Anvilboard.Application.Authorization;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
@@ -316,6 +317,8 @@ public sealed class WorkspaceAuthorizationServiceTests
             Events.Add(new RecordedAuditEvent(actor, workspaceId, action, outcome));
             return Task.CompletedTask;
         }
+
+        public Task RecordAsync(AuditEventRequest request, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class AuthorizationFixture : IAsyncDisposable
