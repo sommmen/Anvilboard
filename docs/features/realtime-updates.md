@@ -8,6 +8,7 @@
 |-------|-------|
 | Component | realtime-updates |
 | Priority | P1 |
+| Status | **Not Started** — no SignalR hub, publisher, or transport code exists anywhere in `src/`. This spec describes a design target, not current implementation. See `docs/audit-report.md` for details. |
 | SRS Refs | FR-WRK-014, FR-INT-006, NFR-PERF-002 |
 | Tech Design Ref | §8.1 Component Overview; §9 API Design; §12 Performance Design |
 | Depends On | workspace-authorization, issue-board-service |

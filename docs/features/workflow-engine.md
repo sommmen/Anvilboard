@@ -8,6 +8,7 @@
 |-------|-------|
 | Component | workflow-engine |
 | Priority | P0 |
+| Status | Partial — state-machine validation and the legacy `IssueStatus` migration path are implemented and unit-tested; there is no admin CRUD/config-management REST/CLI/MCP surface for workflow states/transitions, and workflow mutations do not emit audit events. See `docs/audit-report.md` for details. |
 | SRS Refs | FR-WS-002, FR-WS-003 |
 | Tech Design Ref | §8.1 Workflow Engine; §7.5 State Machine; §10.4 Migration Strategy |
 | Depends On | — |

@@ -8,7 +8,7 @@
 |-------|-------|
 | Component | issue-linking |
 | Priority | P2 |
-| Status | Implemented (all three operations: `CreateLinkAsync`, `ListLinksAsync`, `RemoveLinkAsync`) |
+| Status | Partial — `CreateLinkAsync`/`ListLinksAsync`/`RemoveLinkAsync` are implemented and directional exposure/zero-cascade behavior matches spec; a link-update endpoint is missing, and the web issue-detail view suggests link types but does not enforce them server-side. See `docs/audit-report.md` for details. |
 | SRS Refs | FR-LNK-001 |
 | Tech Design Ref | §8.1 — Issue Linking row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `IssueLinks` table |
 | Depends On | issue-board-service, workspace-authorization |

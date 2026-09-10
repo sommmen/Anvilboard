@@ -8,11 +8,11 @@
 |-------|-------|
 | Component | workspace-authorization |
 | Priority | P0 |
+| Status | Partial — `WorkspaceAuthorizationService`, `WorkspaceAuthorizationMiddleware`, `AuthEndpoints`, and `RequiresPermissionAttribute` are implemented and unit-tested; enforcement is wired only into REST (no CLI/MCP enforcement), and there is no admin-triggered revocation endpoint. See `docs/audit-report.md` for details. |
 | SRS Refs | FR-WS-001, NFR-SEC-002 |
 | Tech Design Ref | §8.1 Workspace & Authorization; §11.2 Authorization |
 | Depends On | — |
 | Blocks | workflow-engine, issue-board-service, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery |
-| Status | Implemented (`WorkspaceAuthorizationService`, `WorkspaceAuthorizationMiddleware`, `AuthEndpoints`, `RequiresPermissionAttribute`); credential/session issuance, bootstrap, revocation, and RBAC enforcement covered by unit tests |
 
 ## Purpose
 
