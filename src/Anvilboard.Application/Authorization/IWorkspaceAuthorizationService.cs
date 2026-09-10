@@ -38,7 +38,8 @@ public interface IWorkspaceAuthorizationService
     /// Revokes the <see cref="ApiToken"/> identified by <paramref name="credentialId"/>. The
     /// caller must already hold <see cref="Permission.ManageCredentials"/> in
     /// <paramref name="workspaceId"/>; revocation takes effect immediately, never deferred to a
-    /// background sweep.
+    /// background sweep, and emits exactly one <c>CREDENTIAL_REVOKED</c> authorization-decision
+    /// event (AC-104).
     /// </summary>
     Task RevokeCredentialAsync(
         WorkspaceId workspaceId,
