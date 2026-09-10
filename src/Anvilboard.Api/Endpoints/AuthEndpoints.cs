@@ -1,5 +1,8 @@
 using Anvilboard.Api.Authorization;
 using Anvilboard.Application.Authorization;
+using Anvilboard.Domain;
+using Anvilboard.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Anvilboard.Api.Endpoints;
 
@@ -58,12 +61,53 @@ public static class AuthEndpoints
         {
             if (context.GetActorContext() is { ApiTokenId: { } tokenId } actor)
             {
-                await authService.RevokeCredentialAsync(actor.WorkspaceId, actor.MemberId, tokenId, ct);
+                try
+                {
+                    await authService.RevokeCredentialAsync(actor.WorkspaceId, actor.MemberId, tokenId, ct);
+                }
+                catch (WorkspaceAuthorizationException)
+                {
+                    // Logout must still clear the client session if the member was removed.
+                }
             }
 
             context.Response.Cookies.Delete(WorkspaceAuthorizationMiddleware.SessionCookieName);
             return Results.NoContent();
         });
+
+        group.MapGet("/credentials", async (HttpContext context, AnvilboardDbContext db, CancellationToken ct) =>
+        {
+            var workspaceId = context.GetActorContext().WorkspaceId;
+            var credentials = (await db.ApiTokens
+                .AsNoTracking()
+                .Where(token => token.WorkspaceId == workspaceId)
+                .Select(token => new CredentialResponse(
+                    token.Id.Value,
+                    token.MemberId.Value,
+                    token.GrantedPermissions,
+                    token.CreatedAt,
+                    token.ExpiresAt,
+                    token.RevokedAt))
+                .ToListAsync(ct))
+                .OrderByDescending(credential => credential.CreatedAt)
+                .ToList();
+
+            return Results.Ok(credentials);
+        }).RequirePermission(Permission.ManageCredentials);
+
+        group.MapDelete("/credentials/{id:guid}", async (Guid id, HttpContext context, IWorkspaceAuthorizationService authService, CancellationToken ct) =>
+        {
+            try
+            {
+                var actor = context.GetActorContext();
+                await authService.RevokeCredentialAsync(actor.WorkspaceId, actor.MemberId, new ApiTokenId(id), ct);
+                return Results.NoContent();
+            }
+            catch (WorkspaceAuthorizationException ex)
+            {
+                return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: StatusCodes.Status404NotFound);
+            }
+        }).RequirePermission(Permission.ManageCredentials);
     }
 
     private static void SetSessionCookie(HttpContext context, SessionIssuedResult session)
@@ -87,3 +131,11 @@ public sealed record BootstrapRequestBody(
     string? AdministratorEmail = null);
 
 public sealed record LoginRequestBody(string Username, string Password);
+
+public sealed record CredentialResponse(
+    Guid Id,
+    Guid MemberId,
+    IReadOnlyList<Permission> GrantedPermissions,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset? RevokedAt);

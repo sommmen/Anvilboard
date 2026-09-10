@@ -239,6 +239,23 @@ public sealed class WorkspaceAuthorizationServiceTests
     }
 
     [Fact]
+    public async Task RevokeCredentialAsync_ExistingToken_RecordsRevocationAuditEvent()
+    {
+        await using var fixture = await AuthorizationFixture.CreateAsync();
+        var service = fixture.CreateService();
+        var (token, _) = await fixture.AddApiTokenAsync(fixture.AutomationAgent, [Permission.ReadWriteIssues]);
+        var actor = new ActorContext(fixture.Coordinator.Id, fixture.Workspace.Id, fixture.Coordinator.Role);
+
+        await service.RevokeCredentialAsync(actor.WorkspaceId, actor.MemberId, token.Id);
+
+        var auditEvent = Assert.Single(fixture.AuditEvents);
+        Assert.Equal(actor, auditEvent.Actor);
+        Assert.Equal(fixture.Workspace.Id, auditEvent.WorkspaceId);
+        Assert.Equal("CREDENTIAL_REVOKED", auditEvent.Action);
+        Assert.Equal("AUTHORIZED", auditEvent.Outcome);
+    }
+
+    [Fact]
     public async Task RevokeCredentialAsync_TokenInDifferentWorkspace_ThrowsNotFound()
     {
         await using var fixture = await AuthorizationFixture.CreateAsync();

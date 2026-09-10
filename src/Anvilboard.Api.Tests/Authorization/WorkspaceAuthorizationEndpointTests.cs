@@ -34,6 +34,46 @@ public sealed class WorkspaceAuthorizationEndpointTests
     }
 
     [Fact]
+    public async Task Credentials_List_ReturnsOnlyWorkspaceCredentialMetadata()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Cookie", await BootstrapAndGetSessionCookieAsync(client));
+
+        var response = await client.GetAsync("/api/auth/credentials", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var credential = Assert.Single(payload.RootElement.EnumerateArray());
+        Assert.True(credential.TryGetProperty("id", out _));
+        Assert.True(credential.TryGetProperty("memberId", out _));
+        Assert.True(credential.TryGetProperty("grantedPermissions", out _));
+        Assert.True(credential.TryGetProperty("createdAt", out _));
+        Assert.False(credential.TryGetProperty("tokenHash", out _));
+        Assert.False(credential.TryGetProperty("rawToken", out _));
+    }
+
+    [Fact]
+    public async Task Credentials_Revoke_InvalidatesCredentialOnNextRequest()
+    {
+        await using var factory = new ApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Cookie", await BootstrapAndGetSessionCookieAsync(client));
+
+        var credentialsResponse = await client.GetAsync("/api/auth/credentials", CancellationToken.None);
+        using var credentialsPayload = JsonDocument.Parse(await credentialsResponse.Content.ReadAsStringAsync(CancellationToken.None));
+        var credentialId = Assert.Single(credentialsPayload.RootElement.EnumerateArray()).GetProperty("id").GetGuid();
+
+        var revokeResponse = await client.DeleteAsync($"/api/auth/credentials/{credentialId}", CancellationToken.None);
+        var replayResponse = await client.GetAsync("/api/auth/credentials", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NoContent, revokeResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, replayResponse.StatusCode);
+        using var replayPayload = JsonDocument.Parse(await replayResponse.Content.ReadAsStringAsync(CancellationToken.None));
+        Assert.Equal("CREDENTIAL_INVALID_OR_EXPIRED", replayPayload.RootElement.GetProperty("title").GetString());
+    }
+
+    [Fact]
     public async Task Bootstrap_AfterWorkspaceExists_ReturnsValidationFailure()
     {
         await using var factory = new ApiFactory();
@@ -53,6 +93,23 @@ public sealed class WorkspaceAuthorizationEndpointTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(CancellationToken.None));
         Assert.Equal("VALIDATION_FAILED", payload.RootElement.GetProperty("title").GetString());
+    }
+
+    private static async Task<string> BootstrapAndGetSessionCookieAsync(HttpClient client)
+    {
+        var response = await client.PostAsJsonAsync("/api/auth/bootstrap", new
+        {
+            workspaceName = "Test workspace",
+            workspaceSlug = "test-workspace",
+            administratorDisplayName = "Administrator",
+            administratorUsername = "admin",
+            administratorPassword = "correct horse battery staple",
+            administratorEmail = "admin@example.test",
+        }, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var setCookie = Assert.Single(response.Headers.GetValues("Set-Cookie"));
+        return setCookie.Split(';', 2)[0];
     }
 
     private sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncDisposable

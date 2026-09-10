@@ -151,8 +151,22 @@ public sealed class WorkspaceAuthorizationService(AnvilboardDbContext db, IAudit
             throw new WorkspaceAuthorizationException("REFERENCED_ENTITY_NOT_FOUND", "No credential with that id exists in this workspace.");
         }
 
+        var actor = await db.Members.SingleOrDefaultAsync(member =>
+            member.Id == actorPerformingRevocation && member.WorkspaceId == workspaceId, ct);
+        if (actor is null)
+        {
+            throw new WorkspaceAuthorizationException("REFERENCED_ENTITY_NOT_FOUND", "No member with that id exists in this workspace.");
+        }
+
         token.RevokedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
+        await auditService.RecordAuthorizationDecisionAsync(
+            new ActorContext(actor.Id, workspaceId, actor.Role),
+            workspaceId,
+            "CREDENTIAL_REVOKED",
+            "AUTHORIZED",
+            Guid.NewGuid().ToString(),
+            ct);
     }
 
     private static readonly TimeSpan SessionLifetime = TimeSpan.FromDays(30);
