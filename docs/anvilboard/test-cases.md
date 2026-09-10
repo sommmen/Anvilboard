@@ -1,6 +1,12 @@
 # Test Cases: Anvilboard
 
-> **Status:** Target-state QA specification (Spec Mode). The current proof of concept has no automated test projects; all cases below are planned coverage and must not be interpreted as existing passing tests.
+> **Status:** This document originally described a target-state QA specification for a proof of
+> concept with no automated test projects. That is now **stale** — the solution has 6 populated
+> xUnit test projects (plus 1 empty `Anvilboard.IntegrationTests` scaffold) with real, passing
+> coverage (`dotnet test` reports all green as of this audit). The tables below have been updated
+> to reflect actual existing tests; see [`docs/audit-report.md`](../audit-report.md) for the audit
+> that surfaced this and remaining gaps (e.g. no `DashboardService`/`SyncCoordinator`/backup-restore
+> test files exist yet).
 >
 > **Source chain:** [PRD](./prd.md) → [SRS](./srs.md) → [Technical Design](./tech-design.md) → [feature specifications](../features/overview.md).
 
@@ -13,31 +19,33 @@
 | **Project** | Anvilboard |
 | **Project Type** | Multi-workspace issue-management web application with REST, CLI, MCP, provider integration, and plugin surfaces |
 | **Tech Stack** | .NET 10 / ASP.NET Core, Angular, EF Core, SQLite for supported single-host deployment |
-| **Test Framework** | Target: xUnit, `WebApplicationFactory`, EF Core SQLite fixtures, Angular component tests; contract tests for CLI and MCP |
-| **Scan Date** | 2026-05-09 |
-| **Input Mode** | Spec Mode, grounded in the repository’s current PoC |
+| **Test Framework** | xUnit across 6 populated test projects (`Application.Tests`, `Api.Tests`, `Infrastructure.Tests`, `Agent.Tests`, `Integrations.GitHub.Tests`, `Integrations.Linear.Tests`) plus an empty `IntegrationTests` scaffold; no Angular component tests or dedicated CLI/MCP contract-test project exist yet |
+| **Scan Date** | Updated by doc/implementation audit — see `docs/audit-report.md` |
+| **Input Mode** | Code Mode — verified against the actual `dotnet test` run for `Anvilboard.slnx` |
 
 ### 1.2 Testable Units
 
-| # | Unit / boundary | Type | Planned test location | Existing tests | Coverage status |
+| # | Unit / boundary | Type | Test location | Existing tests | Coverage status |
 |---:|---|---|---|---|---|
-| 1 | `WorkspaceAuthorizationService` | application service | `Application.Tests/Authorization/WorkspaceAuthorizationServiceTests.cs` | No | None |
-| 2 | protected REST endpoints | API boundary | `Api.Tests/Authorization/WorkspaceAuthorizationEndpointTests.cs` | No | None |
-| 3 | `WorkflowEngine` and legacy-status migration | domain service / migration | `Application.Tests/Workflows/WorkflowEngineTests.cs`; `Infrastructure.Tests/Migrations/LegacyStatusMigrationTests.cs` | No | None |
-| 4 | `IssueService`, `BoardQueryService`, `DashboardService` | application services | `Application.Tests/Issues/IssueServiceTests.cs`; `Application.Tests/Dashboard/DashboardServiceTests.cs` | No | None |
-| 5 | `SyncCoordinator`, webhook receivers, plugin registry | integration boundary | `Application.Tests/Sync/SyncCoordinatorTests.cs`; provider and infrastructure test projects | No | None |
-| 6 | idempotency, API v1, CLI and MCP contract adapters | application / transport | `Application.Tests/Automation/IdempotencyServiceTests.cs`; `Api.Tests/V1/AutomationSurfaceContractTests.cs`; `Agent.Tests/ContractEquivalenceTests.cs` | No | None |
-| 7 | audit redaction, backup and restore | operations services | `Application.Tests/Audit/AuditServiceTests.cs`; `Infrastructure.Tests/Audit/BackupServiceTests.cs` | No | None |
-| 8 | `AnvilboardDbContext` EF Core/SQLite registration and migrations | infrastructure boundary | `Infrastructure.Tests/Persistence/AnvilboardDbContextRegistrationTests.cs`; migration tests | No | None |
+| 1 | `WorkspaceAuthorizationService` | application service | `Anvilboard.Application.Tests/Authorization/WorkspaceAuthorizationServiceTests.cs` | Yes | Covered |
+| 2 | protected REST endpoints | API boundary | `Anvilboard.Api.Tests/Authorization/WorkspaceAuthorizationEndpointTests.cs` | Yes | Covered |
+| 3 | `WorkflowEngine` and legacy-status migration | domain service / migration | `Anvilboard.Application.Tests/Workflows/WorkflowEngineTests.cs`; `Anvilboard.Infrastructure.Tests/Migrations/LegacyStatusMigrationTests.cs` | Yes | Covered |
+| 4 | `BoardQueryService`, `IssueLinkService` | application services | `Anvilboard.Application.Tests/Issues/BoardQueryServiceTests.cs`; `Anvilboard.Application.Tests/Issues/IssueLinkServiceTests.cs` | Yes | Covered — no `DashboardService`/`IssueService` test file exists; see `docs/audit-report.md` |
+| 5 | webhook receivers, plugin registry, plugin config/state store | integration boundary | `Anvilboard.Integrations.GitHub.Tests/GitHubWebhookReceiverTests.cs`; `Anvilboard.Integrations.Linear.Tests/LinearWebhookReceiverTests.cs`; `Anvilboard.Infrastructure.Tests/Plugins/PluginRegistryTests.cs`; `Anvilboard.Infrastructure.Tests/Plugins/PluginConfigStateStoreTests.cs` | Yes | Covered — no dedicated `SyncCoordinator` test file exists |
+| 6 | idempotency, correlation context, error-catalog translation, agent board surface | application / transport | `Anvilboard.Application.Tests/Automation/IdempotencyServiceTests.cs`; `Anvilboard.Application.Tests/Automation/CorrelationContextTests.cs`; `Anvilboard.Application.Tests/Automation/ErrorCatalogTranslatorTests.cs`; `Anvilboard.Agent.Tests/BoardAgentServiceTests.cs` | Yes | Covered — no dedicated CLI/MCP contract-equivalence test project exists |
+| 7 | audit redaction | operations service | `Anvilboard.Application.Tests/Audit/AuditServiceTests.cs` | Yes | Covered — no backup/restore test file exists because no backup/restore service exists (Critical finding, see `docs/audit-report.md`) |
+| 8 | integration lifecycle, DP-API secret store | application / infrastructure services | `Anvilboard.Application.Tests/Integrations/IntegrationServiceTests.cs`; `Anvilboard.Infrastructure.Tests/Security/DataProtectionSecretStoreTests.cs` | Yes | Covered |
+| 9 | end-to-end API integration | integration boundary | `tests/Anvilboard.IntegrationTests` | No | None — project scaffold exists but contains no test files |
 
 ### 1.3 Coverage Summary
 
 | Metric | Value |
 |---|---:|
-| Target testable boundaries | 8 |
-| Boundaries with existing automated tests | 0 |
-| Planned test cases | 52 |
-| Current automated coverage | 0% (no test projects exist) |
+| Test projects | 6 `*.Tests` unit/integration projects with tests + 1 empty `Anvilboard.IntegrationTests` scaffold (no `.cs` test files yet) |
+| Testable boundaries with an existing test file | 8 of 9 listed above have at least one test file |
+| Total automated tests (last `dotnet test` run) | 114 (`5 + 5 + 7 + 94 + 2 + 1` across the 6 populated projects), all passing |
+| Test result | All passing, 0 failures |
+| Known coverage gaps | No `DashboardService`, `IssueService`, or `SyncCoordinator` test files; no backup/restore tests (service doesn't exist); no Angular component tests; no dedicated CLI/MCP contract-equivalence test project; `Anvilboard.IntegrationTests` project exists but is empty |
 
 ### 1.4 Interaction Map
 
@@ -242,7 +250,9 @@ AC identifiers are intentionally qualified with their source document because se
 
 | Gap | Rationale | Recommendation |
 |---|---|---|
-| No test projects or runner configuration | The repository currently contains no automated test projects. | Create the planned test projects and shared SQLite/WebApplicationFactory fixture before feature implementation expands. |
+| `Anvilboard.IntegrationTests` project is empty | The project scaffold and `WebApplicationFactory`-style dependencies exist, but no `.cs` test files were added. | Add the planned end-to-end integration test cases to this project. |
+| No `DashboardService`/`IssueService`/`SyncCoordinator` test files | These services exist in `Anvilboard.Application`/`Anvilboard.Infrastructure` but have no dedicated unit test file yet. | Add the planned unit test cases for these services. |
+| No Angular component or CLI/MCP contract-equivalence tests | The frontend and automation-adapter parity claims in this document are not backed by an existing test suite. | Add Angular component tests and a CLI/MCP contract-equivalence test project. |
 | Deployability coverage (`NFR-PRT-001`) | The technical design defines supported deployment but does not yet provide executable deployment/upgrade detail. | Add deployment acceptance criteria and an environment smoke/upgrade test specification before packaging work. |
 | Explicit not-found contract exercise | The catalog defines `REFERENCED_ENTITY_NOT_FOUND`, but the feature test modules do not name a concrete endpoint case. | Add endpoint-level missing workflow state/member/reference tests when routes are finalized. |
 | UI accessibility and visual workflow coverage | The target Angular interface is described upstream but component-level behavior is not sufficiently detailed in feature specs. | Add UI component/e2e cases after the frontend interaction design is decomposed. |

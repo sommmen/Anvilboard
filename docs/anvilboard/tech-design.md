@@ -994,21 +994,27 @@ Detailed test cases are tracked separately; see [`docs/anvilboard/test-cases.md`
 
 ## 16. Milestones & Task Breakdown
 
+> **Status column corrected 2026 doc audit** — see [`docs/audit-report.md`](../audit-report.md) for the
+> full evidence behind each rating. Every row previously read "Not Started"; that was stale relative to
+> `dotnet test` results and direct code inspection at audit time. "Partial" means some tasks in the row
+> are implemented (often with test coverage) and others are not — see the linked feature spec's `Status`
+> row and the audit report for the itemized gap.
+
 | Milestone | Tasks | Estimate | Status |
 |---|---|---|---|
-| M1: Workspace & Auth Foundation | Workspace/role model, auth middleware, cross-workspace isolation tests | 3 weeks | Not Started |
-| M2: Configurable Workflow | `WorkflowState`/`WorkflowTransition` model, migration from `IssueStatus`, transition enforcement | 2 weeks | Not Started |
-| M3: Unified Board & Audit | Board/list/dashboard queries with new filters, `AuditEvents` wiring across all mutations | 2 weeks | Not Started |
-| M3.5: Extended Ticket Model & List View | Free-form type/priority migration, session-state fields, threaded comments, Linear-style list view w/ grouping and ordering | 2 weeks | Not Started |
-| M4: Automation Contract Normalization | Shared symbolic DTOs across REST/CLI/MCP, idempotency records, error taxonomy | 2 weeks | Not Started |
-| M4.5: Artifacts & Issue Linking | `Artifacts`/`IssueLinks` schema (`Type`+`Description`, `BLOCKS` dependency projection), `IArtifactStore` abstraction (SQLite-backed), artifact/link CRUD endpoints | 2 weeks | Not Started |
-| M5: Integration Provenance & Health | Sync-condition derivation, health surfacing on board/dashboard, secret redaction audit | 2 weeks | Not Started |
-| M5.5: Lifecycle Hooks & Sync-Conflict Handling | `ILifecycleHook<TEvent>` contract, lifecycle points (`Pre/PostIngest`, `Pre/PostResync`, `Pre/PostPhaseChange`, `Pre/PostAddComment`, `Pre/PostAddAttachment`), execution budget diagnostics, artifact-expansion via the same hook pattern (e.g. Slack thread), `LastSyncedVersion`-based conflict detection, additive list-union merge, and dashboard-driven resolution endpoint | 2 weeks | Not Started |
-| M6: Archive & Activity History | `Issues.ArchivedAt` archive/unarchive operations, `includeArchived` filtering, structured `ActivityEvents` with typed references and clickable UI rendering | 1 week | Not Started |
-| M6.5: Real-Time Dashboard & Plugin Events | `IRealtimeUpdatePublisher` (SignalR), workspace-group authorization, bounded/non-blocking delivery, reconnect re-fetch behavior, `IPluginEventPublisher` | 2 weeks | Not Started |
-| M6.7: GitHub PR Artifacts & Plugin Persistence | GitHub plugin PR correlation/refresh as a `pull_request` artifact, `IPluginConfigStore`/`IPluginStateStore` abstractions | 1 week | Not Started |
-| M7: Backup/Restore | Backup export, restore integrity verification, audited recovery drill | 1 week | Not Started |
-| M8: Hardening & Pilot Readiness | Security review, performance validation, documentation propagation | 1 week | Not Started |
+| M1: Workspace & Auth Foundation | Workspace/role model, auth middleware, cross-workspace isolation tests | 3 weeks | Partial — model, middleware, and isolation tests exist; admin-triggered revocation and full REST/CLI/MCP enforcement parity are missing (see `workspace-authorization.md`) |
+| M2: Configurable Workflow | `WorkflowState`/`WorkflowTransition` model, migration from `IssueStatus`, transition enforcement | 2 weeks | Partial — model, migration, and transition validation are implemented and tested; no admin CRUD/config surface or audit-event emission for workflow mutations (see `workflow-engine.md`) |
+| M3: Unified Board & Audit | Board/list/dashboard queries with new filters, `AuditEvents` wiring across all mutations | 2 weeks | Partial — board/list/dashboard queries and filters are implemented; audit write-path exists but workspace-scoped query access (FR-OPS-001) is missing (see `audit-and-recovery.md`) |
+| M3.5: Extended Ticket Model & List View | Free-form type/priority migration, session-state fields, threaded comments, Linear-style list view w/ grouping and ordering | 2 weeks | Partial — free-form type/priority migration is done; threaded comments are still flat (no reply-to) and the web list view only groups by status, not the full grouping/ordering set (see `issue-board-service.md`) |
+| M4: Automation Contract Normalization | Shared symbolic DTOs across REST/CLI/MCP, idempotency records, error taxonomy | 2 weeks | Partial — CLI/MCP host and shared DTOs work; `IdempotencyRecord` exists but is not wired through the agent surface, and responses lack a versioned `apiVersion` field (see `agent-and-automation-surface.md`) |
+| M4.5: Artifacts & Issue Linking | `Artifacts`/`IssueLinks` schema (`Type`+`Description`, `BLOCKS` dependency projection), `IArtifactStore` abstraction (SQLite-backed), artifact/link CRUD endpoints | 2 weeks | Partial — schema, `IArtifactStore`, and issue-link CRUD (create/list/remove) are implemented and tested; there is no artifact application service (attach/list/remove) and no link-update endpoint (see `artifacts.md`, `issue-linking.md`) |
+| M5: Integration Provenance & Health | Sync-condition derivation, health surfacing on board/dashboard, secret redaction audit | 2 weeks | Partial — integration lifecycle, secret redaction, and webhook-signature verification are implemented; paused integrations still accept webhooks and sync health/backoff surfacing is not implemented (see `integration-and-plugin-platform.md`) |
+| M5.5: Lifecycle Hooks & Sync-Conflict Handling | `ILifecycleHook<TEvent>` contract, lifecycle points (`Pre/PostIngest`, `Pre/PostResync`, `Pre/PostPhaseChange`, `Pre/PostAddComment`, `Pre/PostAddAttachment`), execution budget diagnostics, artifact-expansion via the same hook pattern (e.g. Slack thread), `LastSyncedVersion`-based conflict detection, additive list-union merge, and dashboard-driven resolution endpoint | 2 weeks | Partial — a single post-mutation `IIssueHook` fire-and-forget hook exists (narrower than the spec'd multi-point `Pre/Post*` contract); no `LastSyncedVersion`-based conflict detection, merge, or resolution endpoint was found in code |
+| M6: Archive & Activity History | `Issues.ArchivedAt` archive/unarchive operations, `includeArchived` filtering, structured `ActivityEvents` with typed references and clickable UI rendering | 1 week | Partial — `Issue.ArchivedAt` and `includeArchived` board-query filtering plus structured `ActivityEvents` are implemented; no dedicated archive/unarchive API endpoint was found |
+| M6.5: Real-Time Dashboard & Plugin Events | `IRealtimeUpdatePublisher` (SignalR), workspace-group authorization, bounded/non-blocking delivery, reconnect re-fetch behavior, `IPluginEventPublisher` | 2 weeks | **Not Started** — no SignalR hub, publisher, or `IPluginEventPublisher` code exists anywhere in `src/` (see `realtime-updates.md`) |
+| M6.7: GitHub PR Artifacts & Plugin Persistence | GitHub plugin PR correlation/refresh as a `pull_request` artifact, `IPluginConfigStore`/`IPluginStateStore` abstractions | 1 week | Partial — `IPluginConfigStore`/`IPluginStateStore` and their SQLite-backed implementation are implemented and tested; GitHub PR correlation/refresh as an `Artifact` was not found (no artifact application service exists yet, see `artifacts.md`) |
+| M7: Backup/Restore | Backup export, restore integrity verification, audited recovery drill | 1 week | **Not Started** — no `IBackupService`, `CreateBackupAsync`/`RestoreAsync`, or backup manifest exists (see `audit-and-recovery.md`) |
+| M8: Hardening & Pilot Readiness | Security review, performance validation, documentation propagation | 1 week | Not Started — no evidence of a dedicated security review, performance-validation pass, or pilot-readiness documentation sweep beyond this audit |
 
 ## 17. Open Questions & Decision Records
 

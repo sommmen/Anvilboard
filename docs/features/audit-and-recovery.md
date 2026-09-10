@@ -8,6 +8,7 @@
 |-------|-------|
 | Component | audit-and-recovery |
 | Priority | P0 |
+| Status | Partial — append-only audit recording and secret/credential redaction at write time are implemented and unit-tested; workspace-scoped audit query access (FR-OPS-001) and backup/restore (FR-OPS-002) are **not implemented at all** — no `IBackupService`, `CreateBackupAsync`, `RestoreAsync`, or manifest exists. See `docs/audit-report.md` for details. |
 | SRS Refs | FR-OPS-001, FR-OPS-002, NFR-AVL-001, NFR-REL-001 |
 | Tech Design Ref | §8.1 Component Overview — Audit & Recovery row; §10.1 `AuditEvents`; §11.4 Audit Logging; §14.3 Rollback Strategy |
 | Depends On | workspace-authorization, workflow-engine, issue-board-service, integration-and-plugin-platform, agent-and-automation-surface |

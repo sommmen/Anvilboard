@@ -8,6 +8,7 @@
 |-------|-------|
 | Component | agent-and-automation-surface |
 | Priority | P0 |
+| Status | Partial — the CLI/MCP host and the requested agent operations are implemented and dual-mode wiring works; agent operations do **not** enforce workspace authorization/actor identity, the idempotency service exists but is not wired through the agent surface, and responses lack a versioned `apiVersion` contract field. See `docs/audit-report.md` for details (notable: auth bypass on this surface). |
 | SRS Refs | FR-AUT-001, FR-AUT-002, FR-AUT-003, NFR-MNT-001 |
 | Tech Design Ref | §8.1 Component Overview — Automation Surface (REST/CLI/MCP) row; §7.3 Parameter Validation; §7.6 Error Handling Strategy; §9 API Design; §10.1 `IdempotencyRecords` |
 | Depends On | workspace-authorization, workflow-engine, issue-board-service, integration-and-plugin-platform |

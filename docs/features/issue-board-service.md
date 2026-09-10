@@ -8,6 +8,7 @@
 |-------|-------|
 | Component | issue-board-service |
 | Priority | P0 |
+| Status | Partial — backend CRUD, board/list querying/filtering/grouping, and dashboard aggregation are implemented; the web UI only groups by status (no filter stack), the issue-detail activity feed is not rendered, comments are flat (not threaded), and optimistic concurrency (`Issue.Version`) and the link-update endpoint are incomplete. See `docs/audit-report.md` for details. |
 | SRS Refs | FR-WRK-001, FR-WRK-002, FR-WRK-003, FR-WRK-004, FR-WRK-005, FR-WRK-006, FR-WRK-007, FR-WRK-008, FR-WRK-009, FR-WRK-010, FR-WRK-011, FR-WRK-012, FR-WRK-013, FR-WRK-014, NFR-PERF-001, NFR-PERF-002, NFR-USB-001 |
 | Tech Design Ref | §8.1 — Issue & Board Service row; also §7.5 Computation Rules, §9 API Design, §12 Performance Design |
 | Depends On | workflow-engine, workspace-authorization |
