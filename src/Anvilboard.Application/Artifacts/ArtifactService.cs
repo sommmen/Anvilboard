@@ -278,7 +278,8 @@ public sealed class ArtifactService(
     }
 
     /// <summary>Applied even when nothing changed: a refresh is idempotent, not a no-op, so the
-    /// board can still show that the provider was heard from (§7.4).</summary>
+    /// board can still show that the provider was heard from (`docs/features/artifacts.md`,
+    /// "Boundary values &amp; edge cases").</summary>
     private static void ApplyRefresh(Artifact artifact, string title, string contentReference, string? metadata)
     {
         artifact.Title = title;
@@ -381,7 +382,8 @@ public sealed class ArtifactService(
     }
 
     /// <summary>Summaries carry identifiers and provenance only — never the content reference or
-    /// the metadata payload, either of which can leak private-repository detail (§11.3).</summary>
+    /// the metadata payload, either of which can leak private-repository detail
+    /// (`docs/features/artifacts.md`, "Constraints": audit on every mutation).</summary>
     private Task RecordAuditAsync(
         WorkspaceId workspaceId,
         Artifact artifact,

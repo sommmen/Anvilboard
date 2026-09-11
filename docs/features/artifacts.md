@@ -160,7 +160,7 @@ The GitHub plugin correlates a pull request to an issue and keeps a `pull_reques
 - **Small closed `Kind` set**: `Kind` (`file`/`link`/`deployment`/`pull_request`) is a fixed enumeration describing artifact shape, not workspace-configurable — unlike `Issue.Type`/`Issue.Priority`, which are deliberately free-form.
 - **`Metadata` is opaque and kind-scoped**: only refreshable kinds (`pull_request`) populate `Metadata`; this component does not validate its internal shape beyond a size bound — the owning plugin (GitHub) is solely responsible for what it writes there.
 - **Refresh is not a public write path**: `RefreshArtifactAsync` is reachable only from the owning plugin's correlation logic, never from a human/API/CLI/MCP surface directly — a human wanting to "edit" a PR artifact's status has no such operation; status only ever reflects what GitHub reports.
-- **Audit on every mutation**: attach, refresh, and remove all always emit an audit/activity event; there is no "silent" artifact operation.
+- **Audit on every mutation**: attach, refresh, and remove all always emit an audit/activity event; there is no "silent" artifact operation. The summary carries identifiers and provenance only (`issueId`, `kind`, `source`) — never `ContentReference` or `Metadata`, either of which can leak private-repository detail.
 - **Removal never silently purges outside policy**: content retention/archive behavior on removal must be documented per `IArtifactStore` implementation and must not vary undocumented between implementations.
 
 ## Validation Rules
@@ -296,10 +296,7 @@ See `integration-and-plugin-platform.md`'s File Structure for the owning `GitHub
 - **Fault-injection**: a fake `IArtifactStore` configured to throw on `StoreAsync`, asserting `ARTIFACT_STORE_UNAVAILABLE` and no partial `Artifact` row.
 - **Fixtures / Mocks**: seeded `Issue` rows across two workspaces (to test cross-workspace/cross-issue scoping negatives); an in-memory or temp-file-backed `SqliteArtifactStore` instance per test.
 
-Refresh-specific coverage lives alongside it in
-`src/Anvilboard.Application.Tests/Artifacts/ArtifactRefreshTests.cs` (dedup-key convergence, the
-lost-insert race, non-refreshable-kind rejection), and the HTTP surface — routing, status-code
-mapping, and permission enforcement — in
+The HTTP surface — routing, status-code mapping, and permission enforcement — is covered in
 `src/Anvilboard.Api.Tests/Artifacts/ArtifactEndpointTests.cs`.
 
 **Test file**: `src/Anvilboard.Application.Tests/Artifacts/ArtifactExpansionTests.cs`
@@ -308,9 +305,9 @@ mapping, and permission enforcement — in
 - **Integration**: a fake artifact-expansion `Post*` `ILifecycleHook<TEvent>` that calls `AttachArtifactAsync` with `source = "slack-thread-expansion"` and no `actorId`, asserting the resulting `Artifact` is distinguishable from a manual attachment and carries an identical audit trail shape; idempotent re-expansion updating an existing artifact rather than duplicating it; a simulated partial-fetch failure asserting no `Artifact` row is created.
 - **Fixtures / Mocks**: fake external-fetch client returning configurable success/partial-failure responses; a fake `LifecycleHookOptions` budget configuration reused from `integration-and-plugin-platform`'s test fixtures for consistency.
 
-**Test file**: `src/Anvilboard.Application.Tests/Artifacts/RefreshArtifactAsyncTests.cs`
+**Test file**: `src/Anvilboard.Application.Tests/Artifacts/ArtifactRefreshTests.cs`
 
 **Test scope**:
-- **Unit**: refresh rejects non-refreshable `kind` values with `VALIDATION_FAILED`.
-- **Integration**: first PR event attaches a new `pull_request` artifact with `Metadata` populated and `ArtifactAttached` emitted; a second PR event with the same `dedupKey` updates the row in place and emits `ArtifactRefreshed` instead of creating a duplicate; idempotent no-op refresh (identical `contentReference`/`metadata`) still emits `ArtifactRefreshed` but changes no visible content.
+- **Unit**: refresh rejects non-refreshable `kind` values with `VALIDATION_FAILED`; an empty `dedupKey` is rejected.
+- **Integration**: first PR event attaches a new `pull_request` artifact with `Metadata` populated and `ArtifactAttached` emitted; a second PR event with the same `dedupKey` updates the row in place and emits `ArtifactRefreshed` instead of creating a duplicate; idempotent no-op refresh (identical `contentReference`/`metadata`) still emits `ArtifactRefreshed` but changes no visible content; `dedupKey` is scoped per issue; a lost insert race converges on the winning row.
 - **Fixtures / Mocks**: a fake `GitHubPullRequestArtifactSync` caller supplying `(issueId, dedupKey, metadata)` triples simulating PR lifecycle events (opened → checks completed → merged).

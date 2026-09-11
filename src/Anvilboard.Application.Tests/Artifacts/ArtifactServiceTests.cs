@@ -38,7 +38,8 @@ public sealed class ArtifactServiceTests
         Assert.Equal(artifact.Id.ToString(), audit.TargetId);
         Assert.Contains($"kind=link", audit.ResultSummary);
 
-        // The summary is provenance only: leaking the reference would expose private URLs (§11.3).
+        // The summary is provenance only: leaking the reference would expose private URLs
+        // (`docs/features/artifacts.md`, "Constraints": audit on every mutation).
         Assert.DoesNotContain("ci.example.test", audit.ResultSummary);
     }
 
