@@ -26,6 +26,20 @@ public sealed class GitHubWebhookReceiverTests
     }
 
     [Fact]
+    public void WebhookResult_ThreeParameterAcceptOverload_StillBindsForBinaryCompatibility()
+    {
+        // A plugin assembly compiled against the pre-team-key-routing three-parameter `Accept`
+        // overload binds to it by CLR signature at load time, not by recompiling against the newer
+        // four-parameter one. This proves that overload still exists and behaves like the
+        // four-parameter form with no team key, rather than a MissingMethodException at call time.
+        var result = WebhookResult.Accept([], [], [GitHubWebhookReceiver.PullRequestMergedEventType]);
+
+        Assert.True(result.Accepted);
+        Assert.Equal([GitHubWebhookReceiver.PullRequestMergedEventType], result.EventTypes);
+        Assert.Null(result.TeamKey);
+    }
+
+    [Fact]
     public async Task HandleAsync_ValidIssuesEvent_MapsNormalizedIssue()
     {
         var result = await CreateReceiver().HandleAsync(CreateRequest("issues", IssuePayload, signed: true), CancellationToken.None);

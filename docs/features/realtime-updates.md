@@ -124,6 +124,8 @@ The publisher coalesces bursty changes by `(workspaceId, issueId)` over a short 
 
 The transport makes at-most-once best-effort delivery, not a durable replay guarantee. On reconnect, a client re-fetches the active board/list query, the selected issue detail if applicable, and dashboard summaries. On an event gap, unknown event type, or version discontinuity, it performs the same targeted re-fetch. REST query results remain authoritative.
 
+When the hub connection drops and SignalR's own automatic-reconnect gives up, `RealtimeBoardSyncService` falls back to a manual retry loop with a bounded exponential backoff (starting at 1s, doubling per consecutive failure, capped at 30s) rather than retrying every second indefinitely; a successful connection resets the delay back to 1s. This keeps a prolonged API/hub outage from having every open browser tab hammer the hub with a fresh negotiate/start attempt each second.
+
 ### Slow and disconnected clients
 
 Each connection uses bounded outbound work. A slow client may receive a coalesced latest change or be disconnected according to SignalR transport policy; it cannot accumulate an unbounded queue, delay another workspace/client, or delay the originating mutation. Metrics distinguish coalesced, dropped, and failed sends from core write failures.

@@ -104,6 +104,48 @@ public sealed class IssueServiceRealtimePublicationTests
     }
 
     [Fact]
+    public async Task UpsertFromExternalAsync_ExistingLinkOwnedByDifferentWorkspace_ThrowsInsteadOfCrossTenantMutation()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+
+        // File the issue via the untargeted overload first, so the external link ends up owned by
+        // the fixture's own workspace/team.
+        var original = new NormalizedIssue(IntegrationProvider.GitHub, "cross-tenant#1", "RT", "Original", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
+        await service.UpsertFromExternalAsync(original);
+
+        // A second workspace that happens to also configure a team keyed "RT" — team keys are only
+        // unique within a workspace, so this is a legal, if coincidental, configuration.
+        var otherWorkspaceId = WorkspaceId.New();
+        fixture.Db.Workspaces.Add(new Workspace
+        {
+            Id = otherWorkspaceId,
+            Name = "Other workspace",
+            Slug = "other-workspace",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        fixture.Db.Teams.Add(new Team
+        {
+            Id = TeamId.New(),
+            WorkspaceId = otherWorkspaceId,
+            Name = "Other team",
+            Key = "RT",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        await fixture.Db.SaveChangesAsync();
+
+        // Same (Provider, SourceKey) dedupe key as the existing link, but now resolved against the
+        // *other* workspace — as would happen if a trusted webhook's team-key routing pointed at a
+        // different tenant. This must be refused rather than silently mutating the first
+        // workspace's issue (the cross-tenant `ExternalLink` mutation this regression test guards).
+        var sameLinkDifferentTenant = original with { Title = "Hijacked", SyncFingerprint = "two" };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.UpsertFromExternalAsync(sameLinkDifferentTenant, otherWorkspaceId));
+    }
+
+    [Fact]
     public async Task ChangeStatusAsync_DeniedTransition_PublishesNothing()
     {
         await using var fixture = await RealtimeFixture.CreateAsync();

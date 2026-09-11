@@ -54,12 +54,23 @@ public sealed record WebhookResult
         IReadOnlyList<NormalizedComment>? comments = null) =>
         new() { Accepted = true, Issues = issues ?? [], Comments = comments ?? [] };
 
+    // Keep this exact three-parameter CLR signature too: it shipped before team-key routing was
+    // introduced, and a plugin assembly compiled against it binds to this overload by signature at
+    // load time, not by recompiling against the newer four-parameter one. Removing it would make a
+    // previously-working plugin DLL fail with a MissingMethodException at call time even though
+    // nothing in its own source changed.
+    public static WebhookResult Accept(
+        IReadOnlyList<NormalizedIssue>? issues,
+        IReadOnlyList<NormalizedComment>? comments,
+        IReadOnlyList<string>? eventTypes) =>
+        Accept(issues, comments, eventTypes, teamKey: null);
+
     /// <summary>Accepts a delivery that also carries approved event and trusted team routing data.</summary>
     public static WebhookResult Accept(
         IReadOnlyList<NormalizedIssue>? issues,
         IReadOnlyList<NormalizedComment>? comments,
         IReadOnlyList<string>? eventTypes,
-        string? teamKey = null) =>
+        string? teamKey) =>
         new() { Accepted = true, Issues = issues ?? [], Comments = comments ?? [], EventTypes = eventTypes ?? [], TeamKey = teamKey };
 
     public static WebhookResult Reject(string reason) => new() { Accepted = false, RejectionReason = reason };

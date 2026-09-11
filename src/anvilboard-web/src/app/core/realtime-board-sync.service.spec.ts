@@ -154,6 +154,72 @@ describe('RealtimeBoardSyncService', () => {
     vi.useRealTimers();
   });
 
+  it('backs off exponentially across consecutive reconnect failures, capped at 30s', async () => {
+    vi.useFakeTimers();
+    service.fake.startRejection = new Error('hub unreachable');
+    await service.start();
+    expect(service.fake.startCalls).toBe(1);
+
+    // 1st retry after 1s
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(service.fake.startCalls).toBe(2);
+
+    // 2nd retry after 2s
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(service.fake.startCalls).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(service.fake.startCalls).toBe(3);
+
+    // 3rd retry after 4s
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(service.fake.startCalls).toBe(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(service.fake.startCalls).toBe(4);
+
+    // 4th retry after 8s
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(service.fake.startCalls).toBe(5);
+
+    // 5th retry after 16s
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(service.fake.startCalls).toBe(6);
+
+    // 6th retry would be 32s uncapped, but must be capped at 30s
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(service.fake.startCalls).toBe(6);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(service.fake.startCalls).toBe(7);
+
+    // Further retries stay capped at 30s rather than continuing to grow.
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(service.fake.startCalls).toBe(7);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(service.fake.startCalls).toBe(8);
+
+    vi.useRealTimers();
+  });
+
+  it('resets the backoff delay to 1s after a successful reconnect following failures', async () => {
+    vi.useFakeTimers();
+    service.fake.startRejection = new Error('hub unreachable');
+    await service.start(); // startCalls=1, fails; next retry in 1s
+
+    await vi.advanceTimersByTimeAsync(1_000); // 1st retry, still fails; next retry in 2s
+    expect(service.fake.startCalls).toBe(2);
+
+    service.fake.startRejection = null; // the next attempt will succeed
+    await vi.advanceTimersByTimeAsync(2_000); // 2nd retry succeeds and resets the backoff
+    expect(service.fake.startCalls).toBe(3);
+
+    service.fake.emitClose(); // connection drops again after the successful recovery
+    await vi.advanceTimersByTimeAsync(999);
+    expect(service.fake.startCalls).toBe(3);
+    await vi.advanceTimersByTimeAsync(1); // proves the delay reset back to 1s, not 4s
+    expect(service.fake.startCalls).toBe(4);
+
+    vi.useRealTimers();
+  });
+
   it('cancels a pending retry and does not reconnect after an explicit stop', async () => {
     vi.useFakeTimers();
     await service.start();

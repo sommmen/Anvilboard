@@ -24,6 +24,11 @@ public sealed class LinearWebhookReceiverTests
         Assert.Equal(IntegrationProvider.Linear, issue.Provider);
         Assert.Equal("ENG-42", issue.SourceKey);
         Assert.Equal("ENG", issue.TeamKey);
+        // Regression: the receiver used to call `WebhookResult.Accept(issues: [normalized])`,
+        // which left `WebhookResult.TeamKey` null even though the normalized issue itself carried
+        // a team key — so the webhook endpoint could never resolve a trusted workspace for a
+        // Linear delivery. It must also be surfaced on the result for team-key routing to work.
+        Assert.Equal("ENG", result.TeamKey);
         Assert.Equal(IssueStatus.InProgress, issue.SuggestedStatus);
         Assert.Equal(IssuePriority.High, issue.SuggestedPriority);
         Assert.Equal("dev@example.test", issue.AssigneeEmail);

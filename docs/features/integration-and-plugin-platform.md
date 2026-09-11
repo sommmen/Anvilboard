@@ -253,6 +253,11 @@ Two deliberate narrowings against the original sketch:
 
 There is no in-process subscriber fan-out; the relay to `realtime-updates` is the only consumer. `github.pull_request.merged` is the sole event type any shipped plugin currently reports.
 
+**Trusted vs. public publisher isolation.** The webhook endpoint (an authenticated, host-owned caller) and a reflection-loaded plugin resolve two different types that both ultimately relay through the same `PluginEventRelay`, so neither loses delivery nor gains capability the other shouldn't have:
+
+- `ITrustedPluginEventPublisher` is the workspace-authenticated capability the webhook pipeline uses once it has independently established which `WorkspaceId` a request belongs to. It extends the marker interface `IHostOnlyPluginCapability`, which `PluginRegistry` uses to filter it — and any future host-only capability marked the same way — out of the constructor-injection surface reflection-loaded plugins get. `PluginRegistry` builds each such plugin through a small `IServiceProvider` wrapper that returns `null` for any service type assignable to `IHostOnlyPluginCapability` before delegating to the real container, so a plugin's constructor cannot receive it even though it is registered in the very same DI container the host resolves it from.
+- `IPluginEventPublisher` (the public contract) resolves to `PublicPluginEventPublisher`, a small adapter that delegates to the same `PluginEventRelay` (so realtime enabling still restores event delivery for public/reflection-loaded plugins, and every event is still subject to the same `RelayedPluginEventTypes` approval gate) without exposing the trusted, workspace-authenticated capability itself. When realtime is not enabled, `IPluginEventPublisher` still falls back to `NullPluginEventPublisher`, a safe no-op.
+
 ### Plugin config/state persistence (planned; new, FR-INT-007)
 
 Two small namespaced key-value abstractions any plugin can depend on without owning its own schema/migration:

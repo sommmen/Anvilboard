@@ -28,6 +28,13 @@ public sealed class PluginRegistry : IPluginRegistry
     {
         _all.AddRange(registeredPlugins);
 
+        // Reflection-loaded plugins are constructed against a provider that hides every service
+        // marked IHostOnlyPluginCapability (e.g. the trusted, workspace-authenticated event
+        // publisher webhooks use). A plugin whose assembly also references Anvilboard.Application
+        // could otherwise declare a constructor parameter for such a capability and receive it —
+        // the container has no other way to tell "the host" and "a reflection-loaded plugin" apart.
+        var pluginConstructionProvider = new HostOnlyCapabilityFilteringServiceProvider(serviceProvider);
+
         foreach (var path in options.Value.AssemblyPaths)
         {
             try
@@ -37,7 +44,7 @@ public sealed class PluginRegistry : IPluginRegistry
                 {
                     try
                     {
-                        var plugin = (IAnvilboardPlugin)ActivatorUtilities.CreateInstance(serviceProvider, pluginType);
+                        var plugin = (IAnvilboardPlugin)ActivatorUtilities.CreateInstance(pluginConstructionProvider, pluginType);
                         if (!StringComparer.Ordinal.Equals(plugin.Manifest.SupportedContractVersion, PluginContract.Version))
                         {
                             logger.LogWarning(

@@ -5,7 +5,14 @@ using Microsoft.Extensions.Logging;
 namespace Anvilboard.Application.Realtime;
 
 /// <summary>Host-only capability for publishing events after it has authenticated workspace routing.</summary>
-public interface ITrustedPluginEventPublisher
+/// <remarks>
+/// Extends <see cref="IHostOnlyPluginCapability"/> purely as a marker: it carries no members of its
+/// own, but it is what lets <c>Anvilboard.Infrastructure</c>'s plugin construction filter this
+/// capability (and <see cref="PluginEventRelay"/>, which implements it) out of the provider handed
+/// to <c>ActivatorUtilities.CreateInstance</c> for reflection-loaded plugins, without that project
+/// ever referencing this type directly.
+/// </remarks>
+public interface ITrustedPluginEventPublisher : IHostOnlyPluginCapability
 {
     void Publish(PluginEvent pluginEvent);
 }
@@ -65,4 +72,23 @@ public sealed class PluginEventRelay(
             logger.LogWarning(ex, "Failed to relay plugin event {EventType}.", pluginEvent.EventType);
         }
     }
+}
+
+/// <summary>
+/// The <see cref="IPluginEventPublisher"/> a reflection-loaded/third-party plugin actually resolves
+/// once realtime is enabled, replacing the <see cref="NullPluginEventPublisher"/> registered by
+/// <c>AddAnvilboardApplication</c>.
+/// </summary>
+/// <remarks>
+/// Delegates to the exact same approval-gated relay a first-class, host-authenticated caller (the
+/// webhook endpoint, via <see cref="ITrustedPluginEventPublisher"/>) uses, so enabling realtime
+/// restores live delivery for every plugin using the public contract rather than leaving it a silent
+/// no-op. It is a distinct type from <see cref="PluginEventRelay"/> — not itself an
+/// <see cref="IHostOnlyPluginCapability"/> — specifically so it keeps flowing to plugin constructors
+/// while <see cref="ITrustedPluginEventPublisher"/>/<see cref="PluginEventRelay"/> do not (see
+/// <c>Anvilboard.Infrastructure.Plugins.PluginRegistry</c>).
+/// </remarks>
+public sealed class PublicPluginEventPublisher(PluginEventRelay relay) : IPluginEventPublisher
+{
+    public void Publish(PluginEvent pluginEvent) => relay.Publish(pluginEvent);
 }
