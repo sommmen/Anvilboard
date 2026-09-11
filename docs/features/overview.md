@@ -29,6 +29,16 @@ feature needs more granular coverage.
 > Status reflects implementation as of this audit; see [`docs/audit-report.md`](../audit-report.md)
 > for the full evidence-backed discrepancy list behind each "Partial"/"Not Started" rating.
 
+## Implementation plans
+
+Some specs have a companion implementation plan: a dependency-ordered, codebase-grounded build
+sequence that maps the spec's acceptance criteria onto concrete phases, files, and tests. A plan
+never restates or competes with its spec — the spec stays canonical.
+
+| Feature spec | Implementation plan |
+|---|---|
+| [`realtime-updates.md`](./realtime-updates.md) | [`realtime-updates-implementation-plan.md`](./realtime-updates-implementation-plan.md) |
+
 ## Execution order and rationale
 
 The dependency order above is also the recommended build order:

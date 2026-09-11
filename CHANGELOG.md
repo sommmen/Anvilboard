@@ -9,6 +9,10 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ### Added
 
+- Implementation plan for the Real-time Updates component
+  (`docs/features/realtime-updates-implementation-plan.md`): phased, codebase-grounded build
+  sequence for `AC-RT-001`–`AC-RT-006`, plus the `TC-RT-001`–`TC-RT-005` test cases and coverage
+  matrix rows in `docs/anvilboard/test-cases.md`.
 - Initial domain model: `Issue`, `Team`, `Member`, `Comment`, `ActivityEvent`, `ExternalLink`,
   `Workspace`, `Project`, `Label`, strongly-typed IDs, and the `IssueStatus`/`IssuePriority`/
   `IntegrationProvider` enums (`Anvilboard.Domain`).

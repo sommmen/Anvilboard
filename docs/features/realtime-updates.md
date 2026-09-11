@@ -13,6 +13,7 @@
 | Tech Design Ref | §8.1 Component Overview; §9 API Design; §12 Performance Design |
 | Depends On | workspace-authorization, issue-board-service |
 | Blocks | Web board/list/dashboard live refresh |
+| Implementation plan | [`realtime-updates-implementation-plan.md`](./realtime-updates-implementation-plan.md) |
 
 ## Purpose
 
@@ -156,6 +157,11 @@ Each connection uses bounded outbound work. A slow client may receive a coalesce
 | Client transport failure | Isolate/disconnect the client without impacting other clients or mutations. | Connection/transport metric; client reconnect path applies. |
 
 ## File Structure
+
+> The web-client and test paths below name the intended modules, not literal repository paths —
+> the Angular project is `src/anvilboard-web` and web tests are colocated with their sources.
+> [`realtime-updates-implementation-plan.md`](./realtime-updates-implementation-plan.md) §2.1
+> reconciles each one against the actual layout.
 
 ```text
 src/Anvilboard.Application/Realtime/
