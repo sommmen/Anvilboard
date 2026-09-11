@@ -82,6 +82,7 @@ app.UseMiddleware<DatabaseOperationMiddleware>();
 
 app.MapAuthEndpoints();
 app.MapIssueEndpoints();
+app.MapArtifactEndpoints();
 app.MapTeamEndpoints();
 app.MapDashboardEndpoints();
 app.MapWebhookEndpoints();

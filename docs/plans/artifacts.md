@@ -16,7 +16,7 @@
 | Audit finding | [`audit-report.md`](../audit-report.md) **CRIT-003** (and **MIN-006**, which becomes moot on completion) |
 | SRS refs | `FR-ART-001` (primary), `FR-ART-002` (primary), `FR-INT-004` + `FR-OPS-001` + `NFR-SEC-001` (touched) |
 | Acceptance criteria | `AC-ART-101` – `AC-ART-111` (from [`artifacts.md`](../features/artifacts.md)) |
-| Status | Plan — not yet implemented |
+| Status | Delivered — T1–T14 complete; see §16 for the per-task breakdown |
 | Created | 2026-09-11 |
 
 ## 2. Why this feature was selected
@@ -688,6 +688,8 @@ Doc-first discipline: edited **in place**; no parallel or `-v2` files, and all e
 | OQ-P4 | Does artifact mutation need a realtime publication like `IssueService` does? | Deferred | Not in this slice. `RealtimeIssueChangeKind` has no artifact member and the board UI has no artifact panel (N3), so there is nothing to push to. Revisit with the UI work. |
 | OQ-P5 | Hard delete or archive on removal? | Resolved | Hard delete via `SqliteArtifactStore.DeleteAsync`, documented as that store's retention policy (BR-ART-7). "Not silently purged outside the documented policy" is satisfied by documenting it, not by retaining. |
 | OQ-P6 | Should agent-originated attaches reuse `agent:automation`? | Resolved | Yes — the convention `backup-and-restore.md` §11.4 established. Revisit when MAJ-001/MAJ-015 give the agent surface real actor identity. |
+| OQ-P7 | How does `ArtifactService` learn which `AuditChannel` a call arrived on, given it has no in-area precedent? | Resolved during implementation | Threaded explicitly: each mutating `IArtifactService` method takes `AuditChannel channel = AuditChannel.System` before its `CancellationToken`, mirroring `BackupOperationContext`. An ambient accessor was rejected because the same scoped instance serves REST, CLI, MCP, and hooks within one request. `RefreshArtifactAsync` has no channel parameter — being plugin-only, it is always `System`. |
+| OQ-P8 | Should `RefreshArtifactAsync` widen beyond `pull_request` to any kind carrying a `DedupKey`? | Open | Not in this slice — BR-ART-3 restricts it to `pull_request`, so a `link`-kind expansion hook must converge by remove-then-attach instead of upserting in place. `ArtifactExpansionTests.RepeatExpansion_UpdatesExistingArtifactIdempotently` therefore asserts row *count*, not row *identity*. Revisit if a second refreshable kind appears. |
 
 ## 18. Appendix
 

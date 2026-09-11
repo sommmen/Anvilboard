@@ -8,7 +8,7 @@
 |-------|-------|
 | Component | artifacts |
 | Priority | P1 |
-| Status | Partial — the `Artifact` domain model and `IArtifactStore`/SQLite BLOB storage abstraction are implemented; there is no application service for attach/list/remove, no refreshable PR-artifact upsert/dedup-key logic, no lifecycle-hook artifact-expansion path, and no artifact audit-event emission. See `docs/audit-report.md` for details. |
+| Status | Implemented — `ArtifactService` provides attach (reference and byte-payload), list, refresh, and remove; the refreshable `pull_request` upsert converges on `DedupKey`; every mutation emits an `ActivityEvent` and an audit record. Residual gaps, tracked separately: no content **download** endpoint, no Angular artifact panel, and no `GitHubPullRequestArtifactSync` plugin yet (the `RefreshArtifactAsync` consumer). See `docs/plans/artifacts.md` for the implementation plan. |
 | Implementation plan | [`docs/plans/artifacts.md`](../plans/artifacts.md) — closes **CRIT-003**/**MIN-006**, milestone M6.7 |
 | SRS Refs | FR-ART-001, FR-ART-002 |
 | Tech Design Ref | §8.1 — Issue Artifacts row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `Artifacts` table |
@@ -49,9 +49,9 @@ Issue Artifacts lets an authorized actor or automation attach a file, link, depl
 ## Interfaces
 
 ### Inputs
-- **`AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?)`** — via `POST /api/v1/issues/{id}/artifacts` and equivalent CLI/MCP operations; `source`/`actorId` distinguish manual (actor-driven) from automated (hook-driven, `actorId` omitted) attachment; `metadata` is an optional opaque key-value bag used only by refreshable kinds (currently `pull_request`: `{ number, state, checksStatus }`), ignored/absent for the other kinds.
-- **`ListArtifactsAsync(issueId)`** — via `GET /api/v1/issues/{id}/artifacts`.
-- **`RemoveArtifactAsync(issueId, artifactId, actorId)`** — via `DELETE /api/v1/issues/{id}/artifacts/{artifactId}`.
+- **`AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?)`** — via `POST /api/issues/{id}/artifacts` and equivalent CLI/MCP operations; `source`/`actorId` distinguish manual (actor-driven) from automated (hook-driven, `actorId` omitted) attachment; `metadata` is an optional opaque key-value bag used only by refreshable kinds (currently `pull_request`: `{ number, state, checksStatus }`), ignored/absent for the other kinds.
+- **`ListArtifactsAsync(issueId)`** — via `GET /api/issues/{id}/artifacts`.
+- **`RemoveArtifactAsync(issueId, artifactId, actorId)`** — via `DELETE /api/issues/{id}/artifacts/{artifactId}`.
 - **`RefreshArtifactAsync(issueId, kind, dedupKey, contentReference, metadata, source)`** (realization of FR-ART-001 idempotent upsert) — an idempotent upsert used by refreshable kinds: if an artifact matching `(issueId, kind, dedupKey)` exists, its `ContentReference`/`Metadata` are updated in place; otherwise a new artifact is attached. Not exposed as a distinct public endpoint — invoked only by the owning plugin's correlation logic (e.g. the GitHub plugin's `GitHubPullRequestArtifactSync`), never by a human/API/CLI/MCP caller directly.
 - **Lifecycle-hook calls** — a `Post*` `ILifecycleHook<TEvent>` implementation (owned by `integration-and-plugin-platform`, e.g. registered for `PostAddComment`/`PostIngest`) calls `AttachArtifactAsync` exactly as any other caller would, with `actorId` omitted and `source` set to its hook key; the GitHub PR-correlation plugin calls `RefreshArtifactAsync` with `source = "github"`.
 
@@ -197,18 +197,21 @@ Every anticipated failure resolves to a §7.7 catalog code; no raw store I/O exc
 ```
 src/
 ├── Anvilboard.Domain/
-│   └── Artifact.cs                       # Planned: Id/IssueId/Kind/Title/ContentReference/Source/AddedById/CreatedAt/Metadata entity (Metadata nullable, populated only for pull_request kind)
+│   └── Artifact.cs                       # Id/IssueId/Kind/Title/ContentReference/Source/AddedById/DedupKey/CreatedAt/UpdatedAt/Metadata entity (Metadata nullable, populated only for pull_request kind)
 ├── Anvilboard.Application/
 │   └── Artifacts/
-│       ├── IArtifactService.cs           # Planned: AttachArtifactAsync/ListArtifactsAsync/RemoveArtifactAsync/RefreshArtifactAsync contract
-│       └── ArtifactService.cs            # Planned: implementation, calls IArtifactStore + IIssueService authorization checks
+│       ├── ArtifactDto.cs                # Transport-neutral projection shared by REST, agent, and plugin callers
+│       ├── IArtifactService.cs           # AttachArtifactAsync (reference + bytes overloads)/ListArtifactsAsync/RefreshArtifactAsync/RemoveArtifactAsync contract
+│       └── ArtifactService.cs            # Implementation: validation, IArtifactStore calls, ActivityEvent + audit emission, dedup-key convergence
 ├── Anvilboard.Infrastructure/
 │   └── Artifacts/
-│       ├── IArtifactStore.cs             # Planned: Store/Retrieve/Delete-by-opaque-reference contract
-│       └── SqliteArtifactStore.cs        # Planned: first-release SQLite BLOB-backed implementation
+│       ├── IArtifactStore.cs             # Store/Retrieve/Delete-by-opaque-reference contract
+│       └── SqliteArtifactStore.cs        # First-release SQLite BLOB-backed implementation
+├── Anvilboard.Agent/
+│   └── BoardAgentService.cs              # list-artifacts / attach-artifact / remove-artifact agent operations (no refresh-artifact — plugin-only)
 └── Anvilboard.Api/
     └── Endpoints/
-        └── ArtifactEndpoints.cs          # Planned: GET/POST /api/v1/issues/{id}/artifacts, DELETE .../{artifactId} (RefreshArtifactAsync has no endpoint — plugin-only)
+        └── ArtifactEndpoints.cs          # GET/POST /api/issues/{id}/artifacts, DELETE .../{artifactId} (RefreshArtifactAsync has no endpoint — plugin-only)
 ```
 
 See `integration-and-plugin-platform.md`'s File Structure for the owning `GitHubPullRequestArtifactSync.cs` plugin component that calls `RefreshArtifactAsync`.
@@ -223,7 +226,13 @@ See `integration-and-plugin-platform.md`'s File Structure for the owning `GitHub
 - **Fault-injection**: a fake `IArtifactStore` configured to throw on `StoreAsync`, asserting `ARTIFACT_STORE_UNAVAILABLE` and no partial `Artifact` row.
 - **Fixtures / Mocks**: seeded `Issue` rows across two workspaces (to test cross-workspace/cross-issue scoping negatives); an in-memory or temp-file-backed `SqliteArtifactStore` instance per test.
 
-**Test file**: `src/Anvilboard.Application.Tests/Artifacts/ArtifactExpansionHookTests.cs`
+Refresh-specific coverage lives alongside it in
+`src/Anvilboard.Application.Tests/Artifacts/ArtifactRefreshTests.cs` (dedup-key convergence, the
+lost-insert race, non-refreshable-kind rejection), and the HTTP surface — routing, status-code
+mapping, and permission enforcement — in
+`src/Anvilboard.Api.Tests/Artifacts/ArtifactEndpointTests.cs`.
+
+**Test file**: `src/Anvilboard.Application.Tests/Artifacts/ArtifactExpansionTests.cs`
 
 **Test scope**:
 - **Integration**: a fake artifact-expansion `Post*` `ILifecycleHook<TEvent>` that calls `AttachArtifactAsync` with `source = "slack-thread-expansion"` and no `actorId`, asserting the resulting `Artifact` is distinguishable from a manual attachment and carries an identical audit trail shape; idempotent re-expansion updating an existing artifact rather than duplicating it; a simulated partial-fetch failure asserting no `Artifact` row is created.

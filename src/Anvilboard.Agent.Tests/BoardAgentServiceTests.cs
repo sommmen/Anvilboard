@@ -13,6 +13,7 @@ public sealed class BoardAgentServiceTests
         Assert.Equal(
             [
                 "assign-issue",
+                "attach-artifact",
                 "change-issue-status",
                 "comment-on-issue",
                 "create-backup",
@@ -20,9 +21,11 @@ public sealed class BoardAgentServiceTests
                 "create-issue-link",
                 "dashboard-summary",
                 "get-issue",
+                "list-artifacts",
                 "list-backups",
                 "list-issue-links",
                 "list-issues",
+                "remove-artifact",
                 "remove-issue-link",
                 "verify-backup",
             ],
@@ -53,5 +56,31 @@ public sealed class BoardAgentServiceTests
         var catalog = OperationCatalog.Discover(typeof(BoardAgentService));
 
         Assert.DoesNotContain(catalog.Operations, operation => operation.Name.Contains("restore", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Discover_DoesNotExposeRefreshArtifact()
+    {
+        // `refresh-artifact` is deliberately excluded (`docs/plans/artifacts.md` §9.3, N4): a pull
+        // request artifact's state must only ever reflect what the provider reports, so the upsert
+        // path stays reachable from plugin correlation logic only. An agent able to call it could
+        // assert a PR was merged when it was not.
+        var catalog = OperationCatalog.Discover(typeof(BoardAgentService));
+
+        Assert.DoesNotContain(catalog.Operations, operation => operation.Name.Contains("refresh", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("list-artifacts", true)]
+    [InlineData("attach-artifact", false)]
+    [InlineData("remove-artifact", false)]
+    public void Discover_ArtifactOperations_HaveExpectedCategoryAndIdempotency(string operationName, bool isIdempotent)
+    {
+        var catalog = OperationCatalog.Discover(typeof(BoardAgentService));
+
+        var operation = Assert.Single(catalog.Operations, o => o.Name == operationName);
+
+        Assert.Equal("issues", operation.Category);
+        Assert.Equal(isIdempotent, operation.IsIdempotent);
     }
 }
