@@ -146,6 +146,8 @@ Bound from the `Realtime` section (`RealtimeOptions`):
 |---|---|---|
 | `Realtime:DebounceWindow` | `00:00:00.100` | How long the dispatcher waits after the first buffered change before draining, so a burst collapses into one send. |
 | `Realtime:QueueCapacity` | `1024` | Maximum number of *distinct* pending coalescing keys. A change whose key is already pending always fits; only a genuinely new key can be dropped. |
+| `Realtime:SendTimeout` | `00:00:05` | Maximum time a single transport send may block the dispatcher. |
+| `Realtime:ShutdownFlushTimeout` | `00:00:10` | Maximum time spent sending buffered updates while the host shuts down. |
 | `Realtime:RelayedPluginEventTypes` | *(empty)* | Plugin event types approved for relay, e.g. `github.pull_request.merged`. Empty means no plugin event reaches a browser, so adding an event type to a plugin is never sufficient on its own. |
 
 ## Acceptance Criteria

@@ -81,7 +81,7 @@ public sealed class PluginEventRelayTests
     }
 
     [Fact]
-    public void AddRealtime_PublicPluginPublisherIsDistinctFromTrustedPublisherButStillRelays()
+    public void AddRealtime_PublicPluginPublisherIsDistinctFromTrustedPublisher()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -92,17 +92,15 @@ public sealed class PluginEventRelayTests
         var publicPublisher = provider.GetRequiredService<IPluginEventPublisher>();
         var trustedPublisher = provider.GetRequiredService<ITrustedPluginEventPublisher>();
 
-        // Enabling realtime must restore live delivery for plugins using the public contract
-        // (AC-RT-006) rather than leaving IPluginEventPublisher on the NullPluginEventPublisher
-        // default — but the type it resolves to must not be (or expose) the trusted,
-        // workspace-authenticated capability itself.
+        // The public publisher stays available for source compatibility but must not expose the
+        // workspace-authenticated capability reserved for host code.
         Assert.IsType<PublicPluginEventPublisher>(publicPublisher);
         Assert.IsType<PluginEventRelay>(trustedPublisher);
         Assert.False(publicPublisher is ITrustedPluginEventPublisher, "The public publisher must not also expose the trusted, workspace-authenticated capability.");
     }
 
     [Fact]
-    public void AddRealtime_PublicPluginPublisher_RelaysApprovedEventsLikeTheTrustedPublisher()
+    public void AddRealtime_PublicPluginPublisher_DropsCallerSelectedWorkspaceEvent()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -122,7 +120,9 @@ public sealed class PluginEventRelayTests
 
         publicPublisher.Publish(new PluginEvent(WorkspaceId.New(), ApprovedEventType));
 
-        Assert.Single(recordingPublisher.Published);
+        // A third-party plugin selects the WorkspaceId on PluginEvent itself; without a host-bound
+        // workspace context, relaying it would let that plugin notify another tenant.
+        Assert.Empty(recordingPublisher.Published);
     }
 
     private static (PluginEventRelay Relay, RecordingPublisher Publisher) CreateRelay(params string[] approvedEventTypes)

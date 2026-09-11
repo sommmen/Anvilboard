@@ -97,14 +97,10 @@ public static class ServiceCollectionExtensions
             provider.GetRequiredService<ILogger<PluginEventRelay>>()));
         services.AddSingleton<ITrustedPluginEventPublisher>(provider => provider.GetRequiredService<PluginEventRelay>());
 
-        // Replaces the NullPluginEventPublisher default: a reflection-loaded plugin using the
-        // public IPluginEventPublisher contract gets the same approval-gated relay as the trusted
-        // caller, just without the ability to name a workspace of its own (PublicPluginEventPublisher
-        // is not an IHostOnlyPluginCapability, so PluginRegistry's plugin-construction provider still
-        // resolves it; PluginEventRelay/ITrustedPluginEventPublisher are, so it does not).
+        // Reflection-loaded plugins have no host-authenticated workspace context, so their public
+        // publisher remains a no-op. Host code uses the trusted publisher after it resolves routing.
         services.RemoveAll<IPluginEventPublisher>();
-        services.AddSingleton<IPluginEventPublisher>(provider =>
-            new PublicPluginEventPublisher(provider.GetRequiredService<PluginEventRelay>()));
+        services.AddSingleton<IPluginEventPublisher, PublicPluginEventPublisher>();
 
         return services;
     }

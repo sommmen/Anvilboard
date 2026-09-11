@@ -1,4 +1,5 @@
 using Anvilboard.Plugins.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Anvilboard.Infrastructure.Plugins;
 
@@ -17,8 +18,27 @@ namespace Anvilboard.Infrastructure.Plugins;
 /// </remarks>
 internal sealed class HostOnlyCapabilityFilteringServiceProvider(IServiceProvider inner) : IServiceProvider
 {
-    public object? GetService(Type serviceType) =>
-        typeof(IHostOnlyPluginCapability).IsAssignableFrom(serviceType)
-            ? null
-            : inner.GetService(serviceType);
+    public object? GetService(Type serviceType)
+    {
+        if (serviceType == typeof(IServiceProvider) ||
+            serviceType == typeof(IServiceScopeFactory) ||
+            IsHostOnlyCapability(serviceType))
+        {
+            return null;
+        }
+
+        return inner.GetService(serviceType);
+    }
+
+    private static bool IsHostOnlyCapability(Type serviceType)
+    {
+        if (typeof(IHostOnlyPluginCapability).IsAssignableFrom(serviceType))
+        {
+            return true;
+        }
+
+        return serviceType.IsGenericType &&
+            serviceType.GetGenericTypeDefinition() == typeof(IEnumerable<>) &&
+            typeof(IHostOnlyPluginCapability).IsAssignableFrom(serviceType.GetGenericArguments()[0]);
+    }
 }

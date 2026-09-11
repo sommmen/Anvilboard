@@ -40,6 +40,22 @@ public sealed class GitHubWebhookReceiverTests
     }
 
     [Fact]
+    public void WebhookResult_AcceptNamedEventTypesOnly_StillCompilesForSourceCompatibility()
+    {
+        // Before team-key routing was introduced, `issues`/`comments` were optional, so a
+        // source-level caller could write `Accept(eventTypes: events)` and omit both. This is a
+        // compile-time regression check as much as a runtime one: if the named-argument-only call
+        // below stopped compiling again, this test file would fail to build.
+        var result = WebhookResult.Accept(eventTypes: [GitHubWebhookReceiver.PullRequestMergedEventType]);
+
+        Assert.True(result.Accepted);
+        Assert.Empty(result.Issues);
+        Assert.Empty(result.Comments);
+        Assert.Equal([GitHubWebhookReceiver.PullRequestMergedEventType], result.EventTypes);
+        Assert.Null(result.TeamKey);
+    }
+
+    [Fact]
     public async Task HandleAsync_ValidIssuesEvent_MapsNormalizedIssue()
     {
         var result = await CreateReceiver().HandleAsync(CreateRequest("issues", IssuePayload, signed: true), CancellationToken.None);

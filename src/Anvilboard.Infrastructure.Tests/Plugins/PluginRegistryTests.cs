@@ -51,6 +51,38 @@ public sealed class PluginRegistryTests
     }
 
     [Fact]
+    public void ReflectionLoadedPlugin_CannotResolveRawServiceProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostOnlyCapabilityProbe, HostOnlyCapabilityProbe>();
+        using var provider = services.BuildServiceProvider();
+        var options = Options.Create(new PluginHostOptions
+        {
+            AssemblyPaths = [typeof(PluginRequiringServiceProvider).Assembly.Location],
+        });
+
+        var registry = new PluginRegistry([], provider, options, NullLogger<PluginRegistry>.Instance);
+
+        Assert.DoesNotContain(registry.All, plugin => plugin.Manifest.Key == "requires-service-provider");
+    }
+
+    [Fact]
+    public void ReflectionLoadedPlugin_CannotResolveHostOnlyCapabilityCollection()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostOnlyCapabilityProbe, HostOnlyCapabilityProbe>();
+        using var provider = services.BuildServiceProvider();
+        var options = Options.Create(new PluginHostOptions
+        {
+            AssemblyPaths = [typeof(PluginRequiringHostOnlyCapabilityCollection).Assembly.Location],
+        });
+
+        var registry = new PluginRegistry([], provider, options, NullLogger<PluginRegistry>.Instance);
+
+        Assert.DoesNotContain(registry.All, plugin => plugin.Manifest.Key == "requires-host-only-capability-collection");
+    }
+
+    [Fact]
     public void ReflectionLoadedPlugin_CanStillResolveOrdinaryServices()
     {
         // Filtering host-only capabilities out of plugin construction must not affect ordinary
@@ -85,6 +117,16 @@ public sealed class PluginRegistryTests
     public sealed class PluginRequiringHostOnlyCapability(IHostOnlyCapabilityProbe probe) : IAnvilboardPlugin
     {
         public PluginManifest Manifest { get; } = new("requires-host-only-capability", "Requires Host-Only Capability", "1.0.0");
+    }
+
+    public sealed class PluginRequiringServiceProvider(IServiceProvider serviceProvider) : IAnvilboardPlugin
+    {
+        public PluginManifest Manifest { get; } = new("requires-service-provider", "Requires Service Provider", "1.0.0");
+    }
+
+    public sealed class PluginRequiringHostOnlyCapabilityCollection(IEnumerable<IHostOnlyCapabilityProbe> probes) : IAnvilboardPlugin
+    {
+        public PluginManifest Manifest { get; } = new("requires-host-only-capability-collection", "Requires Host-Only Capability Collection", "1.0.0");
     }
 
     public interface IOrdinaryCapabilityProbe;

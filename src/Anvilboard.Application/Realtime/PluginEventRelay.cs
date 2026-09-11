@@ -80,15 +80,15 @@ public sealed class PluginEventRelay(
 /// <c>AddAnvilboardApplication</c>.
 /// </summary>
 /// <remarks>
-/// Delegates to the exact same approval-gated relay a first-class, host-authenticated caller (the
-/// webhook endpoint, via <see cref="ITrustedPluginEventPublisher"/>) uses, so enabling realtime
-/// restores live delivery for every plugin using the public contract rather than leaving it a silent
-/// no-op. It is a distinct type from <see cref="PluginEventRelay"/> — not itself an
-/// <see cref="IHostOnlyPluginCapability"/> — specifically so it keeps flowing to plugin constructors
-/// while <see cref="ITrustedPluginEventPublisher"/>/<see cref="PluginEventRelay"/> do not (see
-/// <c>Anvilboard.Infrastructure.Plugins.PluginRegistry</c>).
+/// This is intentionally a no-op. A reflection-loaded plugin has no host-authenticated workspace
+/// context, so accepting its caller-selected <see cref="PluginEvent.WorkspaceId"/> would allow it
+/// to notify another workspace. First-class host code uses
+/// <see cref="ITrustedPluginEventPublisher"/> only after it resolves the workspace itself.
 /// </remarks>
-public sealed class PublicPluginEventPublisher(PluginEventRelay relay) : IPluginEventPublisher
+public sealed class PublicPluginEventPublisher : IPluginEventPublisher
 {
-    public void Publish(PluginEvent pluginEvent) => relay.Publish(pluginEvent);
+    public void Publish(PluginEvent pluginEvent)
+    {
+        ArgumentNullException.ThrowIfNull(pluginEvent);
+    }
 }

@@ -105,7 +105,11 @@ export class RealtimeBoardSyncService {
       this.nextReconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
       this.resyncSubject.next();
     });
-    connection.onclose(() => this.scheduleReconnect());
+    connection.onclose(() => {
+      if (this.connection === connection) {
+        this.scheduleReconnect();
+      }
+    });
 
     try {
       await connection.start();

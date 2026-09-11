@@ -61,6 +61,20 @@ class TestableRealtimeBoardSyncService extends RealtimeBoardSyncService {
   }
 }
 
+/**
+ * Hands out a fresh `FakeHubConnection` per call, so a test can hold onto a stale connection's
+ * handlers after the service has already replaced it with a newer one.
+ */
+class MultiConnectionRealtimeBoardSyncService extends RealtimeBoardSyncService {
+  readonly connections: FakeHubConnection[] = [];
+
+  protected override createConnection(): HubConnection {
+    const connection = new FakeHubConnection();
+    this.connections.push(connection);
+    return connection as unknown as HubConnection;
+  }
+}
+
 function envelope(overrides: Partial<RealtimeChangeEnvelope> = {}): RealtimeChangeEnvelope {
   return {
     eventType: 'issue.changed',
@@ -237,5 +251,35 @@ describe('RealtimeBoardSyncService', () => {
     await service.stop();
 
     expect(service.fake.stopCalls).toBe(1);
+  });
+
+  it('ignores a close event from a connection that has already been replaced', async () => {
+    vi.useFakeTimers();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: RealtimeBoardSyncService, useClass: MultiConnectionRealtimeBoardSyncService },
+      ],
+    });
+    const multi = TestBed.inject(
+      RealtimeBoardSyncService,
+    ) as MultiConnectionRealtimeBoardSyncService;
+    await multi.start();
+    const staleConnection = multi.connections[0];
+
+    // The stale connection recovers on its own (e.g. SignalR's automatic reconnect) and the
+    // service moves on to a fresh manual reconnect cycle of its own accord.
+    staleConnection.emitClose();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(multi.connections.length).toBe(2);
+
+    // The stale connection now fires its close handler too (a delayed/duplicate event). Because
+    // it is no longer the service's current connection, this must not schedule a second,
+    // redundant reconnect cycle on top of the current connection's own lifecycle.
+    staleConnection.emitClose();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(multi.connections.length).toBe(2);
+    vi.useRealTimers();
   });
 });

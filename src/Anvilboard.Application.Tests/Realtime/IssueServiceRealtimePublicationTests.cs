@@ -146,6 +146,46 @@ public sealed class IssueServiceRealtimePublicationTests
     }
 
     [Fact]
+    public async Task UpsertFromExternalAsync_UnscopedTeamKeyMatchesMultipleWorkspaces_ThrowsAmbiguousKeyException()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+
+        // A second workspace that also configures a team keyed "RT" — legal, since team keys are
+        // only unique within a workspace. `SyncCoordinator`'s ingestion-polling path uses the
+        // unscoped overload (no workspace to disambiguate with), so a key shared across two
+        // workspaces is genuinely ambiguous and must fail closed with a clear message rather than
+        // an unhandled framework `InvalidOperationException` from `SingleOrDefaultAsync` or a
+        // silent pick of whichever team happens to sort first.
+        var otherWorkspaceId = WorkspaceId.New();
+        fixture.Db.Workspaces.Add(new Workspace
+        {
+            Id = otherWorkspaceId,
+            Name = "Other workspace",
+            Slug = "other-workspace-ambiguous",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        fixture.Db.Teams.Add(new Team
+        {
+            Id = TeamId.New(),
+            WorkspaceId = otherWorkspaceId,
+            Name = "Other team",
+            Key = "RT",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        await fixture.Db.SaveChangesAsync();
+
+        var normalized = new NormalizedIssue(IntegrationProvider.GitHub, "ambiguous#1", "RT", "Ambiguous", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.UpsertFromExternalAsync(normalized));
+
+        Assert.Contains("more than one workspace", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(publisher.Changes);
+    }
+
+    [Fact]
     public async Task ChangeStatusAsync_DeniedTransition_PublishesNothing()
     {
         await using var fixture = await RealtimeFixture.CreateAsync();
