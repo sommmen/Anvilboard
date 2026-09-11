@@ -37,8 +37,19 @@ public sealed record WebhookResult
     public IReadOnlyList<NormalizedIssue> Issues { get; init; } = [];
     public IReadOnlyList<NormalizedComment> Comments { get; init; } = [];
 
-    public static WebhookResult Accept(IReadOnlyList<NormalizedIssue>? issues = null, IReadOnlyList<NormalizedComment>? comments = null) =>
-        new() { Accepted = true, Issues = issues ?? [], Comments = comments ?? [] };
+    /// <summary>
+    /// Namespaced event types (e.g. <c>github.pull_request.merged</c>) this delivery represents but
+    /// which produce no issue or comment. The host relays approved ones to connected clients through
+    /// <see cref="IPluginEventPublisher"/>; a receiver reports what happened and never decides
+    /// whether anyone is told, which is what keeps event approval an operator decision.
+    /// </summary>
+    public IReadOnlyList<string> EventTypes { get; init; } = [];
+
+    public static WebhookResult Accept(
+        IReadOnlyList<NormalizedIssue>? issues = null,
+        IReadOnlyList<NormalizedComment>? comments = null,
+        IReadOnlyList<string>? eventTypes = null) =>
+        new() { Accepted = true, Issues = issues ?? [], Comments = comments ?? [], EventTypes = eventTypes ?? [] };
 
     public static WebhookResult Reject(string reason) => new() { Accepted = false, RejectionReason = reason };
 }

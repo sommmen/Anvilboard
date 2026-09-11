@@ -35,6 +35,10 @@ up ownership of the data or standing up infrastructure to get it.
 - **Kanban board + dashboard.** Backlog → Todo → In Progress → In Review → Done/Cancelled columns,
   quick-create, an issue detail panel, and a dashboard with throughput, status/source breakdowns,
   and open-load-by-assignee.
+- **Live board updates.** Open boards patch themselves over SignalR when anyone — a teammate, an
+  agent, or an integration — changes an issue, so you are not refreshing to find out what moved.
+  A connection only ever receives its own workspace's changes, and a dropped connection re-fetches
+  on reconnect rather than silently drifting.
 - **GitHub and Linear-style integrations as first-class plugins.** Both ship in-repo, both are
   ordinary implementations of the same three plugin interfaces every third-party plugin uses —
   there is no special-cased "built-in" API.

@@ -19,6 +19,12 @@ public sealed class GitHubWebhookReceiver(IOptionsMonitor<GitHubOptions> options
 
     public string RoutePrefix => "github";
 
+    /// <summary>
+    /// Namespaced identifier for a merged pull request. Operators approve relay of this exact value
+    /// through <c>Realtime:RelayedPluginEventTypes</c>.
+    /// </summary>
+    public const string PullRequestMergedEventType = "github.pull_request.merged";
+
     public Task<WebhookResult> HandleAsync(WebhookRequest request, CancellationToken cancellationToken)
     {
         var opts = options.CurrentValue;
@@ -28,9 +34,19 @@ public sealed class GitHubWebhookReceiver(IOptionsMonitor<GitHubOptions> options
         }
 
         var eventType = request.Headers.FirstOrDefault(h => string.Equals(h.Key, "X-GitHub-Event", StringComparison.OrdinalIgnoreCase)).Value;
+        if (eventType == "pull_request")
+        {
+            // A merged pull request changes nothing on the board, but a board watching an issue it
+            // closes still wants to know. Reported as an event rather than an issue so it reaches
+            // clients without a lifecycle hook or a synthetic mutation.
+            return Task.FromResult(IsMergedPullRequest(request.RawBody)
+                ? WebhookResult.Accept(eventTypes: [PullRequestMergedEventType])
+                : WebhookResult.Accept());
+        }
+
         if (eventType != "issues")
         {
-            // Acknowledge everything else (ping, pull_request, ...) without producing an issue.
+            // Acknowledge everything else (ping, push, ...) without producing an issue.
             return Task.FromResult(WebhookResult.Accept());
         }
 
@@ -51,6 +67,25 @@ public sealed class GitHubWebhookReceiver(IOptionsMonitor<GitHubOptions> options
 
         var normalized = payload.Issue.ToNormalizedIssue(payload.Repository.FullName, opts.TeamKey);
         return Task.FromResult(WebhookResult.Accept(issues: [normalized]));
+    }
+
+    /// <summary>
+    /// A pull request is only "merged" when it closed <em>and</em> actually merged — GitHub sends
+    /// the same <c>closed</c> action for a pull request that was abandoned.
+    /// </summary>
+    private static bool IsMergedPullRequest(string rawBody)
+    {
+        GitHubPullRequestEventDto? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize(rawBody, GitHubWebhookJsonContext.Default.GitHubPullRequestEventDto);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        return payload?.Action == "closed" && payload.PullRequest?.Merged == true;
     }
 
     private static bool IsSignatureValid(WebhookRequest request, string secret)
@@ -80,6 +115,20 @@ internal sealed class GitHubRepositoryDto
     public string FullName { get; set; } = "";
 }
 
+internal sealed class GitHubPullRequestEventDto
+{
+    public string? Action { get; set; }
+
+    [JsonPropertyName("pull_request")]
+    public GitHubPullRequestDto? PullRequest { get; set; }
+}
+
+internal sealed class GitHubPullRequestDto
+{
+    public bool Merged { get; set; }
+}
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 [JsonSerializable(typeof(GitHubIssueEventDto))]
+[JsonSerializable(typeof(GitHubPullRequestEventDto))]
 internal sealed partial class GitHubWebhookJsonContext : JsonSerializerContext;

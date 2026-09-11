@@ -9,10 +9,24 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ### Added
 
-- Implementation plan for the Real-time Updates component
-  (`docs/features/realtime-updates-implementation-plan.md`): phased, codebase-grounded build
-  sequence for `AC-RT-001`–`AC-RT-006`, plus the `TC-RT-001`–`TC-RT-005` test cases and coverage
-  matrix rows in `docs/anvilboard/test-cases.md`.
+- Real-time updates end to end (`AC-RT-001`–`AC-RT-006`, closing audit finding `CRIT-002`):
+  - Transport-neutral `IRealtimeUpdatePublisher`/`IRealtimeTransport` seams and versioned
+    issue/activity/dashboard/plugin change envelopes (`Anvilboard.Application/Realtime`).
+  - Post-commit publication from `IssueService`, fault-isolated so a realtime failure can never fail
+    or delay a committed mutation.
+  - A bounded, key-coalescing buffer and debounced background dispatcher, so a burst of updates to
+    one issue collapses into a single notification and a slow client sheds work instead of growing
+    memory without limit.
+  - A SignalR `WorkspaceRealtimeHub` at `/hubs/workspace`, authorized by the existing workspace
+    middleware and scoped to server-derived `workspace:{id}` groups.
+  - An Angular `RealtimeBoardSyncService` plus in-place board reconciliation: only the changed issue
+    is re-fetched and swapped, and a reconnect triggers one full re-fetch rather than server replay.
+  - Realtime counters and publication-latency metrics.
+  - An approval-gated plugin event relay (`IPluginEventPublisher`): a plugin event reaches browsers
+    only when an operator lists its type in `Realtime:RelayedPluginEventTypes`. The GitHub plugin
+    reports `github.pull_request.merged`.
+  - `TC-RT-001`–`TC-RT-006` test cases and coverage matrix rows in
+    `docs/anvilboard/test-cases.md`.
 - Initial domain model: `Issue`, `Team`, `Member`, `Comment`, `ActivityEvent`, `ExternalLink`,
   `Workspace`, `Project`, `Label`, strongly-typed IDs, and the `IssueStatus`/`IssuePriority`/
   `IntegrationProvider` enums (`Anvilboard.Domain`).

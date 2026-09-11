@@ -1,4 +1,6 @@
+using Anvilboard.Application.Automation;
 using Anvilboard.Application.Issues;
+using Anvilboard.Application.Realtime;
 using Anvilboard.Application.Workflows;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
@@ -18,7 +20,7 @@ public sealed class WorkflowEngineTests
         var laterState = fixture.CreateState("todo", "Todo", order: 1);
         await fixture.Db.SaveChangesAsync();
 
-        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+        var service = CreateIssueService(fixture);
         var issue = await service.CreateAsync(fixture.TeamId, "Plan v0.1");
 
         Assert.Equal(fixture.Current.Id, issue.WorkflowStateId);
@@ -29,7 +31,7 @@ public sealed class WorkflowEngineTests
     public async Task UpsertFromExternalAsync_AssignsLowestOrderedActiveWorkflowState()
     {
         await using var fixture = await WorkflowFixture.CreateAsync();
-        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+        var service = CreateIssueService(fixture);
         var normalized = new NormalizedIssue(
             IntegrationProvider.GitHub,
             "github-42",
@@ -55,7 +57,7 @@ public sealed class WorkflowEngineTests
         await using var fixture = await WorkflowFixture.CreateAsync();
         fixture.Current.IsArchived = true;
         await fixture.Db.SaveChangesAsync();
-        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+        var service = CreateIssueService(fixture);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.CreateAsync(fixture.TeamId, "No available state"));
@@ -182,7 +184,7 @@ public sealed class WorkflowEngineTests
         fixture.Db.Issues.Add(issue);
         await fixture.Db.SaveChangesAsync();
 
-        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+        var service = CreateIssueService(fixture);
         var updated = await service.ChangeStatusAsync(issue.Id, IssueStatus.Todo);
 
         Assert.Equal(IssueStatus.Todo, updated.Status);
@@ -202,7 +204,7 @@ public sealed class WorkflowEngineTests
         fixture.Db.Issues.Add(issue);
         await fixture.Db.SaveChangesAsync();
 
-        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+        var service = CreateIssueService(fixture);
 
         var exception = await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
             () => service.ChangeStatusAsync(issue.Id, IssueStatus.Done));
@@ -224,7 +226,7 @@ public sealed class WorkflowEngineTests
         fixture.Db.Issues.Add(issue);
         await fixture.Db.SaveChangesAsync();
 
-        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+        var service = CreateIssueService(fixture);
         var result = await service.ChangeStatusAsync(issue.Id, IssueStatus.Backlog);
 
         Assert.Equal(0, result.Version);
@@ -241,7 +243,7 @@ public sealed class WorkflowEngineTests
         fixture.Db.Issues.Add(issue);
         await fixture.Db.SaveChangesAsync();
 
-        var service = new IssueService(fixture.Db, new FakePluginRegistry(), fixture.Engine, NullLogger<IssueService>.Instance);
+        var service = CreateIssueService(fixture);
 
         var exception = await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
             () => service.ChangeStatusAsync(issue.Id, IssueStatus.Todo));
@@ -252,6 +254,14 @@ public sealed class WorkflowEngineTests
         Assert.Equal(backlog.Id, unchanged.WorkflowStateId);
         Assert.Equal(0, unchanged.Version);
     }
+
+    private static IssueService CreateIssueService(WorkflowFixture fixture) => new(
+        fixture.Db,
+        new FakePluginRegistry(),
+        fixture.Engine,
+        new NullRealtimeUpdatePublisher(),
+        CorrelationContext.FromHeaderOrNew(null),
+        NullLogger<IssueService>.Instance);
 
     private sealed class FakePluginRegistry : IPluginRegistry
     {

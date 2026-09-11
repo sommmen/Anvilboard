@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Anvilboard.Application.Automation;
+using Anvilboard.Application.Realtime;
 using Anvilboard.Application.Workflows;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
@@ -19,6 +21,8 @@ public sealed class IssueService(
     AnvilboardDbContext db,
     IPluginRegistry plugins,
     IWorkflowService workflowService,
+    IRealtimeUpdatePublisher realtimePublisher,
+    CorrelationContext correlationContext,
     ILogger<IssueService> logger)
 {
     /// <summary>
@@ -98,7 +102,14 @@ public sealed class IssueService(
         db.Issues.Add(issue);
         await db.SaveChangesAsync(ct);
 
-        await RecordAndDispatchAsync(issue, ActivityEventType.Created, actorId: createdById, data: null, ct);
+        await RecordAndDispatchAsync(
+            issue,
+            ActivityEventType.Created,
+            actorId: createdById,
+            data: null,
+            ct,
+            team.WorkspaceId,
+            RealtimeIssueChangeKind.Created);
         return issue;
     }
 
@@ -158,7 +169,8 @@ public sealed class IssueService(
         await db.SaveChangesAsync(ct);
 
         var data = JsonSerializer.Serialize(new { from = oldStatus.ToString(), to = newStatus.ToString() });
-        await RecordAndDispatchAsync(issue, ActivityEventType.StatusChanged, actorId, data, ct);
+        await RecordAndDispatchAsync(
+            issue, ActivityEventType.StatusChanged, actorId, data, ct, team.WorkspaceId);
         return issue;
     }
 
@@ -244,7 +256,14 @@ public sealed class IssueService(
             });
 
             await db.SaveChangesAsync(ct);
-            await RecordAndDispatchAsync(issue, ActivityEventType.SyncedFromExternal, actorId: null, data: null, ct);
+            await RecordAndDispatchAsync(
+                issue,
+                ActivityEventType.SyncedFromExternal,
+                actorId: null,
+                data: null,
+                ct,
+                team.WorkspaceId,
+                RealtimeIssueChangeKind.Created);
             return issue;
         }
 
@@ -263,7 +282,8 @@ public sealed class IssueService(
         link.LastSyncedAt = now;
 
         await db.SaveChangesAsync(ct);
-        await RecordAndDispatchAsync(issue, ActivityEventType.SyncedFromExternal, actorId: null, data: null, ct);
+        await RecordAndDispatchAsync(
+            issue, ActivityEventType.SyncedFromExternal, actorId: null, data: null, ct, team.WorkspaceId);
         return issue;
     }
 
@@ -280,7 +300,14 @@ public sealed class IssueService(
             $"Workspace {workspaceId} has no active workflow state for new issues.");
     }
 
-    private async Task RecordAndDispatchAsync(Issue issue, ActivityEventType type, MemberId? actorId, string? data, CancellationToken ct)
+    private async Task RecordAndDispatchAsync(
+        Issue issue,
+        ActivityEventType type,
+        MemberId? actorId,
+        string? data,
+        CancellationToken ct,
+        WorkspaceId? workspaceId = null,
+        RealtimeIssueChangeKind changeKind = RealtimeIssueChangeKind.Updated)
     {
         var activityEvent = new ActivityEvent
         {
@@ -294,11 +321,55 @@ public sealed class IssueService(
         db.ActivityEvents.Add(activityEvent);
         await db.SaveChangesAsync(ct);
 
+        // Realtime publication is post-commit for the same reason hooks are: the mutation is already
+        // durable, so presentation delivery must never be able to undo or delay it (AC-RT-001).
+        await PublishRealtimeAsync(issue, activityEvent, workspaceId, changeKind, ct);
+
         // Hooks run after the write has committed and are best-effort: a failing or slow plugin
         // must never roll back or block the mutation that triggered it (see IIssueHook remarks).
         var context = new IssueHookContext(issue, activityEvent);
         await Task.WhenAll(plugins.IssueHooks.Select(hook => InvokeHookSafelyAsync(hook, context, ct)));
     }
+
+    /// <summary>
+    /// Emits exactly one issue change and one activity change for the committed mutation. Failures
+    /// are swallowed deliberately: realtime is a presentation convenience, and the caller already
+    /// holds a committed result that must be returned successfully either way.
+    /// </summary>
+    private async Task PublishRealtimeAsync(
+        Issue issue,
+        ActivityEvent activityEvent,
+        WorkspaceId? workspaceId,
+        RealtimeIssueChangeKind changeKind,
+        CancellationToken ct)
+    {
+        try
+        {
+            // Resolved inside the guarded region on purpose: as a caller-side argument this lookup
+            // would run outside the catch below and could turn an already-committed mutation into
+            // a 500 (AC-RT-001).
+            var resolvedWorkspaceId = workspaceId ?? await ResolveWorkspaceIdAsync(issue.TeamId, ct);
+            var correlationId = correlationContext.CorrelationId;
+            var occurredAt = activityEvent.OccurredAt;
+
+            await realtimePublisher.PublishAsync(
+                new RealtimeIssueChange(
+                    resolvedWorkspaceId, issue.Id, issue.Version, changeKind, correlationId, occurredAt),
+                ct);
+            await realtimePublisher.PublishAsync(
+                new RealtimeActivityChange(
+                    resolvedWorkspaceId, issue.Id, activityEvent.Id, issue.Version, correlationId, occurredAt),
+                ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex, "Realtime publication failed for issue {IssueKey}; the mutation itself succeeded.", issue.Key);
+        }
+    }
+
+    private async Task<WorkspaceId> ResolveWorkspaceIdAsync(TeamId teamId, CancellationToken ct) =>
+        await db.Teams.AsNoTracking().Where(t => t.Id == teamId).Select(t => t.WorkspaceId).FirstAsync(ct);
 
     private async Task InvokeHookSafelyAsync(IIssueHook hook, IssueHookContext context, CancellationToken ct)
     {

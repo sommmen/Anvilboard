@@ -84,6 +84,8 @@ export interface Issue {
   title: string;
   description?: string | null;
   status: IssueStatus;
+  /** Optimistic-concurrency version; realtime clients compare it to detect a missed change. */
+  version: number;
   priority: IssuePriority;
   assigneeId?: string | null;
   createdById?: string | null;
@@ -125,3 +127,28 @@ export interface DashboardSummary {
   completedLast7Days: number;
   openIssuesByAssignee: { assigneeId: string; openIssueCount: number }[];
 }
+
+/**
+ * Mirrors Anvilboard.Api.Realtime.RealtimeChangeEnvelope. Every field past `eventType` is optional
+ * so the server can add fields without a coordinated client release — a client that meets an
+ * `eventType` it does not know falls back to a re-fetch rather than failing to parse.
+ *
+ * `workspaceId` is deliberately absent: a connection only ever receives its own workspace's changes.
+ */
+export interface RealtimeChangeEnvelope {
+  eventType: string;
+  correlationId: string;
+  occurredAt: string;
+  issueId?: string | null;
+  version?: number | null;
+  changeKind?: RealtimeIssueChangeKind | null;
+  activityEventId?: string | null;
+  summaryVersion?: string | null;
+  pluginEventType?: string | null;
+}
+
+export type RealtimeIssueChangeKind = 'CREATED' | 'UPDATED';
+
+export const REALTIME_ISSUE_CHANGED = 'issue.changed';
+export const REALTIME_ACTIVITY_ADDED = 'activity.added';
+export const REALTIME_DASHBOARD_CHANGED = 'dashboard.changed';

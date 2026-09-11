@@ -8,7 +8,7 @@
 |-------|-------|
 | Component | integration-and-plugin-platform |
 | Priority | P0 |
-| Status | Partial — integration lifecycle, write-only secret handling, webhook signature verification, and reflection-based plugin loading are implemented; paused integrations still accept webhooks, sync health/backoff tracking is not implemented, outbound typed plugin events (FR-INT-006) do not exist, and plugin manifest validation is weaker than spec'd. See `docs/audit-report.md` for details. |
+| Status | Partial — integration lifecycle, write-only secret handling, webhook signature verification, reflection-based plugin loading, and approval-gated outbound plugin events (FR-INT-006, via `IPluginEventPublisher`/`PluginEventRelay`) are implemented; paused integrations still accept webhooks, sync health/backoff tracking is not implemented, the core does not dispatch events *to* plugins (audit `MAJ-014`), and plugin manifest validation is weaker than spec'd. See `docs/audit-report.md` for details. |
 | SRS Refs | FR-INT-001, FR-INT-002, FR-INT-003, FR-INT-004, FR-INT-005, FR-INT-006, FR-INT-007, FR-INT-009, NFR-REL-002, NFR-SEC-001 |
 | Tech Design Ref | §8.1 — Integration & Plugin Platform row; also §7.6 Retry & Circuit Breaker Configuration, §7.7 Error Catalog, §11.3 Data Encryption |
 | Depends On | issue-board-service, workspace-authorization, artifacts, realtime-updates |
@@ -242,9 +242,16 @@ On every resync of an already-linked issue (an `ExternalLink` already exists for
    - The conflict is surfaced on the dashboard (a visible "resolve conflict" affordance on the issue) and resolved via `POST /api/v1/issues/{id}/sync-conflicts/{conflictId}/resolve` (tech-design §9.1), which lets the resolving actor choose `keep-local`, `apply-remote`, or `merge` (field-by-field); resolution advances `LastSyncedVersion` and clears the pending conflict.
 5. A local-only edit that never conflicts with a remote change (e.g., editing `SessionState`, which bypasses `Issue.Version`, or adding a comment/artifact/link, which always merges per step 1) does not by itself trigger a conflict — only edits to non-additive fields that advance `Issue.Version` are considered for conflict comparison, consistent with `issue-board-service`'s optimistic-concurrency design.
 
-### Outbound plugin event publishing (planned; new, FR-INT-006)
+### Outbound plugin event publishing (implemented, FR-INT-006)
 
-`IPluginEventPublisher.PublishAsync<TEvent>(TEvent domainEvent)` lets any plugin — independent of the `ILifecycleHook<TEvent>` pipeline — declare and emit its own typed event (e.g., `GitHubPullRequestMergedEvent(PullRequestUrl, IssueId, MergedAt)`). The platform fans the event out to in-process subscribers and relays it to `realtime-updates` for broadcast to connected dashboard clients on the owning workspace's channel. Publishing is fire-and-forget from the plugin's perspective (bounded, logged-on-failure; a relay failure never blocks the plugin's own processing).
+`IPluginEventPublisher.Publish(PluginEvent)` lets any plugin — independent of the `IIssueHook` pipeline — emit an event identified by a stable, namespaced type such as `github.pull_request.merged`. It is relayed to `realtime-updates` for broadcast to connected dashboard clients on the owning workspace's channel. Publishing is fire-and-forget from the plugin's perspective: the call is synchronous, never throws for a delivery problem, and never blocks the plugin's own processing.
+
+Two deliberate narrowings against the original sketch:
+
+- **The event carries identity only** — an event type, a workspace, and optionally the issue it concerns — not a free-form typed payload. Anything a client renders is re-fetched through the normal authorized REST queries, so a plugin cannot push arbitrary or unauthorized content into a browser.
+- **Relay is approval-gated.** An event reaches a browser only when an operator lists its type in `Realtime:RelayedPluginEventTypes`, which is empty by default. Adding an event type to a plugin is therefore never sufficient on its own to start pushing it at clients.
+
+There is no in-process subscriber fan-out; the relay to `realtime-updates` is the only consumer. `github.pull_request.merged` is the sole event type any shipped plugin currently reports.
 
 ### Plugin config/state persistence (planned; new, FR-INT-007)
 
@@ -296,7 +303,8 @@ The GitHub plugin correlates a pull request to an issue (via a recognized issue 
 | AC-IPP-110 | P0 | Given an `ExternalLink`-backed issue with a local edit made to a non-additive field (e.g. title) after the last successful sync (advancing `Issue.Version`), when a resync delivers a remote payload. | The local issue is left untouched, a pending conflict record is created, and `SYNC_CONFLICT` is raised instead of a silent overwrite. | Integration — `SyncConflictTests.ConcurrentLocalEdit_RaisesConflictInsteadOfOverwriting` (negative, boundary for FR-INT-005). |
 | AC-IPP-111 | P2 | Given a pending sync conflict, when the resolving actor calls `POST /api/v1/issues/{id}/sync-conflicts/{conflictId}/resolve` choosing "apply remote". | The remote payload is applied, `LastSyncedVersion` advances, and the conflict record is cleared. | Integration — `SyncConflictTests.ResolveApplyRemote_ClearsConflictAndAdvancesVersion`. |
 | AC-IPP-112 | P1 | Given a remote-added comment and a local-added comment on the same `ExternalLink`-backed issue since the last sync, when a resync runs. | Both comments are present after resync (list-union merge); no `SYNC_CONFLICT` is raised for the additive comment set. | Integration — `SyncConflictTests.AdditiveComments_MergeWithoutConflict` (FR-INT-005). |
-| AC-IPP-113 | P2 | Given a plugin calling `IPluginEventPublisher.PublishAsync<TEvent>`, when `realtime-updates` is temporarily unavailable. | The publish call still returns successfully to the plugin (fire-and-forget); the relay failure is logged but never surfaces as an error to the publishing plugin. | Unit — `PluginEventPublisherTests.RelayUnavailable_PublishStillSucceedsForPlugin` (FR-INT-006). |
+| AC-IPP-113 | P2 | Given a plugin calling `IPluginEventPublisher.Publish`, when `realtime-updates` is temporarily unavailable. | The publish call still returns successfully to the plugin (fire-and-forget); the relay failure is logged but never surfaces as an error to the publishing plugin. | Unit — `PluginEventRelayTests.Publish_PublisherThrows_SurfacesNothingToThePlugin` (FR-INT-006). |
+| AC-IPP-114 | P1 | Given a plugin event whose type is not listed in `Realtime:RelayedPluginEventTypes`, when the plugin publishes it. | The event is dropped before reaching any client and no lifecycle hook runs; an empty configuration relays nothing at all (negative — approval is opt-in). | Unit — `PluginEventRelayTests.Publish_UnapprovedEventType_DropsEvent`, `Publish_NoApprovedEventTypesConfigured_DropsEverything` (FR-INT-006). |
 | AC-IPP-114 | P1 | Given a plugin writing to `IPluginConfigStore`/`IPluginStateStore` under its own `(workspaceId, pluginKey)`, when another plugin attempts to read that same key. | The read returns nothing/is denied; only the owning plugin can read or write its namespaced config/state. | Unit — `PluginConfigStoreTests.CrossPluginRead_IsDenied` (negative, FR-INT-007). |
 | AC-IPP-115 | P0 | Given a GitHub pull request linked to an issue via a recognized reference (branch name, PR description, or commit message), when the GitHub plugin polls or receives a webhook for that PR. | A `PullRequest`-kind `Artifact` is attached/updated on the issue with current status (open/merged/closed) and idempotently refreshed on subsequent updates (no duplicate artifact). | Integration — `GitHubPullRequestArtifactTests.LinkedPr_AttachesAndRefreshesIdempotently` (FR-INT-007). |
 
@@ -356,7 +364,8 @@ src/
     └── Plugins/
         ├── PluginRegistry.cs             # Existing; planned: contract-version compatibility check on load
         ├── PluginHostOptions.cs          # Existing
-        ├── PluginEventPublisher.cs       # Planned: IPluginEventPublisher impl, relays to realtime-updates (FR-INT-006)
+        │                                 # (IPluginEventPublisher ships as Anvilboard.Plugins.Abstractions/IPluginEventPublisher.cs,
+        │                                 #  implemented by Anvilboard.Application/Realtime/PluginEventRelay.cs — FR-INT-006)
         └── PluginConfigStateStore.cs     # Planned: IPluginConfigStore/IPluginStateStore impl, (workspaceId, pluginKey)-scoped (FR-INT-007)
 ```
 
@@ -395,11 +404,11 @@ src/
 - **Integration**: end-to-end resync through `SyncCoordinator` producing a `SYNC_CONFLICT` for a diverged non-additive field, followed by a call to the sync-conflicts resolve endpoint asserting "apply remote" clears the conflict and advances `LastSyncedVersion`, "keep local" clears the conflict without applying the remote payload, and "merge" applies a field-by-field selection.
 - **Fixtures / Mocks**: seeded `ExternalLink` rows with controllable `LastSyncedVersion`; a fake `IIngestionSource` yielding a remote payload matching an already-linked issue, including additive-only and non-additive-diverging variants.
 
-**Test file**: `src/Anvilboard.Infrastructure.Tests/Plugins/PluginEventPublisherTests.cs`
+**Test file**: `src/Anvilboard.Application.Tests/Realtime/PluginEventRelayTests.cs`
 
 **Test scope**:
-- **Unit**: `PublishAsync<TEvent>` fans out to in-process subscribers and relays to `realtime-updates`; relay failure is logged but the publish call still returns success to the calling plugin (fire-and-forget, FR-INT-006).
-- **Fixtures / Mocks**: fake `realtime-updates` relay client with configurable success/failure/latency.
+- **Unit**: an approved event type relays to `realtime-updates`; an unapproved type — and any type when no approvals are configured — is dropped; a relay failure is logged but the publish call still returns success to the calling plugin (fire-and-forget, FR-INT-006).
+- **Fixtures / Mocks**: recording fake `IRealtimeUpdatePublisher` with a configurable throwing mode; `RealtimeOptions` with a controllable approved-type list.
 
 **Test file**: `src/Anvilboard.Infrastructure.Tests/Plugins/PluginConfigStateStoreTests.cs`
 
