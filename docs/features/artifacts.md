@@ -8,8 +8,8 @@
 |-------|-------|
 | Component | artifacts |
 | Priority | P1 |
-| Status | Implemented — `ArtifactService` provides attach (reference and byte-payload), list, refresh, and remove; the refreshable `pull_request` upsert converges on `DedupKey`; every mutation emits an `ActivityEvent` and an audit record. Residual gaps, tracked separately: no content **download** endpoint, no Angular artifact panel, and no `GitHubPullRequestArtifactSync` plugin yet (the `RefreshArtifactAsync` consumer). See `docs/plans/artifacts.md` for the implementation plan. |
-| Implementation plan | [`docs/plans/artifacts.md`](../plans/artifacts.md) — closes **CRIT-003**/**MIN-006**, milestone M6.7 |
+| Status | Implemented — `ArtifactService` provides attach (reference and byte-payload), list, refresh, and remove; the refreshable `pull_request` upsert converges on `DedupKey`; every mutation emits an `ActivityEvent` and an audit record. Residual gaps, tracked separately: no content **download** endpoint, no Angular artifact panel, and no `GitHubPullRequestArtifactSync` plugin yet (the `RefreshArtifactAsync` consumer). |
+| Audit findings | Closes **CRIT-003** and **MIN-006**; delivers the artifact half of milestones **M4.5**/**M6.7** and the audit-emission half of **MAJ-020** |
 | SRS Refs | FR-ART-001, FR-ART-002 |
 | Tech Design Ref | §8.1 — Issue Artifacts row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `Artifacts` table |
 | Depends On | issue-board-service, workspace-authorization |
@@ -100,7 +100,7 @@ sequenceDiagram
 
 ## Key Behaviors
 
-### `AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?)` (planned; new)
+### `AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?)`
 
 1. Validate `issueId` resolves to an existing issue in the caller's authorized workspace — `REFERENCED_ENTITY_NOT_FOUND` if not.
 2. Validate `kind` is one of `file`, `link`, `deployment`, `pull_request` — `VALIDATION_FAILED` naming the invalid value otherwise. (This is a small closed set describing *artifact shape*, not the free-form `Type`/`Priority` taxonomy on `Issue` — it is not workspace-configurable.)
@@ -110,7 +110,7 @@ sequenceDiagram
 6. Emit `ArtifactAttached` audit/activity event with `(issueId, artifactId, kind, source)` — never raw content.
 7. Return the `Artifact` DTO.
 
-### `ListArtifactsAsync(issueId)` (planned; new)
+### `ListArtifactsAsync(issueId)`
 
 Returns all `Artifact` rows for the issue ordered by `CreatedAt` ascending (oldest first, matching comment ordering conventions in `issue-board-service`). `REFERENCED_ENTITY_NOT_FOUND` if the issue does not exist or is outside the caller's workspace.
 
@@ -124,7 +124,7 @@ Realization of FR-ART-001 idempotent upsert capability:
 4. This operation is idempotent: refreshing with identical `contentReference`/`metadata` values is a no-op from the caller's perspective (still emits `ArtifactRefreshed` for audit completeness, but no user-visible content changes).
 5. Return the `Artifact` DTO.
 
-### `RemoveArtifactAsync(issueId, artifactId, actorId)` (planned; new)
+### `RemoveArtifactAsync(issueId, artifactId, actorId)`
 
 1. Validate the artifact exists and belongs to the given issue — `REFERENCED_ENTITY_NOT_FOUND` otherwise.
 2. Delete the `Artifact` row. Deletion is a metadata-level removal; whether the underlying `IArtifactStore` content is immediately purged or retained per a documented retention/archive policy is a store-implementation decision (the SQLite BLOB-backed store purges the associated BLOB on removal; a future implementation may instead archive) — either way, removal is never silent: an `ArtifactRemoved` audit event is always emitted (FR-ART-001 AC4).
@@ -162,6 +162,76 @@ The GitHub plugin correlates a pull request to an issue and keeps a `pull_reques
 - **Refresh is not a public write path**: `RefreshArtifactAsync` is reachable only from the owning plugin's correlation logic, never from a human/API/CLI/MCP surface directly — a human wanting to "edit" a PR artifact's status has no such operation; status only ever reflects what GitHub reports.
 - **Audit on every mutation**: attach, refresh, and remove all always emit an audit/activity event; there is no "silent" artifact operation.
 - **Removal never silently purges outside policy**: content retention/archive behavior on removal must be documented per `IArtifactStore` implementation and must not vary undocumented between implementations.
+
+## Validation Rules
+
+Trimming and bounds are applied once, in `ArtifactService` — never per-endpoint — so the REST, agent, and plugin surfaces cannot diverge.
+
+| Parameter | Rule | Failure |
+|---|---|---|
+| `issueId` | Must exist and resolve to a workspace via its team | `REFERENCED_ENTITY_NOT_FOUND` |
+| `kind` | Parsed by `ArtifactKindConverter.TryParse`; closed set | `VALIDATION_FAILED` naming the value |
+| `title` | Required, trimmed, 1–500 chars (matches `HasMaxLength(500)`) | `VALIDATION_FAILED` |
+| `contentReference` | Required, trimmed, non-empty | `VALIDATION_FAILED` |
+| `source` | Optional; trimmed, ≤ 100 chars; defaults to `"local"` when an `actorId` is present, otherwise required | `VALIDATION_FAILED` |
+| `dedupKey` | Required on refresh; ≤ 500 chars | `VALIDATION_FAILED` |
+| `metadata` | Optional opaque JSON string; size-bounded only (8 KiB), never parsed | `VALIDATION_FAILED` when over bound |
+| `artifactId` | Must exist **and** belong to the given `issueId` | `REFERENCED_ENTITY_NOT_FOUND` |
+
+### Boundary values & edge cases
+
+| Case | Behavior |
+|---|---|
+| `title` of exactly 500 chars / 501 chars | Accepted / `VALIDATION_FAILED` (never a truncating DB error) |
+| Empty artifact list | `[]`, HTTP 200 — not 404 |
+| Two artifacts with identical `CreatedAt` | Tie-broken by `Id` so ordering is deterministic across surfaces (`AC-ART-103`) |
+| `dedupKey = null` on attach | Allowed and non-unique — the unique index is filtered, so many `link` artifacts coexist |
+| Refresh with a `kind` other than `pull_request` | `VALIDATION_FAILED` |
+| Refresh with unchanged values | Still updates `UpdatedAt` and still emits `ArtifactRefreshed`; idempotent, not a no-op |
+| Remove of an already-removed artifact | `REFERENCED_ENTITY_NOT_FOUND` (not silent success) |
+| Blob purge fails after the row is committed | Remove still succeeds; the failure is logged as a diagnostic — the user-visible removal already happened |
+
+## Business Rules
+
+| ID | Rule |
+|---|---|
+| BR-ART-1 | `Source` defaults to `"local"` only when `actorId` is non-null. An automation caller **must** pass an explicit source key; there is no anonymous `"local"` automation. |
+| BR-ART-2 | `AddedById = NULL` ⟺ automation-attached. This is the sole provenance discriminator (`AC-ART-106`). |
+| BR-ART-3 | `RefreshArtifactAsync` is valid only for `ArtifactKind.PullRequest`. |
+| BR-ART-4 | Refresh that finds no existing `(IssueId, Kind, DedupKey)` row inserts and emits `ArtifactAttached`; one that finds a row updates and emits `ArtifactRefreshed` (`AC-ART-110` / `AC-ART-111`). |
+| BR-ART-5 | Artifact authorization is exactly the parent issue's mutation authorization. No separate artifact role exists. |
+| BR-ART-6 | `Metadata` is written only for refreshable kinds and is never interpreted by this component. |
+| BR-ART-7 | Removal hard-deletes the blob via `IArtifactStore.DeleteAsync`; that is `SqliteArtifactStore`'s documented retention policy, satisfying "never silently purged outside the documented policy". |
+
+## API Surface
+
+### REST
+
+| Method | Route | Permission | Notes |
+|---|---|---|---|
+| `GET` | `/api/issues/{id:guid}/artifacts` | `ReadBoard` (group-level) | `CreatedAt` ascending, `Id` tie-break |
+| `POST` | `/api/issues/{id:guid}/artifacts` | `ReadWriteIssues` \| `ReadWriteAssignedIssues` | JSON body, reference-only |
+| `DELETE` | `/api/issues/{id:guid}/artifacts/{artifactId:guid}` | `ReadWriteIssues` \| `ReadWriteAssignedIssues` | `204 No Content` |
+
+Permissions mirror `/links` exactly (BR-ART-5). `RefreshArtifactAsync` intentionally has **no** route. Errors use `Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: …)` with the Error Handling mapping below — byte-for-byte the shape `/links` already returns.
+
+Attach accepts a reference, not raw bytes: the byte-payload overload exists on `IArtifactService` and is tested, but is reachable only in-process until a dedicated upload endpoint is specified. This keeps request-size limits, content-type validation, and multipart parsing out of a slice whose requirement does not ask for them.
+
+### Agent / CLI / MCP
+
+Exposed on `BoardAgentService`, wrapping `IArtifactService` the same way the issue-link operations wrap `IssueLinkService`:
+
+| Operation | Signature | Idempotent |
+|---|---|---|
+| `list-artifacts` | `ListArtifactsAsync(Guid issueId, ct)` | yes |
+| `attach-artifact` | `AttachArtifactAsync(Guid issueId, string kind, string title, string contentReference, string? source, ct)` | no |
+| `remove-artifact` | `RemoveArtifactAsync(Guid issueId, Guid artifactId, ct)` | no |
+
+`refresh-artifact` is deliberately **not** exposed on any transport: a pull request's state must only ever reflect what GitHub reports, so there is no operation by which an agent or a human can fake it.
+
+## Concurrency
+
+The filtered unique index on `(IssueId, DedupKey)` — not a read-modify-write lock — is the concurrency control for refresh. When `SaveChangesAsync` raises a `DbUpdateException` against that index, the service re-reads the row once and applies the update path, so two concurrent webhook deliveries for the same PR converge on a single row without transaction escalation.
 
 ## Acceptance Criteria
 

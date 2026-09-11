@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Anvilboard.Application.Tests.Artifacts;
 
 /// <summary>
-/// Covers the idempotent upsert path (`docs/plans/artifacts.md` §8.4): AC-ART-110, AC-ART-111, the
+/// Covers the idempotent upsert path (`docs/features/artifacts.md`, RefreshArtifactAsync): AC-ART-110, AC-ART-111, the
 /// `pull_request`-only restriction (BR-ART-3), and convergence when two provider deliveries race
 /// for the same dedup key.
 /// </summary>

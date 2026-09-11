@@ -153,7 +153,7 @@ public sealed class BoardAgentService(
         await artifacts.RemoveArtifactAsync(
             new IssueId(issueId), new ArtifactId(artifactId), actorId: null, AgentChannel, cancellationToken);
 
-    // `refresh-artifact` is deliberately not exposed here (`docs/plans/artifacts.md` §9.3, N4):
+    // `refresh-artifact` is deliberately not exposed here (`docs/features/artifacts.md`, API Surface):
     // a pull request artifact's state must only ever reflect what the provider reports, so the
     // upsert path stays reachable from plugin correlation logic only. An agent that could call it
     // could assert a PR was merged when it was not.

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Anvilboard.Application.Tests.Artifacts;
 
 /// <summary>
-/// Covers the automation/enrichment provenance contract (`docs/plans/artifacts.md` §3.5 US-A2,
+/// Covers the automation/enrichment provenance contract (`docs/features/artifacts.md`,
 /// FR-ART-002): AC-ART-106, AC-ART-107, and AC-ART-108. There is no enrichment hook host yet, so
 /// these drive <see cref="ArtifactService"/> the way such a hook would — through the same public
 /// contract, with no actor and an explicit hook source key.

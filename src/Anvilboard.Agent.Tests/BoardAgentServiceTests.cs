@@ -61,7 +61,7 @@ public sealed class BoardAgentServiceTests
     [Fact]
     public void Discover_DoesNotExposeRefreshArtifact()
     {
-        // `refresh-artifact` is deliberately excluded (`docs/plans/artifacts.md` §9.3, N4): a pull
+        // `refresh-artifact` is deliberately excluded (`docs/features/artifacts.md`, API Surface): a pull
         // request artifact's state must only ever reflect what the provider reports, so the upsert
         // path stays reachable from plugin correlation logic only. An agent able to call it could
         // assert a PR was merged when it was not.

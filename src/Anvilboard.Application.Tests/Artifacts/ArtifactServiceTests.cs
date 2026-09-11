@@ -6,7 +6,7 @@ namespace Anvilboard.Application.Tests.Artifacts;
 
 /// <summary>
 /// Covers the attach / list / remove paths of `Anvilboard.Application/Artifacts/ArtifactService.cs`
-/// (`docs/plans/artifacts.md` §8.3, §8.5, §15): AC-ART-101, AC-ART-102, AC-ART-103, AC-ART-104,
+/// (`docs/features/artifacts.md`, Key Behaviors): AC-ART-101, AC-ART-102, AC-ART-103, AC-ART-104,
 /// AC-ART-105, and AC-ART-109.
 /// </summary>
 public sealed class ArtifactServiceTests

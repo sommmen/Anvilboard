@@ -12,7 +12,7 @@ namespace Anvilboard.Api.Tests.Artifacts;
 
 /// <summary>
 /// End-to-end coverage of `Anvilboard.Api/Endpoints/ArtifactEndpoints.cs`
-/// (`docs/plans/artifacts.md` §9, §15) through the real host, including the error-code to
+/// (`docs/features/artifacts.md`, API Surface) through the real host, including the error-code to
 /// HTTP-status mapping and the cross-surface list ordering guarantee (AC-ART-103).
 /// </summary>
 public sealed class ArtifactEndpointTests
