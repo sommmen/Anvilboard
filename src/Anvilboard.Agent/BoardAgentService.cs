@@ -128,7 +128,7 @@ public sealed class BoardAgentService(
 
     [AgentOperation("list-artifacts", "Lists the artifacts attached to an issue, oldest first", Category = "issues", IsIdempotent = true)]
     public async Task<IReadOnlyList<ArtifactDto>> ListArtifactsAsync(Guid issueId, CancellationToken cancellationToken = default) =>
-        await artifacts.ListArtifactsAsync(new IssueId(issueId), cancellationToken);
+        await artifacts.ListArtifactsAsync(new IssueId(issueId), ct: cancellationToken);
 
     /// <summary>
     /// Attaches an already-addressable artifact. <paramref name="source"/> is required and
@@ -146,12 +146,12 @@ public sealed class BoardAgentService(
         CancellationToken cancellationToken = default) =>
         await artifacts.AttachArtifactAsync(
             new IssueId(issueId), kind, title, contentReference, source,
-            actorId: null, metadata: null, AgentChannel, cancellationToken);
+            actorId: null, metadata: null, AgentChannel, ct: cancellationToken);
 
     [AgentOperation("remove-artifact", "Removes an artifact from an issue and purges its stored content", Category = "issues")]
     public async Task RemoveArtifactAsync(Guid issueId, Guid artifactId, CancellationToken cancellationToken = default) =>
         await artifacts.RemoveArtifactAsync(
-            new IssueId(issueId), new ArtifactId(artifactId), actorId: null, AgentChannel, cancellationToken);
+            new IssueId(issueId), new ArtifactId(artifactId), actorId: null, AgentChannel, ct: cancellationToken);
 
     // `refresh-artifact` is deliberately not exposed here (`docs/features/artifacts.md`, API Surface):
     // a pull request artifact's state must only ever reflect what the provider reports, so the

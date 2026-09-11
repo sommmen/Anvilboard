@@ -35,7 +35,7 @@ public sealed class ArtifactEndpointTests
 
         var attach = await context.Client.PostAsJsonAsync(
             $"/api/issues/{context.IssueId}/artifacts",
-            new { kind = "link", title = "Failing CI run", contentReference = "https://ci.example.test/run/42", actorId = context.MemberId },
+            new { kind = "link", title = "Failing CI run", contentReference = "https://ci.example.test/run/42" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Created, attach.StatusCode);
@@ -53,7 +53,7 @@ public sealed class ArtifactEndpointTests
         Assert.Equal(created.Id, Assert.Single(listed!).Id);
 
         var delete = await context.Client.DeleteAsync(
-            $"/api/issues/{context.IssueId}/artifacts/{created.Id}?actorId={context.MemberId}", CancellationToken.None);
+            $"/api/issues/{context.IssueId}/artifacts/{created.Id}", CancellationToken.None);
         Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
 
         var afterDelete = await context.Client.GetFromJsonAsync<List<ArtifactDto>>(
@@ -82,7 +82,7 @@ public sealed class ArtifactEndpointTests
         {
             var response = await context.Client.PostAsJsonAsync(
                 $"/api/issues/{context.IssueId}/artifacts",
-                new { kind = "link", title = $"Artifact {i}", contentReference = $"https://example.test/{i}", actorId = context.MemberId },
+                new { kind = "link", title = $"Artifact {i}", contentReference = $"https://example.test/{i}" },
                 CancellationToken.None);
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         }
@@ -94,7 +94,7 @@ public sealed class ArtifactEndpointTests
         // and comparing proves the two surfaces order identically rather than merely similarly.
         using var scope = context.Factory.Services.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IArtifactService>();
-        var overService = await service.ListArtifactsAsync(new IssueId(context.IssueId), CancellationToken.None);
+        var overService = await service.ListArtifactsAsync(new IssueId(context.IssueId), ct: CancellationToken.None);
 
         Assert.Equal(3, overRest!.Count);
         Assert.Equal(overService.Select(artifact => artifact.Id), overRest.Select(artifact => artifact.Id));
@@ -107,7 +107,7 @@ public sealed class ArtifactEndpointTests
 
         var response = await context.Client.PostAsJsonAsync(
             $"/api/issues/{context.IssueId}/artifacts",
-            new { kind = "screenshot", title = "A screenshot", contentReference = "https://example.test/s.png", actorId = context.MemberId },
+            new { kind = "screenshot", title = "A screenshot", contentReference = "https://example.test/s.png" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -122,7 +122,7 @@ public sealed class ArtifactEndpointTests
 
         var response = await context.Client.PostAsJsonAsync(
             $"/api/issues/{Guid.NewGuid()}/artifacts",
-            new { kind = "link", title = "Anything", contentReference = "https://example.test", actorId = context.MemberId },
+            new { kind = "link", title = "Anything", contentReference = "https://example.test" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -138,7 +138,7 @@ public sealed class ArtifactEndpointTests
 
         var attach = await context.Client.PostAsJsonAsync(
             $"/api/issues/{otherIssueId}/artifacts",
-            new { kind = "link", title = "Theirs", contentReference = "https://example.test/b", actorId = context.MemberId },
+            new { kind = "link", title = "Theirs", contentReference = "https://example.test/b" },
             CancellationToken.None);
         var created = await attach.Content.ReadFromJsonAsync<ArtifactDto>(CancellationToken.None);
 
@@ -177,10 +177,49 @@ public sealed class ArtifactEndpointTests
         // if the route accepts either — the same pair the issue mutation routes accept (BR-ART-5).
         var response = await contributorClient.PostAsJsonAsync(
             $"/api/issues/{context.IssueId}/artifacts",
-            new { kind = "link", title = "Mine", contentReference = "https://example.test", actorId = context.MemberId },
+            new { kind = "link", title = "Mine", contentReference = "https://example.test" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Attach_ActorIdInBody_IsIgnoredInFavourOfTheAuthenticatedActor()
+    {
+        await using var context = await ApiTestContext.CreateAsync();
+        using var contributorClient = context.Factory.CreateClient();
+        var cookie = await context.Factory.SeedMemberAndGetSessionCookieAsync(contributorClient, "impersonator", Role.Contributor);
+        contributorClient.DefaultRequestHeaders.Add("Cookie", cookie);
+
+        // An `actorId` naming a *different* member must not be honoured: provenance comes from the
+        // session, so the artifact is attributed to the caller regardless of what it claims.
+        var response = await contributorClient.PostAsJsonAsync(
+            $"/api/issues/{context.IssueId}/artifacts",
+            new
+            {
+                kind = "link",
+                title = "Attributed to someone else",
+                contentReference = "https://example.test/forged",
+                actorId = context.MemberId,
+            },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<ArtifactDto>(CancellationToken.None);
+        Assert.NotNull(created);
+        Assert.NotEqual(context.MemberId, created.AddedById);
+    }
+
+    [Fact]
+    public async Task List_UnknownIssue_ReturnsNotFound()
+    {
+        await using var context = await ApiTestContext.CreateAsync();
+
+        // 200 with `[]` would assert that an issue nobody can see nonetheless exists.
+        var response = await context.Client.GetAsync(
+            $"/api/issues/{Guid.NewGuid()}/artifacts", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     /// <summary>A bootstrapped host with a team, workflow states, and one issue already created.</summary>

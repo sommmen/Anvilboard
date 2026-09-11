@@ -44,6 +44,15 @@ internal sealed class ArtifactFixture : IAsyncDisposable
     public Member Member { get; }
     public RecordingArtifactStore Store { get; } = new();
 
+    /// <summary>The workspace owning <see cref="Issue"/> and <see cref="OtherIssue"/>.</summary>
+    public WorkspaceId WorkspaceId { get; private init; }
+
+    /// <summary>A different workspace, owning <see cref="ForeignIssue"/>.</summary>
+    public WorkspaceId ForeignWorkspaceId { get; private init; }
+
+    /// <summary>An issue that exists but belongs to <see cref="ForeignWorkspaceId"/>.</summary>
+    public Issue ForeignIssue { get; private init; } = null!;
+
     public ArtifactService CreateService(IArtifactStore? store = null) => new(
         Db,
         store ?? Store,
@@ -105,9 +114,25 @@ internal sealed class ArtifactFixture : IAsyncDisposable
         var issue = MakeIssue(teamId, "TST-1");
         var otherIssue = MakeIssue(teamId, "TST-2");
         db.Issues.AddRange(issue, otherIssue);
+
+        // A second, fully separate workspace: the workspace-scoping tests need a real issue that
+        // legitimately exists but belongs to someone else, which is the case a scope check must
+        // reject and an existence check alone would let through.
+        var foreignWorkspaceId = WorkspaceId.New();
+        var foreignTeamId = TeamId.New();
+        db.Workspaces.Add(new Workspace { Id = foreignWorkspaceId, Name = "Other workspace", Slug = "other-workspace", CreatedAt = DateTimeOffset.UtcNow });
+        db.Teams.Add(new Team { Id = foreignTeamId, WorkspaceId = foreignWorkspaceId, Name = "Other team", Key = "OTH", CreatedAt = DateTimeOffset.UtcNow });
+        var foreignIssue = MakeIssue(foreignTeamId, "OTH-1");
+        db.Issues.Add(foreignIssue);
+
         await db.SaveChangesAsync();
 
-        return new ArtifactFixture(connection, raceInterceptor, db, issue, otherIssue, member);
+        return new ArtifactFixture(connection, raceInterceptor, db, issue, otherIssue, member)
+        {
+            WorkspaceId = workspaceId,
+            ForeignWorkspaceId = foreignWorkspaceId,
+            ForeignIssue = foreignIssue,
+        };
     }
 
     public async ValueTask DisposeAsync()

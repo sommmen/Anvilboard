@@ -49,9 +49,9 @@ Issue Artifacts lets an authorized actor or automation attach a file, link, depl
 ## Interfaces
 
 ### Inputs
-- **`AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?)`** — via `POST /api/issues/{id}/artifacts` and equivalent CLI/MCP operations; `source`/`actorId` distinguish manual (actor-driven) from automated (hook-driven, `actorId` omitted) attachment; `metadata` is an optional opaque key-value bag used only by refreshable kinds (currently `pull_request`: `{ number, state, checksStatus }`), ignored/absent for the other kinds.
+- **`AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?, workspaceScope?)`** — via `POST /api/issues/{id}/artifacts` and equivalent CLI/MCP operations; `source`/`actorId` distinguish manual (actor-driven) from automated (hook-driven, `actorId` omitted) attachment; `metadata` is an optional opaque key-value bag used only by refreshable kinds (currently `pull_request`: `{ number, state, checksStatus }`), ignored/absent for the other kinds.
 - **`ListArtifactsAsync(issueId)`** — via `GET /api/issues/{id}/artifacts`.
-- **`RemoveArtifactAsync(issueId, artifactId, actorId)`** — via `DELETE /api/issues/{id}/artifacts/{artifactId}`.
+- **`RemoveArtifactAsync(issueId, artifactId, actorId, workspaceScope?)`** — via `DELETE /api/issues/{id}/artifacts/{artifactId}`.
 - **`RefreshArtifactAsync(issueId, kind, dedupKey, contentReference, metadata, source)`** (realization of FR-ART-001 idempotent upsert) — an idempotent upsert used by refreshable kinds: if an artifact matching `(issueId, kind, dedupKey)` exists, its `ContentReference`/`Metadata` are updated in place; otherwise a new artifact is attached. Not exposed as a distinct public endpoint — invoked only by the owning plugin's correlation logic (e.g. the GitHub plugin's `GitHubPullRequestArtifactSync`), never by a human/API/CLI/MCP caller directly.
 - **Lifecycle-hook calls** — a `Post*` `ILifecycleHook<TEvent>` implementation (owned by `integration-and-plugin-platform`, e.g. registered for `PostAddComment`/`PostIngest`) calls `AttachArtifactAsync` exactly as any other caller would, with `actorId` omitted and `source` set to its hook key; the GitHub PR-correlation plugin calls `RefreshArtifactAsync` with `source = "github"`.
 
@@ -100,19 +100,20 @@ sequenceDiagram
 
 ## Key Behaviors
 
-### `AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?)`
+### `AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?, workspaceScope?)`
 
 1. Validate `issueId` resolves to an existing issue in the caller's authorized workspace — `REFERENCED_ENTITY_NOT_FOUND` if not.
 2. Validate `kind` is one of `file`, `link`, `deployment`, `pull_request` — `VALIDATION_FAILED` naming the invalid value otherwise. (This is a small closed set describing *artifact shape*, not the free-form `Type`/`Priority` taxonomy on `Issue` — it is not workspace-configurable.)
 3. Validate `title` and `contentReference` are non-empty — `VALIDATION_FAILED` naming the missing field otherwise.
 4. If `contentReference` represents inline content the caller wants durably stored (e.g., an uploaded file's bytes) rather than an already-external URL, call `IArtifactStore.StoreAsync(...)` to obtain the durable opaque reference; a store failure surfaces as `ARTIFACT_STORE_UNAVAILABLE` and no `Artifact` row is persisted (fail-closed — never a partial/corrupt attachment). `metadata` (when present) is persisted verbatim alongside the row and is never passed to `IArtifactStore` — it is small, structured, and lives directly on the `Artifacts` row.
-5. Persist the `Artifact` row: `source` defaults to `"local"` when `actorId` is provided and `source` is omitted; when called by a `Post*` lifecycle hook, `actorId` is omitted and `source` must identify the originating hook/integration key (e.g., `slack-thread-expansion`, `github`).
-6. Emit `ArtifactAttached` audit/activity event with `(issueId, artifactId, kind, source)` — never raw content.
-7. Return the `Artifact` DTO.
+5. Persist the `Artifact` row: `source` defaults to `"local"` when `actorId` is provided and `source` is omitted; when called by a `Post*` lifecycle hook, `actorId` is omitted and `source` must identify the originating hook/integration key (e.g., `slack-thread-expansion`, `github`). An actorless caller that passes `"local"` explicitly is rejected — otherwise BR-ART-2's provenance discriminator would be bypassable by simply naming the reserved value.
+6. `metadata` is persisted only for refreshable kinds (BR-ART-6); supplied on any other kind it is dropped rather than rejected, because only a refresh provider could ever maintain it and the attachment itself is still valid.
+7. Emit `ArtifactAttached` audit/activity event with `(issueId, artifactId, kind, source)` — never raw content.
+8. Return the `Artifact` DTO.
 
-### `ListArtifactsAsync(issueId)`
+### `ListArtifactsAsync(issueId, workspaceScope?)`
 
-Returns all `Artifact` rows for the issue ordered by `CreatedAt` ascending (oldest first, matching comment ordering conventions in `issue-board-service`). `REFERENCED_ENTITY_NOT_FOUND` if the issue does not exist or is outside the caller's workspace.
+Returns all `Artifact` rows for the issue ordered by `CreatedAt` ascending (oldest first, matching comment ordering conventions in `issue-board-service`). `REFERENCED_ENTITY_NOT_FOUND` if the issue does not exist or is outside the caller's workspace — never an empty list, which would assert that an issue the caller cannot see nonetheless exists.
 
 ### `RefreshArtifactAsync(issueId, kind, dedupKey, contentReference, metadata, source)`
 
@@ -124,9 +125,9 @@ Realization of FR-ART-001 idempotent upsert capability:
 4. This operation is idempotent: refreshing with identical `contentReference`/`metadata` values is a no-op from the caller's perspective (still emits `ArtifactRefreshed` for audit completeness, but no user-visible content changes).
 5. Return the `Artifact` DTO.
 
-### `RemoveArtifactAsync(issueId, artifactId, actorId)`
+### `RemoveArtifactAsync(issueId, artifactId, actorId, workspaceScope?)`
 
-1. Validate the artifact exists and belongs to the given issue — `REFERENCED_ENTITY_NOT_FOUND` otherwise.
+1. Validate the issue resolves within `workspaceScope` (when supplied), then that the artifact exists and belongs to the given issue — `REFERENCED_ENTITY_NOT_FOUND` otherwise. Scope is checked first so a caller outside the workspace cannot learn whether an artifact id is real.
 2. Delete the `Artifact` row. Deletion is a metadata-level removal; whether the underlying `IArtifactStore` content is immediately purged or retained per a documented retention/archive policy is a store-implementation decision (the SQLite BLOB-backed store purges the associated BLOB on removal; a future implementation may instead archive) — either way, removal is never silent: an `ArtifactRemoved` audit event is always emitted (FR-ART-001 AC4).
 3. `RemoveArtifactAsync` requires the same authorization the issue mutation itself requires — there is no separate "artifact admin" role.
 
@@ -173,7 +174,8 @@ Trimming and bounds are applied once, in `ArtifactService` — never per-endpoin
 | `kind` | Parsed by `ArtifactKindConverter.TryParse`; closed set | `VALIDATION_FAILED` naming the value |
 | `title` | Required, trimmed, 1–500 chars (matches `HasMaxLength(500)`) | `VALIDATION_FAILED` |
 | `contentReference` | Required, trimmed, non-empty | `VALIDATION_FAILED` |
-| `source` | Optional; trimmed, ≤ 100 chars; defaults to `"local"` when an `actorId` is present, otherwise required | `VALIDATION_FAILED` |
+| `source` | Optional; trimmed, ≤ 100 chars; defaults to `"local"` when an `actorId` is present, otherwise required and may not be `"local"` | `VALIDATION_FAILED` |
+| `workspaceScope` | Optional; when supplied, the issue's resolved workspace must equal it | `REFERENCED_ENTITY_NOT_FOUND` |
 | `dedupKey` | Required on refresh; ≤ 500 chars | `VALIDATION_FAILED` |
 | `metadata` | Optional opaque JSON string; size-bounded only (8 KiB), never parsed | `VALIDATION_FAILED` when over bound |
 | `artifactId` | Must exist **and** belong to the given `issueId` | `REFERENCED_ENTITY_NOT_FOUND` |
@@ -183,7 +185,10 @@ Trimming and bounds are applied once, in `ArtifactService` — never per-endpoin
 | Case | Behavior |
 |---|---|
 | `title` of exactly 500 chars / 501 chars | Accepted / `VALIDATION_FAILED` (never a truncating DB error) |
-| Empty artifact list | `[]`, HTTP 200 — not 404 |
+| Existing issue with no artifacts | `[]`, HTTP 200 — not 404 (the 404 is reserved for an issue the caller cannot see) |
+| `issueId` that exists in another workspace | `REFERENCED_ENTITY_NOT_FOUND` — deliberately the same failure as a nonexistent id, so the API is not a cross-workspace existence oracle |
+| `source: "local"` from an actorless caller | `VALIDATION_FAILED` (BR-ART-1) |
+| `metadata` on a `file`/`link`/`deployment` | Accepted, persisted as `NULL` (BR-ART-6) |
 | Two artifacts with identical `CreatedAt` | Tie-broken by `Id` so ordering is deterministic across surfaces (`AC-ART-103`) |
 | `dedupKey = null` on attach | Allowed and non-unique — the unique index is filtered, so many `link` artifacts coexist |
 | Refresh with a `kind` other than `pull_request` | `VALIDATION_FAILED` |
@@ -195,11 +200,12 @@ Trimming and bounds are applied once, in `ArtifactService` — never per-endpoin
 
 | ID | Rule |
 |---|---|
-| BR-ART-1 | `Source` defaults to `"local"` only when `actorId` is non-null. An automation caller **must** pass an explicit source key; there is no anonymous `"local"` automation. |
+| BR-ART-1 | `Source` defaults to `"local"` only when `actorId` is non-null. An automation caller **must** pass an explicit source key, and may not pass `"local"` itself; there is no anonymous `"local"` automation. |
 | BR-ART-2 | `AddedById = NULL` ⟺ automation-attached. This is the sole provenance discriminator (`AC-ART-106`). |
 | BR-ART-3 | `RefreshArtifactAsync` is valid only for `ArtifactKind.PullRequest`. |
 | BR-ART-4 | Refresh that finds no existing `(IssueId, Kind, DedupKey)` row inserts and emits `ArtifactAttached`; one that finds a row updates and emits `ArtifactRefreshed` (`AC-ART-110` / `AC-ART-111`). |
 | BR-ART-5 | Artifact authorization is exactly the parent issue's mutation authorization. No separate artifact role exists. |
+| BR-ART-8 | Actor and workspace scope on the REST surface are read from the authenticated `ActorContext`, never from the request body or query string — an actor a caller can choose is an actor a caller can forge. In-process callers (agent host, plugins) pass no scope, because they are not acting on behalf of an authenticated session. |
 | BR-ART-6 | `Metadata` is written only for refreshable kinds and is never interpreted by this component. |
 | BR-ART-7 | Removal hard-deletes the blob via `IArtifactStore.DeleteAsync`; that is `SqliteArtifactStore`'s documented retention policy, satisfying "never silently purged outside the documented policy". |
 
@@ -213,7 +219,7 @@ Trimming and bounds are applied once, in `ArtifactService` — never per-endpoin
 | `POST` | `/api/issues/{id:guid}/artifacts` | `ReadWriteIssues` \| `ReadWriteAssignedIssues` | JSON body, reference-only |
 | `DELETE` | `/api/issues/{id:guid}/artifacts/{artifactId:guid}` | `ReadWriteIssues` \| `ReadWriteAssignedIssues` | `204 No Content` |
 
-Permissions mirror `/links` exactly (BR-ART-5). `RefreshArtifactAsync` intentionally has **no** route. Errors use `Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: …)` with the Error Handling mapping below — byte-for-byte the shape `/links` already returns.
+Permissions mirror `/links` exactly (BR-ART-5). None of the three routes accepts an actor: the attaching member and the workspace scope come from the authenticated `ActorContext` (BR-ART-8), so the `POST` body is `{ kind, title, contentReference, source?, metadata? }` and the `DELETE` takes no query parameters. `RefreshArtifactAsync` intentionally has **no** route. Errors use `Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: …)` with the Error Handling mapping below — byte-for-byte the shape `/links` already returns.
 
 Attach accepts a reference, not raw bytes: the byte-payload overload exists on `IArtifactService` and is tested, but is reachable only in-process until a dedicated upload endpoint is specified. This keeps request-size limits, content-type validation, and multipart parsing out of a slice whose requirement does not ask for them.
 
@@ -291,7 +297,7 @@ See `integration-and-plugin-platform.md`'s File Structure for the owning `GitHub
 **Test file**: `src/Anvilboard.Application.Tests/Artifacts/ArtifactServiceTests.cs`
 
 **Test scope**:
-- **Unit**: `kind` validation (accepted values `file`/`link`/`deployment`/`pull_request`, rejection of an unrecognized value), required-field validation (`title`, `contentReference`), provenance defaulting (`source = "local"` when `actorId` provided and `source` omitted).
+- **Unit**: `kind` validation (accepted values `file`/`link`/`deployment`/`pull_request`, rejection of an unrecognized value), required-field validation (`title`, `contentReference`), provenance defaulting (`source = "local"` when `actorId` provided and `source` omitted) and its converse (an actorless caller naming `"local"` is rejected); metadata dropped for non-refreshable kinds; `workspaceScope` negatives for list/attach/remove against an issue in another workspace, paired with a positive so the check cannot pass by rejecting everything.
 - **Integration**: attach → list → remove round-trip against a seeded `AnvilboardDbContext` and a real `SqliteArtifactStore`; audit-event emission assertions for both attach and remove; cross-surface (REST/CLI/MCP) consistency of `ListArtifactsAsync` ordering.
 - **Fault-injection**: a fake `IArtifactStore` configured to throw on `StoreAsync`, asserting `ARTIFACT_STORE_UNAVAILABLE` and no partial `Artifact` row.
 - **Fixtures / Mocks**: seeded `Issue` rows across two workspaces (to test cross-workspace/cross-issue scoping negatives); an in-memory or temp-file-backed `SqliteArtifactStore` instance per test.

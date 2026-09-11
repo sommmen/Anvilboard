@@ -308,4 +308,109 @@ public sealed class ArtifactServiceTests
 
         Assert.Empty(await fixture.Db.Artifacts.AsNoTracking().ToListAsync());
     }
+
+    [Fact]
+    public async Task AttachArtifact_AutomationClaimingLocalSource_IsRejected()
+    {
+        await using var fixture = await ArtifactFixture.CreateAsync();
+        var service = fixture.CreateService();
+
+        // BR-ART-1/BR-ART-2: rejecting only the *defaulted* "local" would leave the reserved value
+        // reachable by simply naming it, and AddedById == null would stop implying automation.
+        var exception = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(
+            fixture.Issue.Id, "link", "Agent output", "https://example.test/log", source: "local"));
+
+        Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
+    }
+
+    [Fact]
+    public async Task AttachArtifact_MetadataOnNonRefreshableKind_IsNotPersisted()
+    {
+        await using var fixture = await ArtifactFixture.CreateAsync();
+        var service = fixture.CreateService();
+
+        // BR-ART-6: only a refreshable kind has a provider that could ever update metadata, so
+        // storing it on a link would strand a payload nothing will maintain.
+        var artifact = await service.AttachArtifactAsync(
+            fixture.Issue.Id, "link", "A link", "https://example.test/x",
+            actorId: fixture.Member.Id, metadata: """{"state":"open"}""");
+
+        Assert.Null(artifact.Metadata);
+        Assert.Null((await fixture.Db.Artifacts.AsNoTracking().SingleAsync()).Metadata);
+    }
+
+    [Fact]
+    public async Task ListArtifacts_UnknownIssue_IsNotFound()
+    {
+        await using var fixture = await ArtifactFixture.CreateAsync();
+        var service = fixture.CreateService();
+
+        // An empty list would claim the issue exists and simply has nothing attached.
+        var exception = await Assert.ThrowsAsync<ArtifactException>(() =>
+            service.ListArtifactsAsync(IssueId.New()));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", exception.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ListArtifacts_IssueInAnotherWorkspace_IsNotFound()
+    {
+        await using var fixture = await ArtifactFixture.CreateAsync();
+        var service = fixture.CreateService();
+
+        var exception = await Assert.ThrowsAsync<ArtifactException>(() =>
+            service.ListArtifactsAsync(fixture.ForeignIssue.Id, fixture.WorkspaceId));
+
+        // Same code as a nonexistent issue on purpose: a distinct one would confirm that the id
+        // exists somewhere, turning this into a cross-workspace probe.
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", exception.ErrorCode);
+    }
+
+    [Fact]
+    public async Task AttachArtifact_IssueInAnotherWorkspace_IsNotFound()
+    {
+        await using var fixture = await ArtifactFixture.CreateAsync();
+        var service = fixture.CreateService();
+
+        var exception = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(
+            fixture.ForeignIssue.Id, "link", "Cross-workspace", "https://example.test/x",
+            actorId: fixture.Member.Id, workspaceScope: fixture.WorkspaceId));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", exception.ErrorCode);
+        Assert.Empty(await fixture.Db.Artifacts.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task RemoveArtifact_IssueInAnotherWorkspace_IsNotFoundAndLeavesTheRow()
+    {
+        await using var fixture = await ArtifactFixture.CreateAsync();
+        var service = fixture.CreateService();
+
+        // Attached without a scope (as an in-process caller would), then attacked with one.
+        var artifact = await service.AttachArtifactAsync(
+            fixture.ForeignIssue.Id, "link", "Someone else's", "https://example.test/x",
+            source: "agent:automation");
+        fixture.Db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<ArtifactException>(() => service.RemoveArtifactAsync(
+            fixture.ForeignIssue.Id, new ArtifactId(artifact.Id),
+            fixture.Member.Id, workspaceScope: fixture.WorkspaceId));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", exception.ErrorCode);
+        Assert.Single(await fixture.Db.Artifacts.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task ListArtifacts_IssueInOwnWorkspace_Succeeds()
+    {
+        await using var fixture = await ArtifactFixture.CreateAsync();
+        var service = fixture.CreateService();
+        await service.AttachArtifactAsync(
+            fixture.Issue.Id, "link", "Mine", "https://example.test/x", actorId: fixture.Member.Id);
+
+        // The scope check must not reject the legitimate case it exists to protect.
+        var artifacts = await service.ListArtifactsAsync(fixture.Issue.Id, fixture.WorkspaceId);
+
+        Assert.Single(artifacts);
+    }
 }

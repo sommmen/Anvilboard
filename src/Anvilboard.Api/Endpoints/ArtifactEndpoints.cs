@@ -9,6 +9,10 @@ namespace Anvilboard.Api.Endpoints;
 /// <see cref="IArtifactService"/> — the same service the CLI/MCP agent surface calls directly, so
 /// list ordering and error semantics cannot diverge between surfaces (AC-ART-103). Artifacts have
 /// no permission of their own: they inherit the parent issue's (BR-ART-5).
+///
+/// The acting member is always read from the authenticated <c>ActorContext</c> rather than from the
+/// request body or query string: an actor identity a caller can choose is an actor identity a
+/// caller can forge, which would make <c>AddedById</c> and the audit trail untrustworthy.
 /// </summary>
 public static class ArtifactEndpoints
 {
@@ -16,15 +20,25 @@ public static class ArtifactEndpoints
     {
         var group = app.MapGroup("/api/issues").WithTags("Issues").RequirePermission(Permission.ReadBoard);
 
-        group.MapGet("/{id:guid}/artifacts", async (Guid id, IArtifactService service, CancellationToken ct) =>
+        group.MapGet("/{id:guid}/artifacts", async (
+            HttpContext http, Guid id, IArtifactService service, CancellationToken ct) =>
         {
-            // An issue with no artifacts is a 200 with an empty list, never a 404: the issue exists.
-            var artifacts = await service.ListArtifactsAsync(new IssueId(id), ct);
-            return Results.Ok(artifacts);
+            try
+            {
+                // An issue with no artifacts is a 200 with an empty list; an issue that does not
+                // exist, or that belongs to another workspace, is a 404.
+                var artifacts = await service.ListArtifactsAsync(
+                    new IssueId(id), http.GetActorContext().WorkspaceId, ct);
+                return Results.Ok(artifacts);
+            }
+            catch (ArtifactException ex)
+            {
+                return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: StatusCode(ex));
+            }
         });
 
         group.MapPost("/{id:guid}/artifacts", async (
-            Guid id, AttachArtifactRequest request, IArtifactService service, CancellationToken ct) =>
+            HttpContext http, Guid id, AttachArtifactRequest request, IArtifactService service, CancellationToken ct) =>
         {
             try
             {
@@ -34,9 +48,10 @@ public static class ArtifactEndpoints
                     request.Title,
                     request.ContentReference,
                     request.Source,
-                    request.ActorId is { } actor ? new MemberId(actor) : null,
+                    http.GetActorContext().MemberId,
                     request.Metadata,
                     AuditChannel.Rest,
+                    http.GetActorContext().WorkspaceId,
                     ct);
                 return Results.Created($"/api/issues/{id}/artifacts/{artifact.Id}", artifact);
             }
@@ -47,15 +62,16 @@ public static class ArtifactEndpoints
         }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
 
         group.MapDelete("/{id:guid}/artifacts/{artifactId:guid}", async (
-            Guid id, Guid artifactId, Guid? actorId, IArtifactService service, CancellationToken ct) =>
+            HttpContext http, Guid id, Guid artifactId, IArtifactService service, CancellationToken ct) =>
         {
             try
             {
                 await service.RemoveArtifactAsync(
                     new IssueId(id),
                     new ArtifactId(artifactId),
-                    actorId is { } actor ? new MemberId(actor) : null,
+                    http.GetActorContext().MemberId,
                     AuditChannel.Rest,
+                    http.GetActorContext().WorkspaceId,
                     ct);
                 return Results.NoContent();
             }
@@ -81,10 +97,14 @@ public static class ArtifactEndpoints
 /// multipart handling and a request size limit); this route takes a reference the caller has
 /// already resolved.
 /// </summary>
+/// <remarks>
+/// Carries no actor field on purpose: provenance is taken from the authenticated
+/// <see cref="Anvilboard.Application.Authorization.ActorContext"/>, never from the request, so a
+/// caller cannot attribute an artifact to another member (BR-ART-2).
+/// </remarks>
 public sealed record AttachArtifactRequest(
     string Kind,
     string Title,
     string ContentReference,
     string? Source = null,
-    Guid? ActorId = null,
     string? Metadata = null);

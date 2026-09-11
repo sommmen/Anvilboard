@@ -47,9 +47,10 @@ public sealed class ArtifactService(
         MemberId? actorId = null,
         string? metadata = null,
         AuditChannel channel = AuditChannel.System,
+        WorkspaceId? workspaceScope = null,
         CancellationToken ct = default)
     {
-        var workspaceId = await ResolveWorkspaceAsync(issueId, ct);
+        var workspaceId = await ResolveWorkspaceAsync(issueId, workspaceScope, ct);
         var parsedKind = ParseKind(kind);
         var normalizedTitle = NormalizeTitle(title);
         var normalizedReference = NormalizeContentReference(contentReference);
@@ -75,11 +76,12 @@ public sealed class ArtifactService(
         MemberId? actorId = null,
         string? metadata = null,
         AuditChannel channel = AuditChannel.System,
+        WorkspaceId? workspaceScope = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(content);
 
-        var workspaceId = await ResolveWorkspaceAsync(issueId, ct);
+        var workspaceId = await ResolveWorkspaceAsync(issueId, workspaceScope, ct);
         var parsedKind = ParseKind(kind);
         var normalizedTitle = NormalizeTitle(title);
         var normalizedSource = NormalizeSource(source, actorId);
@@ -114,7 +116,7 @@ public sealed class ArtifactService(
             // DbContext, so leaving the failed insert tracked would replay it inside the cleanup.
             db.Entry(artifact).State = EntityState.Detached;
             db.Entry(activity).State = EntityState.Detached;
-            await TryPurgeAsync(reference, ct);
+            await TryPurgeAsync(reference, artifact.Id, ct);
             throw;
         }
 
@@ -122,8 +124,14 @@ public sealed class ArtifactService(
         return ArtifactDto.FromArtifact(artifact);
     }
 
-    public async Task<IReadOnlyList<ArtifactDto>> ListArtifactsAsync(IssueId issueId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ArtifactDto>> ListArtifactsAsync(
+        IssueId issueId, WorkspaceId? workspaceScope = null, CancellationToken ct = default)
     {
+        // Resolved even though the workspace is otherwise unused here: an unknown or out-of-scope
+        // issue must be REFERENCED_ENTITY_NOT_FOUND, not an empty list that reads as "exists but
+        // has nothing" (spec: ListArtifactsAsync).
+        _ = await ResolveWorkspaceAsync(issueId, workspaceScope, ct);
+
         var artifacts = await db.Artifacts.AsNoTracking()
             .Where(artifact => artifact.IssueId == issueId)
             .ToListAsync(ct);
@@ -146,9 +154,11 @@ public sealed class ArtifactService(
         string? metadata = null,
         CancellationToken ct = default)
     {
-        var workspaceId = await ResolveWorkspaceAsync(issueId, ct);
+        // No workspace scope: refresh is reachable only from in-process plugin correlation logic,
+        // which has no authenticated caller to scope against.
+        var workspaceId = await ResolveWorkspaceAsync(issueId, workspaceScope: null, ct);
         var parsedKind = ParseKind(kind);
-        if (parsedKind != ArtifactKind.PullRequest)
+        if (!IsRefreshable(parsedKind))
         {
             throw new ArtifactException(
                 "VALIDATION_FAILED",
@@ -225,8 +235,13 @@ public sealed class ArtifactService(
         ArtifactId artifactId,
         MemberId? actorId = null,
         AuditChannel channel = AuditChannel.System,
+        WorkspaceId? workspaceScope = null,
         CancellationToken ct = default)
     {
+        // Scope is resolved before the artifact is read so a cross-workspace issue id cannot even
+        // reach the lookup below.
+        var workspaceId = await ResolveWorkspaceAsync(issueId, workspaceScope, ct);
+
         var artifact = await db.Artifacts.FirstOrDefaultAsync(
             candidate => candidate.Id == artifactId && candidate.IssueId == issueId, ct);
         if (artifact is null)
@@ -235,8 +250,6 @@ public sealed class ArtifactService(
             // (AC-ART-109): a caller must not be able to probe for artifact IDs outside its scope.
             throw new ArtifactException("REFERENCED_ENTITY_NOT_FOUND", "The artifact was not found for this issue.");
         }
-
-        var workspaceId = await ResolveWorkspaceAsync(issueId, ct);
         var reference = artifact.ContentReference;
 
         db.Artifacts.Remove(artifact);
@@ -247,7 +260,7 @@ public sealed class ArtifactService(
 
         // Inverted relative to attach on purpose: the removal is already durable, so a failed purge
         // is reclaimable space rather than user-visible corruption (BR-ART-7).
-        await TryPurgeAsync(reference, ct);
+        await TryPurgeAsync(reference, artifactId, ct);
     }
 
     private static Artifact NewArtifact(
@@ -271,7 +284,10 @@ public sealed class ArtifactService(
             Source = source,
             AddedById = actorId,
             DedupKey = dedupKey,
-            Metadata = metadata,
+            // Dropped rather than rejected for non-refreshable kinds: metadata is provider state for
+            // a refresh to overwrite, so on a `file` or `link` there is nothing that would ever
+            // update it, and persisting it would strand a stale payload (BR-ART-6).
+            Metadata = IsRefreshable(kind) ? metadata : null,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -288,16 +304,38 @@ public sealed class ArtifactService(
         artifact.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
-    private async Task<WorkspaceId> ResolveWorkspaceAsync(IssueId issueId, CancellationToken ct)
+    /// <summary>
+    /// Re-derives the issue's workspace from its team and — when <paramref name="workspaceScope"/>
+    /// is supplied — enforces that it is the caller's own workspace.
+    /// </summary>
+    /// <remarks>
+    /// A cross-workspace issue id is reported as <c>REFERENCED_ENTITY_NOT_FOUND</c>, exactly as a
+    /// nonexistent one is: distinguishing them would turn this into an oracle for probing which
+    /// issue ids exist in other workspaces.
+    ///
+    /// <paramref name="workspaceScope"/> is optional because the CLI/MCP agent host runs
+    /// unauthenticated and has no workspace to assert; every authenticated surface passes it.
+    /// </remarks>
+    private async Task<WorkspaceId> ResolveWorkspaceAsync(
+        IssueId issueId, WorkspaceId? workspaceScope, CancellationToken ct)
     {
         var workspaceId = await db.Issues
             .Where(issue => issue.Id == issueId)
             .Join(db.Teams, issue => issue.TeamId, team => team.Id, (_, team) => (WorkspaceId?)team.WorkspaceId)
             .FirstOrDefaultAsync(ct);
 
-        return workspaceId
-            ?? throw new ArtifactException("REFERENCED_ENTITY_NOT_FOUND", "The issue was not found.");
+        if (workspaceId is null || (workspaceScope is { } scope && workspaceId.Value != scope))
+        {
+            throw new ArtifactException("REFERENCED_ENTITY_NOT_FOUND", "The issue was not found.");
+        }
+
+        return workspaceId.Value;
     }
+
+    /// <summary>Whether a provider can later refresh this kind in place — the same predicate that
+    /// gates <see cref="RefreshArtifactAsync"/> (BR-ART-3) and metadata persistence (BR-ART-6), kept
+    /// in one place so the two cannot drift apart.</summary>
+    private static bool IsRefreshable(ArtifactKind kind) => kind == ArtifactKind.PullRequest;
 
     private static ArtifactKind ParseKind(string kind)
     {
@@ -329,7 +367,19 @@ public sealed class ArtifactService(
                     "An automation caller must supply an explicit artifact source key.");
         }
 
-        return NormalizeRequired(source, SourceMaxLength, "source");
+        var normalized = NormalizeRequired(source, SourceMaxLength, "source");
+
+        // "local" is reserved for human attachments, so an actorless caller may not claim it
+        // explicitly either — otherwise BR-ART-1's guarantee would hold only for the defaulting
+        // path, and AddedById == null would stop implying automation provenance (BR-ART-2).
+        if (actorId is null && string.Equals(normalized, LocalSource, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArtifactException(
+                "VALIDATION_FAILED",
+                $"'{LocalSource}' is reserved for member-attached artifacts; an automation caller must supply its own source key.");
+        }
+
+        return normalized;
     }
 
     private static string NormalizeRequired(string value, int maxLength, string name)
@@ -413,7 +463,7 @@ public sealed class ArtifactService(
         }
     }
 
-    private async Task TryPurgeAsync(string reference, CancellationToken ct)
+    private async Task TryPurgeAsync(string reference, ArtifactId artifactId, CancellationToken ct)
     {
         try
         {
@@ -421,8 +471,13 @@ public sealed class ArtifactService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // The reference itself is withheld: it can be a private URL or a signed object-store
+            // locator, and the audit summary already redacts it for that reason — logging it here
+            // would reopen the same disclosure path. The exception carries what diagnosis needs.
             logger.LogWarning(
-                ex, "Artifact content {Reference} could not be purged; the artifact itself is already gone.", reference);
+                ex,
+                "Artifact content for artifact {ArtifactId} could not be purged; the artifact itself is already gone.",
+                artifactId.Value);
         }
     }
 }
