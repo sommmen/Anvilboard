@@ -8,13 +8,16 @@
 |-------|-------|
 | Component | audit-and-recovery |
 | Priority | P0 |
-| Status | Partial — append-only audit recording and secret/credential redaction at write time are implemented and unit-tested; workspace-scoped audit query access (FR-OPS-001) and backup/restore (FR-OPS-002) are **not implemented at all** — no `IBackupService`, `CreateBackupAsync`, `RestoreAsync`, or manifest exists. See `docs/audit-report.md` for details. |
+| Status | Partial — append-only audit recording, secret/credential redaction at write time, and backup/restore (FR-OPS-002, NFR-AVL-001) are implemented and tested. Workspace-scoped audit **query** access (FR-OPS-001) remains the residual gap: audit events are written and are readable only via direct database access, with no REST or agent query surface. See `docs/audit-report.md` for details. |
+| Implementation Plan | [`../plans/backup-and-restore.md`](../plans/backup-and-restore.md) — delivered; closed CRIT-001, the only unresolved Critical audit finding. |
 | SRS Refs | FR-OPS-001, FR-OPS-002, NFR-AVL-001, NFR-REL-001 |
 | Tech Design Ref | §8.1 Component Overview — Audit & Recovery row; §10.1 `AuditEvents`; §11.4 Audit Logging; §14.3 Rollback Strategy |
 | Depends On | workspace-authorization, workflow-engine, issue-board-service, integration-and-plugin-platform, agent-and-automation-surface |
 | Blocks | — |
 
-## Purpose
+## Overview
+
+### Purpose
 
 Audit & Recovery is the append-only accountability layer for every mutating component and channel, plus the backup/restore mechanism that makes a self-hosted, single-host deployment recoverable. It exists so that every configuration change, issue mutation, automation mutation, integration action, and backup/restore action produces exactly one searchable audit record (FR-OPS-001), and so that a workspace can be verifiably backed up and restored without silently activating a corrupt or incompatible artifact (FR-OPS-002). It is the rollback safety net referenced by [`../anvilboard/tech-design.md`](../anvilboard/tech-design.md) §14.3 for any change beyond the deprecated-column retention window, and it is the audit trail that [`agent-and-automation-surface.md`](./agent-and-automation-surface.md) depends on to make every channel's mutations equally accountable.
 
@@ -118,7 +121,7 @@ Field mapping for the `AuditEvents` table (binding tech-design §10.1 to the imp
 
 | Column | .NET type | Notes |
 |---|---|---|
-| `Id` | `AuditEventId` | New strongly-typed ID, added to [`../../src/Anvilboard.Domain/Ids.cs`](../../src/Anvilboard.Domain/Ids.cs) alongside the existing ID types. |
+| `Id` | `AuditEventId` | Strongly-typed ID in [`../../src/Anvilboard.Domain/Ids.cs`](../../src/Anvilboard.Domain/Ids.cs) alongside the other ID types. |
 | `WorkspaceId` | `WorkspaceId` | FK, required; existing strongly-typed ID. |
 | `ActorId` | `string` | Member ID or agent-token principal identifier; plain string (not `MemberId`) because agent principals are not always members. |
 | `Channel` | `AuditChannel` enum → `TEXT` | `WEB` / `REST` / `CLI` / `MCP` / `SYSTEM`. |
@@ -193,26 +196,57 @@ Logic steps for `RestoreAsync` (fail-closed, per AC-012):
 ```
 src/
 ├── Anvilboard.Domain/
-│   ├── AuditEvent.cs                            # planned: new audit aggregate (workspace-scoped)
-│   └── Ids.cs                                    # existing; add AuditEventId, BackupId strongly-typed IDs
+│   ├── AuditEvent.cs                            # audit aggregate (workspace-scoped)
+│   └── Ids.cs                                   # AuditEventId and the other strongly-typed IDs
 ├── Anvilboard.Application/
-│   └── Audit/
-│       ├── AuditService.cs                       # planned: IAuditService implementation, redaction call site
-│       ├── SecretRedactor.cs                     # planned: deny-list + heuristic scrub used by AuditService
-│       └── BackupService.cs                      # planned: IBackupService implementation (create/restore)
+│   ├── Auditing/
+│   │   ├── AuditService.cs                      # IAuditService implementation, redaction call site
+│   │   ├── AuditEventRequest.cs                 # recording input contract
+│   │   └── SecretRedactor.cs                    # deny-list + heuristic scrub used by AuditService
+│   └── Backup/
+│       ├── IBackupService.cs / BackupService.cs # create / verify / restore orchestration
+│       ├── IRestoreCoordinator.cs               # admission control + drain around the swap
+│       │   RestoreCoordinator.cs
+│       ├── BackupManifest.cs                    # REST/agent-facing manifest contract
+│       ├── BackupArtifactRef.cs                 # artifact reference, verification and restore
+│       │   BackupVerification.cs                #   result contracts, and the enumerated
+│       │   RestoreResult.cs                     #   integrity-failure causes
+│       │   BackupFailedCheck.cs
+│       ├── BackupOperationContext.cs            # actor / channel / correlation for audit
+│       └── BackupOperationException.cs          # precondition failures (auth, validation, …)
 └── Anvilboard.Infrastructure/
     └── Persistence/
         ├── Configurations/
-        │   └── AuditEventConfiguration.cs        # planned: EF Core configuration for AuditEvents
+        │   └── AuditEventConfiguration.cs       # EF Core configuration for AuditEvents
         └── Backup/
-            └── SqliteBackupArchiver.cs            # planned: file snapshot + checksum + manifest writer/reader
+            ├── ISnapshotArchiver.cs             # SQLite file snapshot + checksum + integrity check
+            │   SqliteBackupArchiver.cs
+            ├── IBackupArchiveStore.cs           # on-disk artifact + manifest layout
+            │   FileSystemBackupArchiveStore.cs
+            ├── BackupManifestData.cs            # on-disk manifest shape (see note below)
+            └── BackupStoreUnavailableException.cs
 ```
+
+The manifest exists as two types on purpose. `Anvilboard.Application` depends on
+`Anvilboard.Infrastructure` and never the reverse, so the on-disk `BackupManifestData` lives in
+Infrastructure while the REST/agent-facing `BackupManifest` lives in Application; `BackupService`
+maps between them.
+
+The REST surface lives in
+[`../../src/Anvilboard.Api/Endpoints/BackupEndpoints.cs`](../../src/Anvilboard.Api/Endpoints/BackupEndpoints.cs),
+with
+[`../../src/Anvilboard.Api/Middleware/DatabaseOperationMiddleware.cs`](../../src/Anvilboard.Api/Middleware/DatabaseOperationMiddleware.cs)
+leasing each `/api` request through `IRestoreCoordinator` so in-flight work is drained before a
+swap and new requests receive `429` while admission is closed. The agent surface
+([`../../src/Anvilboard.Agent/BoardAgentService.cs`](../../src/Anvilboard.Agent/BoardAgentService.cs))
+deliberately exposes create/list/verify but **no restore** operation.
 
 ## Test Module
 
-**Test file**: `src/Anvilboard.Application.Tests/Audit/AuditServiceTests.cs`
+**Test files**: `src/Anvilboard.Application.Tests/Audit/AuditServiceTests.cs` and
+`src/Anvilboard.Application.Tests/Backup/`
 
 **Test scope**:
-- **Unit**: `SecretRedactor.Scrub()` against a deny-list/heuristic fixture corpus (AC-204); `AuditService.RecordAsync()` field mapping and redaction call ordering; `AuditService.QueryAsync()` workspace-scoping and permission-gating behavior (AC-011, AC-201).
-- **Integration**: `src/Anvilboard.Application.Tests/Audit/BackupServiceTests.cs` — `CreateBackupAsync`/`RestoreAsync` round trip against a seeded SQLite database (AC-202); corrupt/truncated/incompatible-artifact injection asserting `BACKUP_INTEGRITY_INVALID` and unchanged target workspace data (AC-012); unauthorized/mismatched-confirmation restore rejection (AC-203).
-- **Fixtures / Mocks**: seeded workspace with at least one issue, one integration, and one prior audit event; a deliberately corrupted backup artifact fixture (bad checksum); a schema-incompatible manifest fixture (future `schemaVersion` string); a non-Administrator actor fixture for AC-203.
+- **Unit**: `SecretRedactor.Scrub()` against a deny-list/heuristic fixture corpus (AC-204); `AuditService.RecordAsync()` field mapping and redaction call ordering; `BackupServiceTests.cs` / `RestoreCoordinatorTests.cs` cover the fail-closed validation order, admission control, and drain behavior against test doubles.
+- **Integration**: `Backup/BackupRoundTripTests.cs` — `CreateBackupAsync`/`RestoreAsync` round trip against a seeded SQLite database (AC-202); corrupt/truncated/incompatible-artifact injection asserting `BACKUP_INTEGRITY_INVALID` and unchanged target workspace data (AC-012); unauthorized/mismatched-confirmation restore rejection (AC-203). `Backup/BackupSecretScanTests.cs` scans a generated manifest and every backup/restore `ResultSummary` for secret-shaped values (AC-204), including a negative control proving the scan can fail. `src/Anvilboard.Api.Tests/Backup/BackupEndpointTests.cs` covers the REST surface and status-code mapping.
+- **Fixtures / Mocks**: seeded workspace with at least one issue, one integration, and one prior audit event; a deliberately corrupted backup artifact fixture (bad checksum); a schema-incompatible manifest fixture (future `schemaVersion` string); a non-Administrator actor fixture for AC-203; `Backup/BackupTestDoubles.cs` provides an archive-store fake with a call log used to prove no artifact I/O occurs before a fail-closed gate.
