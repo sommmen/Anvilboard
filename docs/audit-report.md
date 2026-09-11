@@ -117,6 +117,7 @@ fixed**.
 - **Evidence**: Direct file search of `src/Anvilboard.Application` and `src/Anvilboard.Infrastructure` finds artifact persistence/DTO types but no `ArtifactService` class implementing the documented refresh/upsert contract; no lifecycle-hook (`IIssueHook`) implementation performs artifact expansion.
 - **Impact**: Artifacts cannot be kept in sync with their source-of-truth (e.g., a linked PR's status), and there is no single documented seam for future artifact-type expansion, contrary to the "sole caller" claim in the spec.
 - **Fix**: Implement `ArtifactService` with upsert/refresh semantics and wire it into the `IIssueHook` pipeline for the artifact-expansion use case described in FR-ART-002; then correct the "sole caller" language once verified (see MIN-006).
+- **Plan**: [`docs/plans/artifacts.md`](plans/artifacts.md) — scoped implementation plan covering `IArtifactService`/`ArtifactService`, REST/CLI/MCP surfaces, audit emission, and the plugin-only refresh seam. Its §2.1 corrects the earlier assessment (in [`docs/plans/backup-and-restore.md`](plans/backup-and-restore.md) §2) that this finding was a refactor: `src/Anvilboard.Application/Artifacts/` contains only `ArtifactException.cs`, and `SqliteArtifactStore` is not DI-registered, so the FR-ART-001 capability is absent at runtime rather than merely unconsolidated.
 
 ## Major Findings
 
@@ -318,6 +319,7 @@ fixed**.
 - **Evidence**: See CRIT-003 investigation.
 - **Impact**: Low on its own; becomes moot once CRIT-003 is resolved.
 - **Fix**: Verify/consolidate call sites once `ArtifactService` is introduced.
+- **Plan**: covered by [`docs/plans/artifacts.md`](plans/artifacts.md) goal G1 (`IArtifactStore` call sites outside `ArtifactService` → 0).
 
 ## Observations & Suggestions
 

@@ -28,7 +28,7 @@ largest verified gap, not the next unstarted row. The evidence:
 | Signal | Finding |
 |---|---|
 | Open GitHub issues | `gh issue list --state open` → none. The backlog lives in the feature index + audit report. |
-| Unresolved Critical findings | **CRIT-001 only.** CRIT-002 (realtime) is marked RESOLVED; CRIT-003 (dedicated `ArtifactService`) is a refactor, not a missing capability. |
+| Unresolved Critical findings | **CRIT-001 only.** CRIT-002 (realtime) is marked RESOLVED; CRIT-003 (dedicated `ArtifactService`) was assessed here as a refactor rather than a missing capability — a file inventory later disproved that, see [`artifacts.md`](./artifacts.md) §2.1. |
 | Code evidence | `rg -il "IBackupService\|CreateBackupAsync\|RestoreAsync\|BackupManifest" src` → **zero matches.** No partial implementation to extend. |
 | Milestone status | M7 is the only row in §16 reading **Not Started** other than M8 (hardening, which depends on M7). |
 | Requirement priority | `FR-OPS-002` and `NFR-AVL-001` are both **P0**. |

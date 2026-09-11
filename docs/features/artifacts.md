@@ -9,6 +9,7 @@
 | Component | artifacts |
 | Priority | P1 |
 | Status | Partial — the `Artifact` domain model and `IArtifactStore`/SQLite BLOB storage abstraction are implemented; there is no application service for attach/list/remove, no refreshable PR-artifact upsert/dedup-key logic, no lifecycle-hook artifact-expansion path, and no artifact audit-event emission. See `docs/audit-report.md` for details. |
+| Implementation plan | [`docs/plans/artifacts.md`](../plans/artifacts.md) — closes **CRIT-003**/**MIN-006**, milestone M6.7 |
 | SRS Refs | FR-ART-001, FR-ART-002 |
 | Tech Design Ref | §8.1 — Issue Artifacts row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `Artifacts` table |
 | Depends On | issue-board-service, workspace-authorization |
