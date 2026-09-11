@@ -10,6 +10,7 @@ import { REALTIME_CHANGE_METHOD, RealtimeBoardSyncService } from './realtime-boa
 class FakeHubConnection {
   private changeHandler: ((envelope: RealtimeChangeEnvelope) => void) | null = null;
   private reconnectedHandler: (() => void) | null = null;
+  private closeHandler: (() => void) | null = null;
 
   startCalls = 0;
   stopCalls = 0;
@@ -23,6 +24,10 @@ class FakeHubConnection {
 
   onreconnected(handler: () => void): void {
     this.reconnectedHandler = handler;
+  }
+
+  onclose(handler: () => void): void {
+    this.closeHandler = handler;
   }
 
   start(): Promise<void> {
@@ -42,6 +47,10 @@ class FakeHubConnection {
   emitReconnected(): void {
     this.reconnectedHandler?.();
   }
+
+  emitClose(): void {
+    this.closeHandler?.();
+  }
 }
 
 class TestableRealtimeBoardSyncService extends RealtimeBoardSyncService {
@@ -49,6 +58,20 @@ class TestableRealtimeBoardSyncService extends RealtimeBoardSyncService {
 
   protected override createConnection(): HubConnection {
     return this.fake as unknown as HubConnection;
+  }
+}
+
+/**
+ * Hands out a fresh `FakeHubConnection` per call, so a test can hold onto a stale connection's
+ * handlers after the service has already replaced it with a newer one.
+ */
+class MultiConnectionRealtimeBoardSyncService extends RealtimeBoardSyncService {
+  readonly connections: FakeHubConnection[] = [];
+
+  protected override createConnection(): HubConnection {
+    const connection = new FakeHubConnection();
+    this.connections.push(connection);
+    return connection as unknown as HubConnection;
   }
 }
 
@@ -113,10 +136,150 @@ describe('RealtimeBoardSyncService', () => {
     await expect(service.start()).resolves.toBeUndefined();
   });
 
+  it('retries and requests a resync after a closed connection', async () => {
+    vi.useFakeTimers();
+    let resyncs = 0;
+    service.resyncRequired.subscribe(() => resyncs++);
+    await service.start();
+
+    service.fake.emitClose();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(service.fake.startCalls).toBe(2);
+    expect(resyncs).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('retries after a failed initial connect and resyncs once recovered', async () => {
+    vi.useFakeTimers();
+    let resyncs = 0;
+    service.resyncRequired.subscribe(() => resyncs++);
+    service.fake.startRejection = new Error('hub unreachable');
+
+    await service.start();
+    expect(service.fake.startCalls).toBe(1);
+    expect(resyncs).toBe(0);
+
+    service.fake.startRejection = null;
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(service.fake.startCalls).toBe(2);
+    expect(resyncs).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('backs off exponentially across consecutive reconnect failures, capped at 30s', async () => {
+    vi.useFakeTimers();
+    service.fake.startRejection = new Error('hub unreachable');
+    await service.start();
+    expect(service.fake.startCalls).toBe(1);
+
+    // 1st retry after 1s
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(service.fake.startCalls).toBe(2);
+
+    // 2nd retry after 2s
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(service.fake.startCalls).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(service.fake.startCalls).toBe(3);
+
+    // 3rd retry after 4s
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(service.fake.startCalls).toBe(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(service.fake.startCalls).toBe(4);
+
+    // 4th retry after 8s
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(service.fake.startCalls).toBe(5);
+
+    // 5th retry after 16s
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(service.fake.startCalls).toBe(6);
+
+    // 6th retry would be 32s uncapped, but must be capped at 30s
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(service.fake.startCalls).toBe(6);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(service.fake.startCalls).toBe(7);
+
+    // Further retries stay capped at 30s rather than continuing to grow.
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(service.fake.startCalls).toBe(7);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(service.fake.startCalls).toBe(8);
+
+    vi.useRealTimers();
+  });
+
+  it('resets the backoff delay to 1s after a successful reconnect following failures', async () => {
+    vi.useFakeTimers();
+    service.fake.startRejection = new Error('hub unreachable');
+    await service.start(); // startCalls=1, fails; next retry in 1s
+
+    await vi.advanceTimersByTimeAsync(1_000); // 1st retry, still fails; next retry in 2s
+    expect(service.fake.startCalls).toBe(2);
+
+    service.fake.startRejection = null; // the next attempt will succeed
+    await vi.advanceTimersByTimeAsync(2_000); // 2nd retry succeeds and resets the backoff
+    expect(service.fake.startCalls).toBe(3);
+
+    service.fake.emitClose(); // connection drops again after the successful recovery
+    await vi.advanceTimersByTimeAsync(999);
+    expect(service.fake.startCalls).toBe(3);
+    await vi.advanceTimersByTimeAsync(1); // proves the delay reset back to 1s, not 4s
+    expect(service.fake.startCalls).toBe(4);
+
+    vi.useRealTimers();
+  });
+
+  it('cancels a pending retry and does not reconnect after an explicit stop', async () => {
+    vi.useFakeTimers();
+    await service.start();
+
+    service.fake.emitClose();
+    await service.stop();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(service.fake.startCalls).toBe(1);
+    vi.useRealTimers();
+  });
+
   it('stops the underlying connection', async () => {
     await service.start();
     await service.stop();
 
     expect(service.fake.stopCalls).toBe(1);
+  });
+
+  it('ignores a close event from a connection that has already been replaced', async () => {
+    vi.useFakeTimers();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: RealtimeBoardSyncService, useClass: MultiConnectionRealtimeBoardSyncService },
+      ],
+    });
+    const multi = TestBed.inject(
+      RealtimeBoardSyncService,
+    ) as MultiConnectionRealtimeBoardSyncService;
+    await multi.start();
+    const staleConnection = multi.connections[0];
+
+    // The stale connection recovers on its own (e.g. SignalR's automatic reconnect) and the
+    // service moves on to a fresh manual reconnect cycle of its own accord.
+    staleConnection.emitClose();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(multi.connections.length).toBe(2);
+
+    // The stale connection now fires its close handler too (a delayed/duplicate event). Because
+    // it is no longer the service's current connection, this must not schedule a second,
+    // redundant reconnect cycle on top of the current connection's own lifecycle.
+    staleConnection.emitClose();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(multi.connections.length).toBe(2);
+    vi.useRealTimers();
   });
 });

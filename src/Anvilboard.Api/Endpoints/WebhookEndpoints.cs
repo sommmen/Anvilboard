@@ -1,4 +1,5 @@
 using Anvilboard.Application.Issues;
+using Anvilboard.Application.Realtime;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
 using Anvilboard.Plugins.Abstractions;
@@ -23,7 +24,7 @@ public static class WebhookEndpoints
             HttpRequest httpRequest,
             IPluginRegistry plugins,
             IssueService issueService,
-            IPluginEventPublisher pluginEvents,
+            ITrustedPluginEventPublisher pluginEvents,
             AnvilboardDbContext db,
             CancellationToken ct) =>
         {
@@ -44,10 +45,40 @@ public static class WebhookEndpoints
                 return Results.BadRequest(new { error = result.RejectionReason });
             }
 
+            WorkspaceId? trustedWorkspaceId = null;
+            if (result.TeamKey is not null)
+            {
+                var matchingWorkspaceIds = await db.Teams
+                    .Where(team => team.Key == result.TeamKey)
+                    .Select(team => team.WorkspaceId)
+                    .Distinct()
+                    .ToListAsync(ct);
+
+                if (matchingWorkspaceIds.Count == 0)
+                {
+                    return Results.BadRequest(new { error = $"No local team with key '{result.TeamKey}' is configured for this webhook." });
+                }
+
+                if (matchingWorkspaceIds.Count > 1)
+                {
+                    // Team keys are unique only within a workspace (`TeamConfiguration` enforces
+                    // (WorkspaceId, Key)), and this webhook payload carries no workspace identity of
+                    // its own to pick among several same-keyed teams. Reject the delivery instead of
+                    // guessing (or throwing an unhandled exception that would surface as a 500) so a
+                    // host operator sees the misconfiguration and can rename one of the teams.
+                    return Results.BadRequest(new
+                    {
+                        error = $"Team key '{result.TeamKey}' exists in {matchingWorkspaceIds.Count} workspaces; this webhook has no way to disambiguate which one it belongs to. Rename one of the teams so the key is unique host-wide.",
+                    });
+                }
+
+                trustedWorkspaceId = matchingWorkspaceIds[0];
+            }
+
             var touchedTeamIds = new List<TeamId>();
             foreach (var normalized in result.Issues)
             {
-                var issue = await issueService.UpsertFromExternalAsync(normalized, ct);
+                var issue = await issueService.UpsertFromExternalAsync(normalized, trustedWorkspaceId, ct);
                 touchedTeamIds.Add(issue.TeamId);
             }
 
@@ -57,30 +88,39 @@ public static class WebhookEndpoints
                 // observes the state the same delivery produced. The publisher never blocks and
                 // never invokes lifecycle hooks (AC-RT-006).
                 //
-                // Prefer the workspaces this delivery actually touched. Webhooks carry no tenant
-                // routing of their own, so for a delivery that upserted no issue (a repository-level
-                // event such as a merged pull request) we fall back to the sole workspace — and only
-                // if there is exactly one. That is the documented bootstrap invariant made explicit
-                // rather than assumed: picking an unordered first row would notify an arbitrary
-                // tenant, and before bootstrap it would publish against Guid.Empty.
-                var workspaceIds = await db.Teams
-                    .AsNoTracking()
-                    .Where(team => touchedTeamIds.Contains(team.Id))
-                    .Select(team => team.WorkspaceId)
-                    .Distinct()
-                    .ToListAsync(ct);
-
-                if (workspaceIds.Count == 0)
+                // Prefer the delivery's own trusted workspace (resolved above from `TeamKey`) — this
+                // is what lets a repository-level event with no issues (e.g. a merged pull request)
+                // still reach the right tenant. Only fall back to the workspaces this delivery
+                // actually touched, and finally to the sole-workspace bootstrap invariant, when the
+                // webhook carried no team-key routing of its own. Picking an unordered first row
+                // would notify an arbitrary tenant, and before bootstrap it would publish against
+                // Guid.Empty, so both fallbacks require an unambiguous single candidate.
+                List<WorkspaceId> workspaceIds;
+                if (trustedWorkspaceId is not null)
                 {
-                    var allWorkspaceIds = await db.Workspaces
+                    workspaceIds = [trustedWorkspaceId.Value];
+                }
+                else
+                {
+                    workspaceIds = await db.Teams
                         .AsNoTracking()
-                        .Select(workspace => workspace.Id)
-                        .Take(2)
+                        .Where(team => touchedTeamIds.Contains(team.Id))
+                        .Select(team => team.WorkspaceId)
+                        .Distinct()
                         .ToListAsync(ct);
 
-                    if (allWorkspaceIds.Count == 1)
+                    if (workspaceIds.Count == 0)
                     {
-                        workspaceIds = allWorkspaceIds;
+                        var allWorkspaceIds = await db.Workspaces
+                            .AsNoTracking()
+                            .Select(workspace => workspace.Id)
+                            .Take(2)
+                            .ToListAsync(ct);
+
+                        if (allWorkspaceIds.Count == 1)
+                        {
+                            workspaceIds = allWorkspaceIds;
+                        }
                     }
                 }
 

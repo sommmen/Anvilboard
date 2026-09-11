@@ -15,6 +15,47 @@ public sealed class GitHubWebhookReceiverTests
         """;
 
     [Fact]
+    public void WebhookResult_AcceptOverloads_PreserveLegacyAndEventAwareCalls()
+    {
+        var legacy = WebhookResult.Accept([], []);
+        var eventAware = WebhookResult.Accept([], [], [GitHubWebhookReceiver.PullRequestMergedEventType], "ENG");
+
+        Assert.True(legacy.Accepted);
+        Assert.Empty(legacy.EventTypes);
+        Assert.Equal("ENG", eventAware.TeamKey);
+    }
+
+    [Fact]
+    public void WebhookResult_ThreeParameterAcceptOverload_StillBindsForBinaryCompatibility()
+    {
+        // A plugin assembly compiled against the pre-team-key-routing three-parameter `Accept`
+        // overload binds to it by CLR signature at load time, not by recompiling against the newer
+        // four-parameter one. This proves that overload still exists and behaves like the
+        // four-parameter form with no team key, rather than a MissingMethodException at call time.
+        var result = WebhookResult.Accept([], [], [GitHubWebhookReceiver.PullRequestMergedEventType]);
+
+        Assert.True(result.Accepted);
+        Assert.Equal([GitHubWebhookReceiver.PullRequestMergedEventType], result.EventTypes);
+        Assert.Null(result.TeamKey);
+    }
+
+    [Fact]
+    public void WebhookResult_AcceptNamedEventTypesOnly_StillCompilesForSourceCompatibility()
+    {
+        // Before team-key routing was introduced, `issues`/`comments` were optional, so a
+        // source-level caller could write `Accept(eventTypes: events)` and omit both. This is a
+        // compile-time regression check as much as a runtime one: if the named-argument-only call
+        // below stopped compiling again, this test file would fail to build.
+        var result = WebhookResult.Accept(eventTypes: [GitHubWebhookReceiver.PullRequestMergedEventType]);
+
+        Assert.True(result.Accepted);
+        Assert.Empty(result.Issues);
+        Assert.Empty(result.Comments);
+        Assert.Equal([GitHubWebhookReceiver.PullRequestMergedEventType], result.EventTypes);
+        Assert.Null(result.TeamKey);
+    }
+
+    [Fact]
     public async Task HandleAsync_ValidIssuesEvent_MapsNormalizedIssue()
     {
         var result = await CreateReceiver().HandleAsync(CreateRequest("issues", IssuePayload, signed: true), CancellationToken.None);
@@ -24,6 +65,7 @@ public sealed class GitHubWebhookReceiverTests
         Assert.Equal(IntegrationProvider.GitHub, issue.Provider);
         Assert.Equal("org/repo#42", issue.SourceKey);
         Assert.Equal("ENG", issue.TeamKey);
+        Assert.Equal("ENG", result.TeamKey);
         Assert.Equal("Fix webhook", issue.Title);
         Assert.Equal("Details", issue.Description);
         Assert.Equal(IssueStatus.Backlog, issue.SuggestedStatus);
@@ -68,13 +110,14 @@ public sealed class GitHubWebhookReceiverTests
     [Fact]
     public async Task HandleAsync_MergedPullRequest_ReportsMergedEventType()
     {
-        const string body = """{"action":"closed","pull_request":{"merged":true}}""";
+        const string body = """{"action":"closed","pull_request":{"merged":true},"repository":{"full_name":"org/repo"}}""";
 
         var result = await CreateReceiver().HandleAsync(CreateRequest("pull_request", body, signed: true), CancellationToken.None);
 
         Assert.True(result.Accepted);
         Assert.Empty(result.Issues);
         Assert.Equal([GitHubWebhookReceiver.PullRequestMergedEventType], result.EventTypes);
+        Assert.Equal("ENG", result.TeamKey);
     }
 
     [Theory]

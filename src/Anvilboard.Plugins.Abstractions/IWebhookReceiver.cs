@@ -45,11 +45,41 @@ public sealed record WebhookResult
     /// </summary>
     public IReadOnlyList<string> EventTypes { get; init; } = [];
 
+    /// <summary>The local team key authenticated webhook work belongs to.</summary>
+    public string? TeamKey { get; init; }
+
+    // Keep this exact overload for plugins compiled before event relaying was introduced.
     public static WebhookResult Accept(
         IReadOnlyList<NormalizedIssue>? issues = null,
-        IReadOnlyList<NormalizedComment>? comments = null,
-        IReadOnlyList<string>? eventTypes = null) =>
-        new() { Accepted = true, Issues = issues ?? [], Comments = comments ?? [], EventTypes = eventTypes ?? [] };
+        IReadOnlyList<NormalizedComment>? comments = null) =>
+        new() { Accepted = true, Issues = issues ?? [], Comments = comments ?? [] };
+
+    // Keep this exact three-parameter CLR signature too: it shipped before team-key routing was
+    // introduced, and a plugin assembly compiled against it binds to this overload by signature at
+    // load time, not by recompiling against the newer four-parameter one. Removing it would make a
+    // previously-working plugin DLL fail with a MissingMethodException at call time even though
+    // nothing in its own source changed.
+    public static WebhookResult Accept(
+        IReadOnlyList<NormalizedIssue>? issues,
+        IReadOnlyList<NormalizedComment>? comments,
+        IReadOnlyList<string>? eventTypes) =>
+        Accept(issues, comments, eventTypes, teamKey: null);
+
+    // Restores the pre-team-key source-compatible call surface for named-argument-only calls
+    // like `Accept(eventTypes: events)`, which compiled before team-key routing was introduced
+    // but stopped compiling once `issues`/`comments` above became required. `eventTypes` is the
+    // only parameter here (so this overload can't tie with the two- or three-parameter ones on
+    // a zero- or one-argument positional call).
+    public static WebhookResult Accept(IReadOnlyList<string>? eventTypes) =>
+        Accept(issues: null, comments: null, eventTypes, teamKey: null);
+
+    /// <summary>Accepts a delivery that also carries approved event and trusted team routing data.</summary>
+    public static WebhookResult Accept(
+        IReadOnlyList<NormalizedIssue>? issues,
+        IReadOnlyList<NormalizedComment>? comments,
+        IReadOnlyList<string>? eventTypes,
+        string? teamKey) =>
+        new() { Accepted = true, Issues = issues ?? [], Comments = comments ?? [], EventTypes = eventTypes ?? [], TeamKey = teamKey };
 
     public static WebhookResult Reject(string reason) => new() { Accepted = false, RejectionReason = reason };
 }

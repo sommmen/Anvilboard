@@ -42,7 +42,7 @@ public sealed class LinearWebhookReceiver(IOptionsMonitor<LinearOptions> options
         }
 
         var normalized = payload.Data.ToNormalizedIssue(opts.TeamKey);
-        return Task.FromResult(WebhookResult.Accept(issues: [normalized]));
+        return Task.FromResult(WebhookResult.Accept([normalized], null, null, opts.TeamKey));
     }
 
     private static bool IsSignatureValid(WebhookRequest request, string secret)

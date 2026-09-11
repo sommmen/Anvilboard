@@ -180,6 +180,7 @@ public sealed class IssueService(
             ?? throw new InvalidOperationException($"Issue {id} does not exist.");
 
         issue.AssigneeId = assigneeId;
+        issue.Version++;
         issue.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
 
@@ -214,13 +215,59 @@ public sealed class IssueService(
     /// (Provider, SourceKey) dedupe key from <see cref="NormalizedIssue"/>. Used by
     /// <see cref="SyncCoordinator"/> for both first-class (GitHub/Linear) and third-party plugins.
     /// </summary>
-    public async Task<Issue> UpsertFromExternalAsync(NormalizedIssue normalized, CancellationToken ct = default)
+    public Task<Issue> UpsertFromExternalAsync(NormalizedIssue normalized, CancellationToken ct = default) =>
+        UpsertFromExternalAsync(normalized, workspaceId: null, ct);
+
+    /// <summary>Upserts a trusted webhook issue into the specified workspace.</summary>
+    public async Task<Issue> UpsertFromExternalAsync(
+        NormalizedIssue normalized,
+        WorkspaceId? workspaceId,
+        CancellationToken ct = default)
     {
-        var team = await db.Teams.FirstOrDefaultAsync(t => t.Key == normalized.TeamKey, ct)
-            ?? throw new InvalidOperationException($"No local team with key '{normalized.TeamKey}' to file synced issue under.");
+        var teams = db.Teams.Where(t => t.Key == normalized.TeamKey);
+        if (workspaceId is not null)
+        {
+            teams = teams.Where(t => t.WorkspaceId == workspaceId.Value);
+        }
+
+        // Team keys are only unique within a workspace (`TeamConfiguration` enforces
+        // (WorkspaceId, Key)), so an unscoped lookup — the path `SyncCoordinator` uses for
+        // first-class/plugin ingestion polling, which has no workspace to disambiguate with —
+        // can match more than one team. `SingleOrDefaultAsync` would surface that as an
+        // unhandled, unhelpfully-worded framework `InvalidOperationException`; count explicitly
+        // instead so both the "missing" and "ambiguous" cases fail closed with a clear message
+        // that a caller such as `SyncCoordinator`'s catch-and-log wrapper can log meaningfully.
+        var matchingTeams = await teams.Take(2).ToListAsync(ct);
+        var team = matchingTeams.Count switch
+        {
+            0 => throw new InvalidOperationException($"No local team with key '{normalized.TeamKey}' to file synced issue under."),
+            1 => matchingTeams[0],
+            _ => throw new InvalidOperationException(
+                $"Team key '{normalized.TeamKey}' exists in more than one workspace; cannot determine which one to file synced issue under without an explicit workspace. Rename one of the teams so the key is unique host-wide."),
+        };
 
         var link = await db.ExternalLinks.FirstOrDefaultAsync(
             l => l.Provider == normalized.Provider && l.SourceKey == normalized.SourceKey, ct);
+
+        if (link is not null && workspaceId is not null)
+        {
+            // `ExternalLink` dedupes by (Provider, SourceKey) globally by design (see
+            // ExternalLinkConfiguration), so an existing link can belong to a different workspace
+            // than the one this trusted webhook resolved. Filing the update under the wrong
+            // workspace's team would silently mutate another tenant's issue and misroute the
+            // realtime activity/notification to this delivery's workspace instead of the owning
+            // one, so verify the linked issue's team actually belongs to `workspaceId` first.
+            var linkedIssueWorkspaceId = await db.Issues
+                .Where(i => i.Id == link.IssueId)
+                .Join(db.Teams, i => i.TeamId, t => t.Id, (i, t) => (WorkspaceId?)t.WorkspaceId)
+                .SingleOrDefaultAsync(ct);
+
+            if (linkedIssueWorkspaceId is not null && linkedIssueWorkspaceId.Value != workspaceId.Value)
+            {
+                throw new InvalidOperationException(
+                    $"External link for {normalized.Provider}/{normalized.SourceKey} belongs to a different workspace than the trusted webhook target; refusing to apply a cross-tenant update.");
+            }
+        }
 
         Issue issue;
         var now = DateTimeOffset.UtcNow;
@@ -276,6 +323,7 @@ public sealed class IssueService(
         issue = await db.Issues.FirstAsync(i => i.Id == link.IssueId, ct);
         issue.Title = normalized.Title;
         issue.Description = normalized.Description;
+        issue.Version++;
         issue.UpdatedAt = now;
         link.Url = normalized.Url;
         link.SyncFingerprint = normalized.SyncFingerprint;

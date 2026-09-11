@@ -1,6 +1,9 @@
 using Anvilboard.Application.Realtime;
 using Anvilboard.Domain;
 using Anvilboard.Plugins.Abstractions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Anvilboard.Application.Tests.Realtime;
@@ -75,6 +78,51 @@ public sealed class PluginEventRelayTests
         var exception = Record.Exception(() => relay.Publish(new PluginEvent(WorkspaceId.New(), ApprovedEventType)));
 
         Assert.Null(exception);
+    }
+
+    [Fact]
+    public void AddRealtime_PublicPluginPublisherIsDistinctFromTrustedPublisher()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAnvilboardApplication();
+        services.AddAnvilboardRealtime(new ConfigurationBuilder().Build());
+
+        using var provider = services.BuildServiceProvider();
+        var publicPublisher = provider.GetRequiredService<IPluginEventPublisher>();
+        var trustedPublisher = provider.GetRequiredService<ITrustedPluginEventPublisher>();
+
+        // The public publisher stays available for source compatibility but must not expose the
+        // workspace-authenticated capability reserved for host code.
+        Assert.IsType<PublicPluginEventPublisher>(publicPublisher);
+        Assert.IsType<PluginEventRelay>(trustedPublisher);
+        Assert.False(publicPublisher is ITrustedPluginEventPublisher, "The public publisher must not also expose the trusted, workspace-authenticated capability.");
+    }
+
+    [Fact]
+    public void AddRealtime_PublicPluginPublisher_DropsCallerSelectedWorkspaceEvent()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAnvilboardApplication();
+        services.AddAnvilboardRealtime(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Realtime:RelayedPluginEventTypes:0"] = ApprovedEventType,
+            })
+            .Build());
+        services.RemoveAll<IRealtimeUpdatePublisher>();
+        var recordingPublisher = new RecordingPublisher();
+        services.AddSingleton<IRealtimeUpdatePublisher>(recordingPublisher);
+
+        using var provider = services.BuildServiceProvider();
+        var publicPublisher = provider.GetRequiredService<IPluginEventPublisher>();
+
+        publicPublisher.Publish(new PluginEvent(WorkspaceId.New(), ApprovedEventType));
+
+        // A third-party plugin selects the WorkspaceId on PluginEvent itself; without a host-bound
+        // workspace context, relaying it would let that plugin notify another tenant.
+        Assert.Empty(recordingPublisher.Published);
     }
 
     private static (PluginEventRelay Relay, RecordingPublisher Publisher) CreateRelay(params string[] approvedEventTypes)

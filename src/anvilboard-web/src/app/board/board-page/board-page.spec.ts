@@ -109,6 +109,17 @@ describe('BoardPage realtime reconciliation', () => {
     expect(page.selectedIssue()?.title).toBe('Updated title');
   });
 
+  it('does not refresh the board for an activity event', () => {
+    const page = createPage();
+    const listCallsAfterLoad = api.listIssuesCalls;
+
+    realtime.changesSubject.next(envelope({ eventType: 'activity.added' }));
+
+    expect(api.listIssuesCalls).toBe(listCallsAfterLoad);
+    expect(api.getIssueCalls).toEqual([]);
+    expect(page).toBeTruthy();
+  });
+
   it('re-fetches the whole board exactly once for an unknown event type', () => {
     const page = createPage();
     const listCallsAfterLoad = api.listIssuesCalls;
@@ -148,6 +159,16 @@ describe('BoardPage realtime reconciliation', () => {
     realtime.changesSubject.next(envelope());
 
     expect(page.issues()[0].title).toBe('Original title');
+  });
+
+  it('does not replace a selected issue with a stale re-fetch', () => {
+    const page = createPage();
+    page.openIssue(page.issues()[0]);
+    api.nextIssue = issue({ title: 'Stale title', version: 0 });
+
+    realtime.changesSubject.next(envelope());
+
+    expect(page.selectedIssue()?.title).toBe('Original title');
   });
 
   it('opens the realtime connection on load', () => {

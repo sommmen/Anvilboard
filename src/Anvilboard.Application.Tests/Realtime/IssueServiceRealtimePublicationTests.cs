@@ -70,6 +70,122 @@ public sealed class IssueServiceRealtimePublicationTests
     }
 
     [Fact]
+    public async Task AssignAsync_PublishesTheIncrementedVersionAsAnUpdate()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+        var issue = await service.CreateAsync(fixture.TeamId, "Assign me");
+        publisher.Changes.Clear();
+
+        var updated = await service.AssignAsync(issue.Id, MemberId.New());
+
+        var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
+        Assert.Equal(1, updated.Version);
+        Assert.Equal(updated.Version, change.Version);
+    }
+
+    [Fact]
+    public async Task UpsertFromExternalAsync_ChangedIssue_PublishesTheIncrementedVersionAsAnUpdate()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+        var original = new NormalizedIssue(IntegrationProvider.GitHub, "repo#1", "RT", "Original", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
+        var created = await service.UpsertFromExternalAsync(original);
+        publisher.Changes.Clear();
+
+        var updated = await service.UpsertFromExternalAsync(original with { Title = "Changed", SyncFingerprint = "two" });
+
+        var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
+        Assert.Equal(created.Id, updated.Id);
+        Assert.Equal(1, updated.Version);
+        Assert.Equal(updated.Version, change.Version);
+    }
+
+    [Fact]
+    public async Task UpsertFromExternalAsync_ExistingLinkOwnedByDifferentWorkspace_ThrowsInsteadOfCrossTenantMutation()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+
+        // File the issue via the untargeted overload first, so the external link ends up owned by
+        // the fixture's own workspace/team.
+        var original = new NormalizedIssue(IntegrationProvider.GitHub, "cross-tenant#1", "RT", "Original", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
+        await service.UpsertFromExternalAsync(original);
+
+        // A second workspace that happens to also configure a team keyed "RT" — team keys are only
+        // unique within a workspace, so this is a legal, if coincidental, configuration.
+        var otherWorkspaceId = WorkspaceId.New();
+        fixture.Db.Workspaces.Add(new Workspace
+        {
+            Id = otherWorkspaceId,
+            Name = "Other workspace",
+            Slug = "other-workspace",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        fixture.Db.Teams.Add(new Team
+        {
+            Id = TeamId.New(),
+            WorkspaceId = otherWorkspaceId,
+            Name = "Other team",
+            Key = "RT",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        await fixture.Db.SaveChangesAsync();
+
+        // Same (Provider, SourceKey) dedupe key as the existing link, but now resolved against the
+        // *other* workspace — as would happen if a trusted webhook's team-key routing pointed at a
+        // different tenant. This must be refused rather than silently mutating the first
+        // workspace's issue (the cross-tenant `ExternalLink` mutation this regression test guards).
+        var sameLinkDifferentTenant = original with { Title = "Hijacked", SyncFingerprint = "two" };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.UpsertFromExternalAsync(sameLinkDifferentTenant, otherWorkspaceId));
+    }
+
+    [Fact]
+    public async Task UpsertFromExternalAsync_UnscopedTeamKeyMatchesMultipleWorkspaces_ThrowsAmbiguousKeyException()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+
+        // A second workspace that also configures a team keyed "RT" — legal, since team keys are
+        // only unique within a workspace. `SyncCoordinator`'s ingestion-polling path uses the
+        // unscoped overload (no workspace to disambiguate with), so a key shared across two
+        // workspaces is genuinely ambiguous and must fail closed with a clear message rather than
+        // an unhandled framework `InvalidOperationException` from `SingleOrDefaultAsync` or a
+        // silent pick of whichever team happens to sort first.
+        var otherWorkspaceId = WorkspaceId.New();
+        fixture.Db.Workspaces.Add(new Workspace
+        {
+            Id = otherWorkspaceId,
+            Name = "Other workspace",
+            Slug = "other-workspace-ambiguous",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        fixture.Db.Teams.Add(new Team
+        {
+            Id = TeamId.New(),
+            WorkspaceId = otherWorkspaceId,
+            Name = "Other team",
+            Key = "RT",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        await fixture.Db.SaveChangesAsync();
+
+        var normalized = new NormalizedIssue(IntegrationProvider.GitHub, "ambiguous#1", "RT", "Ambiguous", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.UpsertFromExternalAsync(normalized));
+
+        Assert.Contains("more than one workspace", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(publisher.Changes);
+    }
+
+    [Fact]
     public async Task ChangeStatusAsync_DeniedTransition_PublishesNothing()
     {
         await using var fixture = await RealtimeFixture.CreateAsync();

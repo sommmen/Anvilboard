@@ -22,6 +22,12 @@ public sealed class RealtimeOptions
     /// </summary>
     public int QueueCapacity { get; set; } = 1024;
 
+    /// <summary>Maximum time a single transport send may block the dispatcher.</summary>
+    public TimeSpan SendTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>Maximum time spent sending buffered updates while the host shuts down.</summary>
+    public TimeSpan ShutdownFlushTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
     /// <summary>
     /// Plugin event types approved for relay to connected clients, e.g.
     /// <c>github.pull_request.merged</c>. Empty by default: a plugin gaining a new event type never

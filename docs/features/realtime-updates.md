@@ -124,6 +124,8 @@ The publisher coalesces bursty changes by `(workspaceId, issueId)` over a short 
 
 The transport makes at-most-once best-effort delivery, not a durable replay guarantee. On reconnect, a client re-fetches the active board/list query, the selected issue detail if applicable, and dashboard summaries. On an event gap, unknown event type, or version discontinuity, it performs the same targeted re-fetch. REST query results remain authoritative.
 
+When the hub connection drops and SignalR's own automatic-reconnect gives up, `RealtimeBoardSyncService` falls back to a manual retry loop with a bounded exponential backoff (starting at 1s, doubling per consecutive failure, capped at 30s) rather than retrying every second indefinitely; a successful connection resets the delay back to 1s. This keeps a prolonged API/hub outage from having every open browser tab hammer the hub with a fresh negotiate/start attempt each second.
+
 ### Slow and disconnected clients
 
 Each connection uses bounded outbound work. A slow client may receive a coalesced latest change or be disconnected according to SignalR transport policy; it cannot accumulate an unbounded queue, delay another workspace/client, or delay the originating mutation. Metrics distinguish coalesced, dropped, and failed sends from core write failures.
@@ -136,6 +138,24 @@ Each connection uses bounded outbound work. A slow client may receive a coalesce
 - Publication uses the post-commit path only. `Pre*` lifecycle hooks never publish a change representing an uncommitted mutation.
 - SignalR is the initial web transport, but `IRealtimeUpdatePublisher` must not depend on a web-controller type so a future transport can consume the same change envelopes.
 
+### Known limitation: connection lifetime vs. mid-session revocation
+
+`WorkspaceAuthorizationMiddleware` authorizes only the SignalR negotiate/connect handshake (see
+"Data Flow" above); an already-established hub connection is not re-checked afterward. If a
+member's workspace access is revoked (removed from the workspace, permission downgraded, session
+invalidated) while their browser holds an open connection, that connection keeps receiving
+envelopes for groups it joined before the revocation until the client disconnects on its own — a
+tab close, an explicit logout that tears down the connection client-side, or the process restarting
+the underlying transport session. There is no server-initiated "kick this connection out of its
+groups" path today.
+
+This is accepted as a known gap rather than an in-scope fix: revoking a live SignalR connection
+requires tracking membership from actor/session to `HubConnectionContext` and forcibly removing it
+from groups (or aborting it) the moment the authorization state changes elsewhere in the system —
+a cross-cutting change to session/permission management, not a `realtime-updates`-local one. Until
+that lands, deployments with a strict revocation requirement should keep the exposure window small
+(e.g., short-lived sessions) rather than relying on this component to enforce it.
+
 ### Configuration
 
 Bound from the `Realtime` section (`RealtimeOptions`):
@@ -144,6 +164,8 @@ Bound from the `Realtime` section (`RealtimeOptions`):
 |---|---|---|
 | `Realtime:DebounceWindow` | `00:00:00.100` | How long the dispatcher waits after the first buffered change before draining, so a burst collapses into one send. |
 | `Realtime:QueueCapacity` | `1024` | Maximum number of *distinct* pending coalescing keys. A change whose key is already pending always fits; only a genuinely new key can be dropped. |
+| `Realtime:SendTimeout` | `00:00:05` | Maximum time a single transport send may block the dispatcher. |
+| `Realtime:ShutdownFlushTimeout` | `00:00:10` | Maximum time spent sending buffered updates while the host shuts down. |
 | `Realtime:RelayedPluginEventTypes` | *(empty)* | Plugin event types approved for relay, e.g. `github.pull_request.merged`. Empty means no plugin event reaches a browser, so adding an event type to a plugin is never sufficient on its own. |
 
 ## Acceptance Criteria
