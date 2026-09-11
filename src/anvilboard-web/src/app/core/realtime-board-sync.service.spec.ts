@@ -1,10 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import type { HubConnection } from '@microsoft/signalr';
 import { RealtimeChangeEnvelope } from './models';
-import {
-  REALTIME_CHANGE_METHOD,
-  RealtimeBoardSyncService,
-} from './realtime-board-sync.service';
+import { REALTIME_CHANGE_METHOD, RealtimeBoardSyncService } from './realtime-board-sync.service';
 
 /**
  * Stands in for a real SignalR connection so the service's own behaviour — stream separation,

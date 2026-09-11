@@ -2,12 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
 import { of } from 'rxjs';
 import { BoardApiService } from '../../core/board-api.service';
-import {
-  Issue,
-  IssuePriority,
-  IssueStatus,
-  RealtimeChangeEnvelope,
-} from '../../core/models';
+import { Issue, IssuePriority, IssueStatus, RealtimeChangeEnvelope } from '../../core/models';
 import { RealtimeBoardSyncService } from '../../core/realtime-board-sync.service';
 import { BoardPage } from './board-page';
 
