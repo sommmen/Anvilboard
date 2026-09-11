@@ -10,6 +10,7 @@ import { REALTIME_CHANGE_METHOD, RealtimeBoardSyncService } from './realtime-boa
 class FakeHubConnection {
   private changeHandler: ((envelope: RealtimeChangeEnvelope) => void) | null = null;
   private reconnectedHandler: (() => void) | null = null;
+  private closeHandler: (() => void) | null = null;
 
   startCalls = 0;
   stopCalls = 0;
@@ -23,6 +24,10 @@ class FakeHubConnection {
 
   onreconnected(handler: () => void): void {
     this.reconnectedHandler = handler;
+  }
+
+  onclose(handler: () => void): void {
+    this.closeHandler = handler;
   }
 
   start(): Promise<void> {
@@ -41,6 +46,10 @@ class FakeHubConnection {
 
   emitReconnected(): void {
     this.reconnectedHandler?.();
+  }
+
+  emitClose(): void {
+    this.closeHandler?.();
   }
 }
 
@@ -111,6 +120,50 @@ describe('RealtimeBoardSyncService', () => {
     service.fake.startRejection = new Error('hub unreachable');
 
     await expect(service.start()).resolves.toBeUndefined();
+  });
+
+  it('retries and requests a resync after a closed connection', async () => {
+    vi.useFakeTimers();
+    let resyncs = 0;
+    service.resyncRequired.subscribe(() => resyncs++);
+    await service.start();
+
+    service.fake.emitClose();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(service.fake.startCalls).toBe(2);
+    expect(resyncs).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('retries after a failed initial connect and resyncs once recovered', async () => {
+    vi.useFakeTimers();
+    let resyncs = 0;
+    service.resyncRequired.subscribe(() => resyncs++);
+    service.fake.startRejection = new Error('hub unreachable');
+
+    await service.start();
+    expect(service.fake.startCalls).toBe(1);
+    expect(resyncs).toBe(0);
+
+    service.fake.startRejection = null;
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(service.fake.startCalls).toBe(2);
+    expect(resyncs).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('cancels a pending retry and does not reconnect after an explicit stop', async () => {
+    vi.useFakeTimers();
+    await service.start();
+
+    service.fake.emitClose();
+    await service.stop();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(service.fake.startCalls).toBe(1);
+    vi.useRealTimers();
   });
 
   it('stops the underlying connection', async () => {

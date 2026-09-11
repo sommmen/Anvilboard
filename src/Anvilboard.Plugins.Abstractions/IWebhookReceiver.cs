@@ -45,11 +45,22 @@ public sealed record WebhookResult
     /// </summary>
     public IReadOnlyList<string> EventTypes { get; init; } = [];
 
+    /// <summary>The local team key authenticated webhook work belongs to.</summary>
+    public string? TeamKey { get; init; }
+
+    // Keep this exact overload for plugins compiled before event relaying was introduced.
     public static WebhookResult Accept(
         IReadOnlyList<NormalizedIssue>? issues = null,
-        IReadOnlyList<NormalizedComment>? comments = null,
-        IReadOnlyList<string>? eventTypes = null) =>
-        new() { Accepted = true, Issues = issues ?? [], Comments = comments ?? [], EventTypes = eventTypes ?? [] };
+        IReadOnlyList<NormalizedComment>? comments = null) =>
+        new() { Accepted = true, Issues = issues ?? [], Comments = comments ?? [] };
+
+    /// <summary>Accepts a delivery that also carries approved event and trusted team routing data.</summary>
+    public static WebhookResult Accept(
+        IReadOnlyList<NormalizedIssue>? issues,
+        IReadOnlyList<NormalizedComment>? comments,
+        IReadOnlyList<string>? eventTypes,
+        string? teamKey = null) =>
+        new() { Accepted = true, Issues = issues ?? [], Comments = comments ?? [], EventTypes = eventTypes ?? [], TeamKey = teamKey };
 
     public static WebhookResult Reject(string reason) => new() { Accepted = false, RejectionReason = reason };
 }

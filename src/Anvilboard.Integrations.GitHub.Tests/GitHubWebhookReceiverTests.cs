@@ -15,6 +15,17 @@ public sealed class GitHubWebhookReceiverTests
         """;
 
     [Fact]
+    public void WebhookResult_AcceptOverloads_PreserveLegacyAndEventAwareCalls()
+    {
+        var legacy = WebhookResult.Accept([], []);
+        var eventAware = WebhookResult.Accept([], [], [GitHubWebhookReceiver.PullRequestMergedEventType], "ENG");
+
+        Assert.True(legacy.Accepted);
+        Assert.Empty(legacy.EventTypes);
+        Assert.Equal("ENG", eventAware.TeamKey);
+    }
+
+    [Fact]
     public async Task HandleAsync_ValidIssuesEvent_MapsNormalizedIssue()
     {
         var result = await CreateReceiver().HandleAsync(CreateRequest("issues", IssuePayload, signed: true), CancellationToken.None);
@@ -24,6 +35,7 @@ public sealed class GitHubWebhookReceiverTests
         Assert.Equal(IntegrationProvider.GitHub, issue.Provider);
         Assert.Equal("org/repo#42", issue.SourceKey);
         Assert.Equal("ENG", issue.TeamKey);
+        Assert.Equal("ENG", result.TeamKey);
         Assert.Equal("Fix webhook", issue.Title);
         Assert.Equal("Details", issue.Description);
         Assert.Equal(IssueStatus.Backlog, issue.SuggestedStatus);
@@ -68,13 +80,14 @@ public sealed class GitHubWebhookReceiverTests
     [Fact]
     public async Task HandleAsync_MergedPullRequest_ReportsMergedEventType()
     {
-        const string body = """{"action":"closed","pull_request":{"merged":true}}""";
+        const string body = """{"action":"closed","pull_request":{"merged":true},"repository":{"full_name":"org/repo"}}""";
 
         var result = await CreateReceiver().HandleAsync(CreateRequest("pull_request", body, signed: true), CancellationToken.None);
 
         Assert.True(result.Accepted);
         Assert.Empty(result.Issues);
         Assert.Equal([GitHubWebhookReceiver.PullRequestMergedEventType], result.EventTypes);
+        Assert.Equal("ENG", result.TeamKey);
     }
 
     [Theory]

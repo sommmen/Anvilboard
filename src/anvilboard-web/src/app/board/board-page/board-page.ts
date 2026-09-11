@@ -7,6 +7,7 @@ import {
   Issue,
   IssuePriority,
   IssueStatus,
+  REALTIME_ACTIVITY_ADDED,
   REALTIME_ISSUE_CHANGED,
   RealtimeChangeEnvelope,
   Team,
@@ -73,6 +74,12 @@ export class BoardPage {
    * than to a stale or partially applied board.
    */
   private applyChange(envelope: RealtimeChangeEnvelope): void {
+    // Activity is consumed by issue-detail surfaces. It never changes a board card, so refreshing
+    // here would make every issue mutation perform both a targeted fetch and a full board redraw.
+    if (envelope.eventType === REALTIME_ACTIVITY_ADDED) {
+      return;
+    }
+
     if (envelope.eventType !== REALTIME_ISSUE_CHANGED || !envelope.issueId) {
       this.refresh();
       return;
@@ -94,23 +101,17 @@ export class BoardPage {
   }
 
   private replaceIssue(issue: Issue): void {
-    this.issues.update((issues) => {
-      const index = issues.findIndex((candidate) => candidate.id === issue.id);
-      if (index < 0) {
-        return issues;
-      }
+    const current = this.issues().find((candidate) => candidate.id === issue.id);
+    if (!current || current.version > issue.version) {
+      return;
+    }
 
-      // A stale response from an overtaken re-fetch must never undo a newer version already applied.
-      if (issues[index].version > issue.version) {
-        return issues;
-      }
+    const selected = this.selectedIssue();
+    this.issues.update((issues) =>
+      issues.map((candidate) => (candidate.id === issue.id ? issue : candidate)),
+    );
 
-      const next = [...issues];
-      next[index] = issue;
-      return next;
-    });
-
-    if (this.selectedIssue()?.id === issue.id) {
+    if (selected?.id === issue.id && selected.version <= issue.version) {
       this.selectedIssue.set(issue);
     }
   }

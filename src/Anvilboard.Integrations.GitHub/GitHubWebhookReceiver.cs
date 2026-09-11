@@ -40,7 +40,7 @@ public sealed class GitHubWebhookReceiver(IOptionsMonitor<GitHubOptions> options
             // closes still wants to know. Reported as an event rather than an issue so it reaches
             // clients without a lifecycle hook or a synthetic mutation.
             return Task.FromResult(IsMergedPullRequest(request.RawBody)
-                ? WebhookResult.Accept(eventTypes: [PullRequestMergedEventType])
+                ? WebhookResult.Accept(null, null, [PullRequestMergedEventType], opts.TeamKey)
                 : WebhookResult.Accept());
         }
 
@@ -66,7 +66,7 @@ public sealed class GitHubWebhookReceiver(IOptionsMonitor<GitHubOptions> options
         }
 
         var normalized = payload.Issue.ToNormalizedIssue(payload.Repository.FullName, opts.TeamKey);
-        return Task.FromResult(WebhookResult.Accept(issues: [normalized]));
+        return Task.FromResult(WebhookResult.Accept([normalized], null, null, opts.TeamKey));
     }
 
     /// <summary>
@@ -121,6 +121,7 @@ internal sealed class GitHubPullRequestEventDto
 
     [JsonPropertyName("pull_request")]
     public GitHubPullRequestDto? PullRequest { get; set; }
+    public GitHubRepositoryDto? Repository { get; set; }
 }
 
 internal sealed class GitHubPullRequestDto

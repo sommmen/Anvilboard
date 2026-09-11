@@ -46,8 +46,16 @@ public sealed class RealtimeDispatcher(
             }
         }
 
-        // Best-effort flush of anything buffered at shutdown, without waiting on cancellation.
-        await DrainAsync(CancellationToken.None);
+        // Bound shutdown flushing so a stalled transport cannot keep the host alive indefinitely.
+        using var flushDeadline = new CancellationTokenSource(options.ShutdownFlushTimeout);
+        try
+        {
+            await DrainAsync(flushDeadline.Token);
+        }
+        catch (OperationCanceledException) when (flushDeadline.IsCancellationRequested)
+        {
+            logger.LogWarning("Realtime shutdown flush exceeded its {Timeout} deadline.", options.ShutdownFlushTimeout);
+        }
     }
 
     private async Task DrainAsync(CancellationToken ct)
@@ -57,7 +65,9 @@ public sealed class RealtimeDispatcher(
             try
             {
                 metrics.RecordPublicationLatency(change);
-                await transport.SendAsync(change, ct);
+                using var sendDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                sendDeadline.CancelAfter(options.SendTimeout);
+                await transport.SendAsync(change, sendDeadline.Token);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

@@ -25,6 +25,8 @@ export class RealtimeBoardSyncService {
   private readonly changesSubject = new Subject<RealtimeChangeEnvelope>();
   private readonly resyncSubject = new Subject<void>();
   private connection: HubConnection | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;
 
   /** Change envelopes as they arrive, in delivery order. */
   readonly changes: Observable<RealtimeChangeEnvelope> = this.changesSubject.asObservable();
@@ -44,10 +46,38 @@ export class RealtimeBoardSyncService {
    * connection is shared, since the hub scopes delivery to the workspace rather than to a view.
    */
   async start(): Promise<void> {
+    this.stopped = false;
     if (this.connection) {
       return;
     }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
 
+    await this.connectAndListen(false);
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    const connection = this.connection;
+    this.connection = null;
+    if (connection) {
+      await connection.stop();
+    }
+  }
+
+  /**
+   * Creates the connection, wires up its handlers and attempts to start it. On success following
+   * an automatic-recovery attempt, emits a resync signal — but only then, since the caller (an
+   * initial `start()`) already knows a fresh connection has no changes to catch up on.
+   */
+  private async connectAndListen(isRecoveryAttempt: boolean): Promise<void> {
     const connection = this.createConnection();
     this.connection = connection;
 
@@ -58,22 +88,33 @@ export class RealtimeBoardSyncService {
     // Automatic reconnect hands back a connection with no history of what happened while it was
     // down, so a re-fetch is the only way back to a correct board.
     connection.onreconnected(() => this.resyncSubject.next());
+    connection.onclose(() => this.scheduleReconnect());
 
     try {
       await connection.start();
+      if (isRecoveryAttempt) {
+        this.resyncSubject.next();
+      }
     } catch {
       // A failed initial connect must not break the board: polling-free live updates are an
       // enhancement, and the REST surface still works without them.
-      this.connection = null;
+      if (this.connection === connection) {
+        this.connection = null;
+        this.scheduleReconnect();
+      }
     }
   }
 
-  async stop(): Promise<void> {
-    const connection = this.connection;
-    this.connection = null;
-    if (connection) {
-      await connection.stop();
+  private scheduleReconnect(): void {
+    if (this.stopped || this.reconnectTimer) {
+      return;
     }
+
+    this.connection = null;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.connectAndListen(true);
+    }, 1_000);
   }
 
   /** Overridable in tests, which cannot open a real WebSocket. */

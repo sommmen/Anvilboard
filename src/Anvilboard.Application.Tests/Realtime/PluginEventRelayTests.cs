@@ -1,6 +1,8 @@
 using Anvilboard.Application.Realtime;
 using Anvilboard.Domain;
 using Anvilboard.Plugins.Abstractions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Anvilboard.Application.Tests.Realtime;
@@ -75,6 +77,22 @@ public sealed class PluginEventRelayTests
         var exception = Record.Exception(() => relay.Publish(new PluginEvent(WorkspaceId.New(), ApprovedEventType)));
 
         Assert.Null(exception);
+    }
+
+    [Fact]
+    public void AddRealtime_PublicPluginPublisherDoesNotRelayWorkspaceTargetedEvents()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAnvilboardApplication();
+        services.AddAnvilboardRealtime(new ConfigurationBuilder().Build());
+
+        using var provider = services.BuildServiceProvider();
+        var publicPublisher = provider.GetRequiredService<IPluginEventPublisher>();
+        var trustedPublisher = provider.GetRequiredService<ITrustedPluginEventPublisher>();
+
+        Assert.IsType<NullPluginEventPublisher>(publicPublisher);
+        Assert.IsType<PluginEventRelay>(trustedPublisher);
     }
 
     private static (PluginEventRelay Relay, RecordingPublisher Publisher) CreateRelay(params string[] approvedEventTypes)

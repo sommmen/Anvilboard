@@ -44,7 +44,7 @@
 |---|---:|
 | Test projects | 6 `*.Tests` unit/integration projects with tests + 1 empty `Anvilboard.IntegrationTests` scaffold (no `.cs` test files yet) |
 | Testable boundaries with an existing test file | 9 of 10 listed above have at least one test file |
-| Total automated tests (last `dotnet test` run) | 150 (`5 + 9 + 7 + 116 + 12 + 1` across the 6 populated projects), all passing, plus 13 Angular tests (`ng test`) |
+| Total automated tests (last `dotnet test` run) | 175 total: 157 .NET (`5 + 10 + 7 + 122 + 12 + 1` across the 6 populated projects) plus 18 Angular (`ng test`), all passing |
 | Test result | All passing, 0 failures |
 | Known coverage gaps | No `DashboardService` or `SyncCoordinator` test files; no backup/restore tests (service doesn't exist); no dedicated CLI/MCP contract-equivalence test project; `Anvilboard.IntegrationTests` project exists but is empty |
 
@@ -282,10 +282,10 @@ AC identifiers are intentionally qualified with their source document because se
 
 | Metric | Value |
 |---|---:|
-| Total planned test cases | 57 |
+| Total planned test cases | 58 |
 | P0 critical cases | 41 |
-| P1 important cases | 16 |
-| Unit/boundary cases | 52 |
+| P1 important cases | 17 |
+| Unit/boundary cases | 53 |
 | Combination cases | 5 |
 | Security-focused cases | 13 |
 | Persistence/recovery integrity cases | 11 |

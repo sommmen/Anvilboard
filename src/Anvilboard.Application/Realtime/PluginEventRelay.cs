@@ -4,13 +4,20 @@ using Microsoft.Extensions.Logging;
 
 namespace Anvilboard.Application.Realtime;
 
+/// <summary>Host-only capability for publishing events after it has authenticated workspace routing.</summary>
+public interface ITrustedPluginEventPublisher
+{
+    void Publish(PluginEvent pluginEvent);
+}
+
 /// <summary>
 /// Maps plugin events onto the same coalescing realtime pipeline committed mutations use, so a
 /// plugin gets live delivery without a second transport, a second security model, or any ability to
 /// reach a client another way.
 /// </summary>
 /// <remarks>
-/// Two properties make this safe to expose to third-party plugins:
+/// The host owns this capability; third-party plugins receive the no-op public publisher and therefore
+/// cannot select another workspace. Two further properties keep host-relayed events safe:
 /// <list type="bullet">
 /// <item>Only event types on <see cref="RealtimeOptions.RelayedPluginEventTypes"/> are relayed. An
 /// unapproved event is dropped silently, so adding an event to a plugin cannot, by itself, start
@@ -22,7 +29,7 @@ namespace Anvilboard.Application.Realtime;
 public sealed class PluginEventRelay(
     IRealtimeUpdatePublisher publisher,
     RealtimeOptions options,
-    ILogger<PluginEventRelay> logger) : IPluginEventPublisher
+    ILogger<PluginEventRelay> logger) : ITrustedPluginEventPublisher
 {
     public void Publish(PluginEvent pluginEvent)
     {

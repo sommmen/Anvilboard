@@ -1,4 +1,5 @@
 using Anvilboard.Application.Issues;
+using Anvilboard.Application.Realtime;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
 using Anvilboard.Plugins.Abstractions;
@@ -23,7 +24,7 @@ public static class WebhookEndpoints
             HttpRequest httpRequest,
             IPluginRegistry plugins,
             IssueService issueService,
-            IPluginEventPublisher pluginEvents,
+            ITrustedPluginEventPublisher pluginEvents,
             AnvilboardDbContext db,
             CancellationToken ct) =>
         {
@@ -44,10 +45,20 @@ public static class WebhookEndpoints
                 return Results.BadRequest(new { error = result.RejectionReason });
             }
 
+            WorkspaceId? trustedWorkspaceId = null;
+            if (result.TeamKey is not null)
+            {
+                trustedWorkspaceId = await db.Teams
+                    .Where(team => team.Key == result.TeamKey)
+                    .Select(team => (WorkspaceId?)team.WorkspaceId)
+                    .SingleOrDefaultAsync(ct)
+                    ?? throw new InvalidOperationException($"No local team with key '{result.TeamKey}' is configured for this webhook.");
+            }
+
             var touchedTeamIds = new List<TeamId>();
             foreach (var normalized in result.Issues)
             {
-                var issue = await issueService.UpsertFromExternalAsync(normalized, ct);
+                var issue = await issueService.UpsertFromExternalAsync(normalized, trustedWorkspaceId, ct);
                 touchedTeamIds.Add(issue.TeamId);
             }
 

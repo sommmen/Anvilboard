@@ -168,6 +168,9 @@ public sealed class WorkspaceRealtimeHubTests
         });
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
+        client.DefaultRequestHeaders.Add("Cookie", cookie);
+        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" });
+        teamResponse.EnsureSuccessStatusCode();
 
         await using var connection = BuildConnection(factory, cookie);
         var received = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -203,6 +206,9 @@ public sealed class WorkspaceRealtimeHubTests
         await using var factory = new ApiFactory();
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
+        client.DefaultRequestHeaders.Add("Cookie", cookie);
+        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" });
+        teamResponse.EnsureSuccessStatusCode();
 
         await using var connection = BuildConnection(factory, cookie);
         var received = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);

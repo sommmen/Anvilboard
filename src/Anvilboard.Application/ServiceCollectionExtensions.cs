@@ -66,7 +66,13 @@ public static class ServiceCollectionExtensions
                 "Realtime:QueueCapacity must be greater than zero.")
             .Validate(
                 options => options.DebounceWindow >= TimeSpan.Zero,
-                "Realtime:DebounceWindow must not be negative.");
+                "Realtime:DebounceWindow must not be negative.")
+            .Validate(
+                options => options.SendTimeout > TimeSpan.Zero,
+                "Realtime:SendTimeout must be greater than zero.")
+            .Validate(
+                options => options.ShutdownFlushTimeout > TimeSpan.Zero,
+                "Realtime:ShutdownFlushTimeout must be greater than zero.");
 
         services.AddMetrics();
         services.TryAddSingleton<RealtimeMetrics>();
@@ -85,11 +91,11 @@ public static class ServiceCollectionExtensions
         // no transport, buffering, or authorization path of its own (AC-RT-006). Replaces rather
         // than TryAdds for the same reason as the publisher above: the no-op default may already be
         // registered, and enabling realtime must not silently keep dropping plugin events.
-        services.RemoveAll<IPluginEventPublisher>();
-        services.AddSingleton<IPluginEventPublisher>(provider => new PluginEventRelay(
+        services.AddSingleton<PluginEventRelay>(provider => new PluginEventRelay(
             provider.GetRequiredService<IRealtimeUpdatePublisher>(),
             provider.GetRequiredService<IOptions<RealtimeOptions>>().Value,
             provider.GetRequiredService<ILogger<PluginEventRelay>>()));
+        services.AddSingleton<ITrustedPluginEventPublisher>(provider => provider.GetRequiredService<PluginEventRelay>());
 
         return services;
     }

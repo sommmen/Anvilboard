@@ -70,6 +70,40 @@ public sealed class IssueServiceRealtimePublicationTests
     }
 
     [Fact]
+    public async Task AssignAsync_PublishesTheIncrementedVersionAsAnUpdate()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+        var issue = await service.CreateAsync(fixture.TeamId, "Assign me");
+        publisher.Changes.Clear();
+
+        var updated = await service.AssignAsync(issue.Id, MemberId.New());
+
+        var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
+        Assert.Equal(1, updated.Version);
+        Assert.Equal(updated.Version, change.Version);
+    }
+
+    [Fact]
+    public async Task UpsertFromExternalAsync_ChangedIssue_PublishesTheIncrementedVersionAsAnUpdate()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+        var original = new NormalizedIssue(IntegrationProvider.GitHub, "repo#1", "RT", "Original", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
+        var created = await service.UpsertFromExternalAsync(original);
+        publisher.Changes.Clear();
+
+        var updated = await service.UpsertFromExternalAsync(original with { Title = "Changed", SyncFingerprint = "two" });
+
+        var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
+        Assert.Equal(created.Id, updated.Id);
+        Assert.Equal(1, updated.Version);
+        Assert.Equal(updated.Version, change.Version);
+    }
+
+    [Fact]
     public async Task ChangeStatusAsync_DeniedTransition_PublishesNothing()
     {
         await using var fixture = await RealtimeFixture.CreateAsync();

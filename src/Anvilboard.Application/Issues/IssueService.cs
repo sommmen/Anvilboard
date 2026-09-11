@@ -180,6 +180,7 @@ public sealed class IssueService(
             ?? throw new InvalidOperationException($"Issue {id} does not exist.");
 
         issue.AssigneeId = assigneeId;
+        issue.Version++;
         issue.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
 
@@ -214,9 +215,22 @@ public sealed class IssueService(
     /// (Provider, SourceKey) dedupe key from <see cref="NormalizedIssue"/>. Used by
     /// <see cref="SyncCoordinator"/> for both first-class (GitHub/Linear) and third-party plugins.
     /// </summary>
-    public async Task<Issue> UpsertFromExternalAsync(NormalizedIssue normalized, CancellationToken ct = default)
+    public Task<Issue> UpsertFromExternalAsync(NormalizedIssue normalized, CancellationToken ct = default) =>
+        UpsertFromExternalAsync(normalized, workspaceId: null, ct);
+
+    /// <summary>Upserts a trusted webhook issue into the specified workspace.</summary>
+    public async Task<Issue> UpsertFromExternalAsync(
+        NormalizedIssue normalized,
+        WorkspaceId? workspaceId,
+        CancellationToken ct = default)
     {
-        var team = await db.Teams.FirstOrDefaultAsync(t => t.Key == normalized.TeamKey, ct)
+        var teams = db.Teams.Where(t => t.Key == normalized.TeamKey);
+        if (workspaceId is not null)
+        {
+            teams = teams.Where(t => t.WorkspaceId == workspaceId.Value);
+        }
+
+        var team = await teams.SingleOrDefaultAsync(ct)
             ?? throw new InvalidOperationException($"No local team with key '{normalized.TeamKey}' to file synced issue under.");
 
         var link = await db.ExternalLinks.FirstOrDefaultAsync(
@@ -276,6 +290,7 @@ public sealed class IssueService(
         issue = await db.Issues.FirstAsync(i => i.Id == link.IssueId, ct);
         issue.Title = normalized.Title;
         issue.Description = normalized.Description;
+        issue.Version++;
         issue.UpdatedAt = now;
         link.Url = normalized.Url;
         link.SyncFingerprint = normalized.SyncFingerprint;
