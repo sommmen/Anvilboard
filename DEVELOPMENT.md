@@ -125,6 +125,74 @@ The SQLite file path is `Database:DatabasePath`, defaulting to `anvilboard.db` n
 executable. Schema is created/updated automatically on startup (`Database.MigrateAsync()`) — there
 is no separate migration command to run by hand.
 
+Backup artifacts are written to `Database:BackupDirectory`, defaulting to a `backups/` folder
+alongside the database file.
+
+## Backup and recovery drill
+
+`NFR-AVL-001` requires a verified backup/restore drill at least once per release. The automated
+round-trip test (`src/Anvilboard.Application.Tests/Backup/BackupRoundTripTests.cs`) proves the
+mechanism works; this manual drill proves it works against a real deployment, with real data
+volumes and a real file path. Run it against a **copy** of production data, never production
+itself.
+
+All routes require the `ManageBackupRestore` permission, which is Administrator-only. A backup is
+whole-instance (one SQLite file), so restoring one workspace necessarily restores every workspace
+in that file — the restore call fails closed if the live database contains a workspace the artifact
+doesn't.
+
+1. **Create a backup.**
+
+   ```bash
+   curl -X POST http://localhost:5000/api/backups -H "Authorization: Bearer $TOKEN"
+   ```
+
+   The response is a manifest containing `backupId`, `checksumSha256`, `schemaVersion`, `sizeBytes`,
+   and the full set of workspaces the artifact covers. Record the `backupId`.
+
+2. **Verify the artifact** without touching the live database:
+
+   ```bash
+   curl -X POST http://localhost:5000/api/backups/$BACKUP_ID/verify -H "Authorization: Bearer $TOKEN"
+   ```
+
+   A healthy artifact returns `"verified": true`. A `422 BACKUP_INTEGRITY_INVALID` response names
+   the specific failed check (checksum, manifest, SQLite integrity, schema compatibility, or
+   workspace subset).
+
+3. **Note a known-good data point** you can assert on after the restore — for example an issue
+   title, or the issue count of a board.
+
+4. **Mutate something** after the backup was taken, so the restore is observably a restore rather
+   than a no-op.
+
+5. **Restore**, confirming with the exact workspace slug. The confirmation is compared
+   case-sensitively and is a deliberate speed bump:
+
+   ```bash
+   curl -X POST http://localhost:5000/api/backups/$BACKUP_ID/restore \
+     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+     -d '{"confirmedWorkspaceSlug":"your-slug"}'
+   ```
+
+   While the restore runs, the API closes admission and drains in-flight work; other `/api`
+   requests receive `429` with `Retry-After: 5` until it completes. Every validation check runs
+   *before* the live file is touched, so a rejected restore leaves the running instance unchanged.
+
+6. **Confirm recovery**: the mutation from step 4 is gone, the data point from step 3 is back, and
+   the `AuditEvents` table in the restored database contains a `workspace.restore.completed` event.
+   (The completed event is written to the *restored* database, which is where an auditor will look;
+   a *failed* restore is audited in the untouched live database.)
+
+7. **Record the wall-clock time** from step 5 to step 6 and compare it against the recovery-time
+   objective in `docs/anvilboard/srs.md` (`NFR-AVL-001`).
+
+If a restore fails *after* the file swap — the only window where the live database has already been
+replaced — the pre-swap safety copy written next to the database as
+`<database>.pre-restore-<timestamp>` is the recovery path, and admission stays closed so nothing
+writes to a half-restored file. These safety copies are not pruned automatically; delete old ones
+once a drill is confirmed good.
+
 ## Testing
 
 The xUnit projects cover the Workflow Engine, endpoint authorization, agent-operation metadata, and

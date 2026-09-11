@@ -20,6 +20,7 @@ namespace Anvilboard.Api.Tests.Testing;
 public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncDisposable
 {
     private readonly string databasePath = Path.Combine(Path.GetTempPath(), $"anvilboard-api-tests-{Guid.NewGuid():N}.db");
+    private readonly string backupDirectory = Path.Combine(Path.GetTempPath(), $"anvilboard-api-tests-backups-{Guid.NewGuid():N}");
     private readonly Dictionary<string, string?> configurationOverrides;
 
     public ApiFactory(IReadOnlyDictionary<string, string?>? configurationOverrides = null) =>
@@ -27,15 +28,18 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncDisposabl
             ? []
             : new Dictionary<string, string?>(configurationOverrides);
 
-    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
         builder.ConfigureAppConfiguration(configuration =>
         {
             var settings = new Dictionary<string, string?>(configurationOverrides)
             {
                 ["Database:DatabasePath"] = databasePath,
+                ["Database:BackupDirectory"] = backupDirectory,
             };
             configuration.AddInMemoryCollection(settings);
         });
+    }
 
     /// <summary>
     /// Runs the one-time bootstrap flow and returns the resulting session cookie, in the
@@ -131,6 +135,39 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncDisposabl
     }
 
     /// <summary>
+    /// Seeds a non-administrator member (default <see cref="Role.Contributor"/>) into the host's
+    /// existing (first-bootstrapped) workspace directly through the DbContext, for tests that need
+    /// to prove a permission is denied to a real session rather than merely absent from an
+    /// unauthenticated request. Returns the session cookie in <c>name=value</c> form.
+    /// </summary>
+    public async Task<string> SeedMemberAndGetSessionCookieAsync(
+        HttpClient client,
+        string username,
+        Role role = Role.Contributor,
+        string password = "correct horse battery staple")
+    {
+        using (var scope = Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
+            var workspaceId = await db.Workspaces.Select(workspace => workspace.Id).FirstAsync();
+
+            db.Members.Add(new Member
+            {
+                Id = MemberId.New(),
+                WorkspaceId = workspaceId,
+                DisplayName = username,
+                Email = $"{username}@example.test",
+                Username = username,
+                PasswordHash = PasswordHasher.Hash(password),
+                Role = role,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        return await LoginAndGetSessionCookieAsync(client, username, password);
+    }
+
+    /// <summary>
     /// Logs in with a username/password pair and returns the session cookie in <c>name=value</c> form.
     /// </summary>
     public static async Task<string> LoginAndGetSessionCookieAsync(
@@ -152,7 +189,22 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncDisposabl
 
         SqliteConnection.ClearAllPools();
         TryDeleteDatabaseFiles();
+        TryDeleteBackupDirectory();
         return ValueTask.CompletedTask;
+    }
+
+    private void TryDeleteBackupDirectory()
+    {
+        try
+        {
+            if (Directory.Exists(backupDirectory))
+            {
+                Directory.Delete(backupDirectory, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+        }
     }
 
     private void TryDeleteDatabaseFiles()

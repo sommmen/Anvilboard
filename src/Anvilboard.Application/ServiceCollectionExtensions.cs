@@ -1,6 +1,7 @@
 using Anvilboard.Application.Auditing;
 using Anvilboard.Application.Authorization;
 using Anvilboard.Application.Automation;
+using Anvilboard.Application.Backup;
 using Anvilboard.Application.Dashboard;
 using Anvilboard.Application.Integrations;
 using Anvilboard.Application.Issues;
@@ -37,6 +38,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkspaceAuthorizationService, WorkspaceAuthorizationService>();
         services.TryAddScoped<IAuditService, AuditService>();
         services.AddScoped<IIdempotencyService, IdempotencyService>();
+        services.AddScoped<IBackupService, BackupService>();
+        services.AddSingleton<IRestoreCoordinator, RestoreCoordinator>();
 
         // A host that never calls AddAnvilboardRealtime still resolves a publisher, so mutations
         // have one code path whether or not a transport exists. TryAdd keeps AddAnvilboardRealtime
