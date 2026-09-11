@@ -1,3 +1,4 @@
+using Anvilboard.Application.Artifacts;
 using Anvilboard.Application.Automation;
 using Anvilboard.Application.Backup;
 using Anvilboard.Application.Dashboard;
@@ -19,6 +20,7 @@ namespace Anvilboard.Agent;
 public sealed class BoardAgentService(
     IssueService issues,
     IssueLinkService issueLinks,
+    IArtifactService artifacts,
     DashboardService dashboard,
     IBackupService backups,
     CorrelationContext correlation)
@@ -123,6 +125,38 @@ public sealed class BoardAgentService(
     [AgentOperation("remove-issue-link", "Removes a link from an issue", Category = "issues")]
     public async Task RemoveIssueLinkAsync(Guid issueId, Guid linkId, CancellationToken cancellationToken = default) =>
         await issueLinks.RemoveLinkAsync(new IssueId(issueId), new IssueLinkId(linkId), actorId: null, cancellationToken);
+
+    [AgentOperation("list-artifacts", "Lists the artifacts attached to an issue, oldest first", Category = "issues", IsIdempotent = true)]
+    public async Task<IReadOnlyList<ArtifactDto>> ListArtifactsAsync(Guid issueId, CancellationToken cancellationToken = default) =>
+        await artifacts.ListArtifactsAsync(new IssueId(issueId), ct: cancellationToken);
+
+    /// <summary>
+    /// Attaches an already-addressable artifact. <paramref name="source"/> is required and
+    /// <c>actorId</c> is always null: this host is unauthenticated (MAJ-001/MAJ-015), so its
+    /// attachments are automation attachments and must be labelled as such (BR-ART-1/BR-ART-2)
+    /// rather than borrowing a human identity.
+    /// </summary>
+    [AgentOperation("attach-artifact", "Attaches an artifact (file reference, link, deployment, or pull request) to an issue", Category = "issues", Examples = ["attach-artifact issueId=... kind=link title=\"CI run\" contentReference=https://ci.example/run/42 source=agent:automation"])]
+    public async Task<ArtifactDto> AttachArtifactAsync(
+        Guid issueId,
+        string kind,
+        string title,
+        string contentReference,
+        string source = AutomationActorId,
+        CancellationToken cancellationToken = default) =>
+        await artifacts.AttachArtifactAsync(
+            new IssueId(issueId), kind, title, contentReference, source,
+            actorId: null, metadata: null, AgentChannel, ct: cancellationToken);
+
+    [AgentOperation("remove-artifact", "Removes an artifact from an issue and purges its stored content", Category = "issues")]
+    public async Task RemoveArtifactAsync(Guid issueId, Guid artifactId, CancellationToken cancellationToken = default) =>
+        await artifacts.RemoveArtifactAsync(
+            new IssueId(issueId), new ArtifactId(artifactId), actorId: null, AgentChannel, ct: cancellationToken);
+
+    // `refresh-artifact` is deliberately not exposed here (`docs/features/artifacts.md`, API Surface):
+    // a pull request artifact's state must only ever reflect what the provider reports, so the
+    // upsert path stays reachable from plugin correlation logic only. An agent that could call it
+    // could assert a PR was merged when it was not.
 
     // `restore` is deliberately not exposed here (`docs/plans/backup-and-restore.md` §9.3): MAJ-015
     // records that agent/automation operations currently lack workspace-scoped authorization and

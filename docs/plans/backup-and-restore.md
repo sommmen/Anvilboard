@@ -1,7 +1,9 @@
 # Implementation Plan: Workspace Backup & Restore
 
-> Feature-level technical design and execution plan for the one remaining **Critical**
-> unimplemented capability in Anvilboard.
+> Feature-level technical design and execution plan for what was, at the time of writing,
+> the one remaining **Critical** unimplemented capability in Anvilboard. **Delivered** — this
+> document is retained as the design record behind milestone M7; the canonical description of
+> the shipped behavior is [`audit-and-recovery.md`](../features/audit-and-recovery.md).
 > Generated with Spec-Forge `tech-design-generation` against the canonical chain:
 > [`prd.md`](../anvilboard/prd.md) → [`srs.md`](../anvilboard/srs.md) →
 > [`tech-design.md`](../anvilboard/tech-design.md) → [`audit-and-recovery.md`](../features/audit-and-recovery.md).
@@ -16,7 +18,7 @@
 | Audit finding | [`audit-report.md`](../audit-report.md) **CRIT-001** (and **MAJ-019** NFR-AVL-001 not met) |
 | SRS refs | `FR-OPS-002` (primary), `NFR-AVL-001` (primary), `FR-OPS-001` + `NFR-REL-001` + `NFR-SEC-001` (touched) |
 | Acceptance criteria | `AC-011`, `AC-012`, `AC-202`, `AC-203`, `AC-204` (from [`audit-and-recovery.md`](../features/audit-and-recovery.md)) |
-| Status | Plan — not yet implemented |
+| Status | **Delivered** — `IBackupService` create/verify/restore, `IRestoreCoordinator`, `/api/backups` endpoints, and agent create/list/verify operations are implemented and tested (CRIT-001 and MAJ-019 both RESOLVED) |
 | Created | 2026-09-10 |
 
 ## 2. Why this feature was selected
@@ -28,7 +30,7 @@ largest verified gap, not the next unstarted row. The evidence:
 | Signal | Finding |
 |---|---|
 | Open GitHub issues | `gh issue list --state open` → none. The backlog lives in the feature index + audit report. |
-| Unresolved Critical findings | **CRIT-001 only.** CRIT-002 (realtime) is marked RESOLVED; CRIT-003 (dedicated `ArtifactService`) is a refactor, not a missing capability. |
+| Unresolved Critical findings | **CRIT-001 only** *(as of this plan's writing)*. CRIT-002 (realtime) is marked RESOLVED; CRIT-003 (dedicated `ArtifactService`) was assessed here as a refactor rather than a missing capability — a file inventory later disproved that, see [`audit-report.md`](../audit-report.md) CRIT-003. CRIT-003 has since been implemented and is also RESOLVED, so no Critical finding remains open. |
 | Code evidence | `rg -il "IBackupService\|CreateBackupAsync\|RestoreAsync\|BackupManifest" src` → **zero matches.** No partial implementation to extend. |
 | Milestone status | M7 is the only row in §16 reading **Not Started** other than M8 (hardening, which depends on M7). |
 | Requirement priority | `FR-OPS-002` and `NFR-AVL-001` are both **P0**. |

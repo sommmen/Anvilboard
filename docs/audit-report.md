@@ -27,9 +27,9 @@ The most significant *implementation* gaps this audit surfaced (not fixed, per t
 decision for this task) are: no backup/restore capability exists despite being specified as a
 Critical requirement (FR-OPS-002 / NFR-AVL-001), the entire realtime-updates feature (FR-WRK-014,
 SignalR/WebSocket push) is unimplemented, and there is no dedicated `ArtifactService` application
-layer even though artifacts are otherwise persisted and exposed. *(Of these three, realtime-updates
-and backup/restore have since been implemented — see CRIT-002 and CRIT-001 below. Only CRIT-003
-remains open.)* Workspace authorization,
+layer even though artifacts are otherwise persisted and exposed. *(All three have since been
+implemented — see CRIT-001, CRIT-002, and CRIT-003 below. No Critical finding remains open.)*
+Workspace authorization,
 workflow-engine administration, agent-surface identity/idempotency wiring, and sync health/backoff
 also have real, evidenced gaps relative to their specs. These are enumerated below as Critical/Major
 findings for a future implementation pass; per this task's instructions they were **flagged, not
@@ -111,12 +111,30 @@ fixed**.
 - **Impact**: Clients must poll or manually refresh; documented low-latency collaboration behavior does not exist. NFR-PERF-002 (push latency) is not evidenced because the feature doesn't exist to measure.
 - **Fix**: Either implement a SignalR-based push layer per the spec, or explicitly re-scope `docs/features/realtime-updates.md` and the SRS requirement as a future milestone (not "in progress").
 
-### CRIT-003: No dedicated `ArtifactService` application layer (FR-ART-001)
+### CRIT-003: No dedicated `ArtifactService` application layer (FR-ART-001) — **RESOLVED**
+
+> **Resolved.** Implemented as described by
+> [`docs/features/artifacts.md`](./features/artifacts.md):
+> `IArtifactService`/`ArtifactService`/`ArtifactDto` in
+> `src/Anvilboard.Application/Artifacts/`, `ArtifactEndpoints` at
+> `/api/issues/{id}/artifacts` in `src/Anvilboard.Api/Endpoints/`,
+> `list-artifacts`/`attach-artifact`/`remove-artifact` agent operations in
+> `BoardAgentService`, and DI registration of both `IArtifactService` and
+> `IArtifactStore`. `RefreshArtifactAsync` provides the plugin-only upsert seam,
+> converging on `DedupKey` (including the lost-insert race). Every mutation emits an
+> `ActivityEvent` and an audit record, which also resolves MAJ-020's second half.
+> The remaining `IIssueHook` artifact-expansion *consumer* — the
+> `GitHubPullRequestArtifactSync` plugin — is still unwritten; the service seam it
+> needs now exists and is covered by `ArtifactExpansionTests`. The original finding
+> is kept below for history.
+
 - **Location**: `docs/features/artifacts.md`; `docs/anvilboard/srs.md` FR-ART-001, FR-ART-002; `docs/anvilboard/tech-design.md` §16 row M6.7
 - **Issue**: The spec describes an `ArtifactService` responsible for artifact upsert/refresh semantics and lifecycle-hook-driven artifact expansion (e.g., turning a GitHub PR reference into a correlated, refreshable artifact). Only a lower-level `IArtifactStore`-style persistence path was found; no application service implementing upsert/refresh semantics or lifecycle-hook artifact expansion exists.
 - **Evidence**: Direct file search of `src/Anvilboard.Application` and `src/Anvilboard.Infrastructure` finds artifact persistence/DTO types but no `ArtifactService` class implementing the documented refresh/upsert contract; no lifecycle-hook (`IIssueHook`) implementation performs artifact expansion.
 - **Impact**: Artifacts cannot be kept in sync with their source-of-truth (e.g., a linked PR's status), and there is no single documented seam for future artifact-type expansion, contrary to the "sole caller" claim in the spec.
 - **Fix**: Implement `ArtifactService` with upsert/refresh semantics and wire it into the `IIssueHook` pipeline for the artifact-expansion use case described in FR-ART-002; then correct the "sole caller" language once verified (see MIN-006).
+- **Note on scope**: an earlier assessment (in [`docs/plans/backup-and-restore.md`](plans/backup-and-restore.md) §2) framed this finding as a refactor. A file inventory disproved that: `src/Anvilboard.Application/Artifacts/` contained only `ArtifactException.cs`, and `SqliteArtifactStore` was DI-registered nowhere, so the FR-ART-001 capability was absent at runtime rather than merely unconsolidated. Delivered; see the resolution note above.
+- **Status**: **Resolved.** Production code and tests are complete (`ArtifactServiceTests`, `ArtifactRefreshTests`, `ArtifactExpansionTests`, `ArtifactEndpointTests`). The residual gaps — an artifact content **download** endpoint, the Angular artifact panel, and the `GitHubPullRequestArtifactSync` plugin — are separate scope and are not covered by this finding.
 
 ## Major Findings
 
@@ -267,6 +285,7 @@ fixed**.
 - **Evidence**: See CRIT-003 for (1); no audit-event emission found at artifact persistence call sites for (2).
 - **Impact**: Artifacts are invisible to the audit trail and cannot be auto-populated from provider activity as specified.
 - **Fix**: Implement the lifecycle-hook artifact-expansion path (shared work with CRIT-003) and add audit-event emission on artifact mutation.
+- **Status**: **Partially resolved.** (2) is done: `ArtifactService` emits an `ActivityEvent` (`ArtifactAttached`/`ArtifactRefreshed`/`ArtifactRemoved`) and an audit record on every mutation — see the CRIT-003 resolution note. (1) remains open: the `IArtifactService` seam a hook would call now exists and is covered by `ArtifactExpansionTests`, but no `IIssueHook` implementation consumes it yet.
 
 ### MAJ-021: Bootstrap seeds no workflow states, so issue creation fails on a fresh workspace
 - **Location**: `src/Anvilboard.Application/Authorization/WorkspaceAuthorizationService.cs` (`BootstrapFirstAdministratorAsync`); `src/Anvilboard.Application/Issues/IssueService.cs` (`GetInitialWorkflowStateIdAsync`)
@@ -312,12 +331,13 @@ fixed**.
 - **Impact**: Low — undocumented capability is more of a documentation-completeness gap than a functional risk.
 - **Fix**: Add the missing tools to the documented catalog in `docs/features/agent-and-automation-surface.md`.
 
-### MIN-006: `IArtifactStore` "sole caller" claim is ahead of the code (see CRIT-003)
+### MIN-006: `IArtifactStore` "sole caller" claim is ahead of the code (see CRIT-003) — **RESOLVED**
 - **Location**: `docs/features/artifacts.md`
 - **Issue**: Spec asserts a single documented call site owns all artifact persistence. Because no `ArtifactService` exists yet (CRIT-003), multiple call sites may reach `IArtifactStore` directly instead of through one seam.
 - **Evidence**: See CRIT-003 investigation.
 - **Impact**: Low on its own; becomes moot once CRIT-003 is resolved.
 - **Fix**: Verify/consolidate call sites once `ArtifactService` is introduced.
+- **Status**: **Resolved.** `ArtifactService` is now the only `IArtifactStore` consumer in `src/`, so the spec's "sole caller" claim is accurate.
 
 ## Observations & Suggestions
 
@@ -363,11 +383,11 @@ graph TD
         K[Integration platform — pause enforcement, sync health]
         L[Agent surface — auth wiring, idempotency, apiVersion]
         M[Audit & recovery — query flexibility]
-        N[Artifacts — persistence exists]
+        N[Artifacts — service, REST, agent ops done; lifecycle expansion pending]
     end
 
     subgraph "Not started"
-        Q[Artifact service / lifecycle expansion — CRIT-003]
+        Q[Artifact lifecycle expansion plugin — MAJ-020]
         R[Outbound plugin events — MAJ-014]
     end
 
@@ -386,7 +406,7 @@ graph TD
 
 1. ~~**Implement backup/restore (`IBackupService`) and verify NFR-AVL-001**~~ — CRIT-001 and MAJ-019 done; `FR-OPS-001` audit query access (MAJ-018) still open — large
 2. ~~**Build the realtime-updates push layer (SignalR/WebSocket) and outbound plugin event relay**~~ — CRIT-002 done; MAJ-014 (core → plugin dispatch) still open — medium
-3. **Implement `ArtifactService` with upsert/refresh semantics and lifecycle-hook artifact expansion** — fixes CRIT-003, MAJ-020, MIN-006 — medium
+3. ~~**Implement `ArtifactService` with upsert/refresh semantics and lifecycle-hook artifact expansion**~~ — CRIT-003 and MIN-006 done, plus MAJ-020's audit-emission half; MAJ-020's lifecycle-hook artifact-expansion consumer (`GitHubPullRequestArtifactSync`) still open — small
 4. **Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation** — fixes MAJ-001, MAJ-002 — medium
 5. **Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations** — fixes MAJ-003, MAJ-004, MAJ-005 — medium
 6. **Wire agent-surface authorization, idempotency, and an `apiVersion` contract field** — fixes MAJ-015, MAJ-016, MAJ-017 — medium
