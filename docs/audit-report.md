@@ -28,7 +28,8 @@ decision for this task) are: no backup/restore capability exists despite being s
 Critical requirement (FR-OPS-002 / NFR-AVL-001), the entire realtime-updates feature (FR-WRK-014,
 SignalR/WebSocket push) is unimplemented, and there is no dedicated `ArtifactService` application
 layer even though artifacts are otherwise persisted and exposed. *(Of these three, realtime-updates
-has since been implemented — see CRIT-002 below. The other two remain open.)* Workspace authorization,
+and backup/restore have since been implemented — see CRIT-002 and CRIT-001 below. Only CRIT-003
+remains open.)* Workspace authorization,
 workflow-engine administration, agent-surface identity/idempotency wiring, and sync health/backoff
 also have real, evidenced gaps relative to their specs. These are enumerated below as Critical/Major
 findings for a future implementation pass; per this task's instructions they were **flagged, not
@@ -38,7 +39,7 @@ fixed**.
 
 | Severity | Count | Categories |
 |----------|-------|------------|
-| Critical |   3   | audit-and-recovery (backup/restore missing), realtime-updates (entire feature unimplemented — **since resolved**), artifacts (no ArtifactService) |
+| Critical |   3   | audit-and-recovery (backup/restore missing — **since resolved**), realtime-updates (entire feature unimplemented — **since resolved**), artifacts (no ArtifactService) |
 | Major    |  21   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap |
 | Minor    |   6   | README Kanban-column wording, PLUGINS.md staleness, workflow-engine API versioning, manifest validation, extra undocumented agent tools, IArtifactStore sole-caller claim |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
@@ -57,12 +58,42 @@ fixed**.
 
 ## Critical Findings
 
-### CRIT-001: Backup/restore capability (FR-OPS-002, NFR-AVL-001) does not exist
+### CRIT-001: Backup/restore capability (FR-OPS-002, NFR-AVL-001) does not exist — **RESOLVED**
+
+> **Resolved.** Implemented end to end, as described by
+> [`docs/plans/backup-and-restore.md`](./plans/backup-and-restore.md):
+> `IBackupService`/`BackupService` (create, verify, restore) and
+> `IRestoreCoordinator`/`RestoreCoordinator` (admission control and in-flight drain) in
+> `src/Anvilboard.Application/Backup/`; `SqliteBackupArchiver` (snapshot, SHA-256 checksum,
+> `PRAGMA integrity_check`) and `FileSystemBackupArchiveStore` (artifact + `backup-manifest.json`
+> layout) in `src/Anvilboard.Infrastructure/Persistence/Backup/`; REST endpoints under
+> `/api/backups` with `DatabaseOperationMiddleware` gating every `/api` request in
+> `src/Anvilboard.Api/`; and `create-backup` / `list-backups` / `verify-backup` agent operations in
+> `src/Anvilboard.Agent/BoardAgentService.cs` (restore is deliberately **not** exposed to the agent
+> surface — see MAJ-015 and the plan's §9.3).
+>
+> Restore is fail-closed: authorization, exact-slug confirmation, manifest parse, checksum, SQLite
+> integrity, schema-version compatibility, and workspace-subset checks all run and abort before the
+> live database is touched, and a `.pre-restore` safety copy is written after validation and before
+> the swap so a failed swap is itself recoverable.
+>
+> Covered by tests in `src/Anvilboard.Infrastructure.Tests/Persistence/Backup/`,
+> `src/Anvilboard.Application.Tests/Backup/` (including a round-trip test, per-check fail-closed
+> tests, and an `AC-204` secret-scan test with a negative control), and
+> `src/Anvilboard.Api.Tests/Backup/BackupEndpointTests.cs`. The recovery drill is documented in
+> [`DEVELOPMENT.md`](../DEVELOPMENT.md).
+>
+> Fixing this also surfaced and corrected a latent DI defect: `AddDbContextFactory<AnvilboardDbContext>`
+> was registered with the default singleton lifetime while depending on scoped
+> `DbContextOptions`, which fails scope validation. It is now registered as scoped.
+
 - **Location**: `docs/features/audit-and-recovery.md` (Backup & Recovery section); `docs/anvilboard/srs.md` FR-OPS-002, NFR-AVL-001; `docs/anvilboard/tech-design.md` §16 row M7
 - **Issue**: The spec describes an `IBackupService` with `CreateBackupAsync`/`RestoreAsync`, a backup manifest, and an availability/recovery-time objective (NFR-AVL-001). No such service, interface, or manifest type exists anywhere in `src/`.
 - **Evidence**: `SerenaSearchForPattern`/`grep` across `src/` for `IBackupService`, `CreateBackupAsync`, `RestoreAsync`, and "backup manifest" return no matches. No `Anvilboard.*.Tests` project contains backup/restore test cases.
 - **Impact**: A core operational-safety requirement (data recovery) is entirely unimplemented; NFR-AVL-001 cannot currently be met or verified.
 - **Fix**: Implement `IBackupService` (or equivalent) with backup creation, integrity verification, and restore, backed by tests; until then, keep `docs/features/audit-and-recovery.md`'s Status row (already added by this audit) marked Partial/Not Started for this capability.
+- **Plan**: [`docs/plans/backup-and-restore.md`](./plans/backup-and-restore.md) — the evidence-backed technical design and dependency-ordered work breakdown. Delivered; see the resolution note above.
+- **Status**: **Resolved.** Production code, tests, and the recovery drill are complete. The residual gap in `audit-and-recovery.md` is now `FR-OPS-001` (audit *query* access), which is a separate requirement and is not covered by this finding.
 
 ### CRIT-002: Realtime updates (FR-WRK-014) — entire feature unimplemented — **RESOLVED**
 
@@ -216,12 +247,19 @@ fixed**.
 - **Impact**: Administrators/compliance reviewers cannot query the audit trail with the flexibility the spec promises.
 - **Fix**: Add a generic, filterable audit-query method and corresponding REST/CLI surface.
 
-### MAJ-019: NFR-AVL-001 (availability/recovery objective) not met
+### MAJ-019: NFR-AVL-001 (availability/recovery objective) not met — **RESOLVED**
+
+> **Resolved** alongside CRIT-001. Backup and restore exist and are exercised by an automated
+> round-trip test, so the recovery path is now both executable and measurable. The manual recovery
+> drill is documented in [`DEVELOPMENT.md`](../DEVELOPMENT.md) so the objective can be verified
+> against a real deployment rather than only in tests.
+
 - **Location**: `docs/features/audit-and-recovery.md`; `docs/anvilboard/srs.md` NFR-AVL-001
 - **Issue**: Directly follows from CRIT-001 — without backup/restore, the stated recovery-time objective cannot be met or measured.
 - **Evidence**: See CRIT-001.
 - **Impact**: Same as CRIT-001; listed separately because it is a distinct requirement ID in the SRS.
 - **Fix**: Resolved once CRIT-001 is implemented and measured against the stated objective.
+- **Status**: **Resolved.** See the CRIT-001 resolution note for the delivered components and tests.
 
 ### MAJ-020: FR-ART-002 lifecycle-hook artifact-expansion path missing; artifact audit emission missing
 - **Location**: `docs/features/artifacts.md`; `docs/anvilboard/srs.md` FR-ART-002
@@ -314,6 +352,7 @@ graph TD
         E[GitHub / Linear integration sync]
         F[Plugin config & state store]
         P[Realtime updates — CRIT-002 resolved]
+        S[Backup / restore — CRIT-001 resolved]
     end
 
     subgraph "Partial — some implementation, real gaps"
@@ -328,7 +367,6 @@ graph TD
     end
 
     subgraph "Not started"
-        O[Backup / restore — CRIT-001]
         Q[Artifact service / lifecycle expansion — CRIT-003]
         R[Outbound plugin events — MAJ-014]
     end
@@ -346,7 +384,7 @@ graph TD
 
 ## Recommended Priority Actions
 
-1. **Implement backup/restore (`IBackupService`) and verify NFR-AVL-001** — fixes CRIT-001, MAJ-019 — large
+1. ~~**Implement backup/restore (`IBackupService`) and verify NFR-AVL-001**~~ — CRIT-001 and MAJ-019 done; `FR-OPS-001` audit query access (MAJ-018) still open — large
 2. ~~**Build the realtime-updates push layer (SignalR/WebSocket) and outbound plugin event relay**~~ — CRIT-002 done; MAJ-014 (core → plugin dispatch) still open — medium
 3. **Implement `ArtifactService` with upsert/refresh semantics and lifecycle-hook artifact expansion** — fixes CRIT-003, MAJ-020, MIN-006 — medium
 4. **Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation** — fixes MAJ-001, MAJ-002 — medium

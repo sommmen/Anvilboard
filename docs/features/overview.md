@@ -21,7 +21,7 @@ feature needs more granular coverage.
 | 3 | [`issue-board-service.md`](./issue-board-service.md) | P0 | Partial | Workspace Authorization, Workflow Engine | `FR-WRK-001`–`FR-WRK-014`, `NFR-PERF-001`, `NFR-PERF-002`, `NFR-USB-001` |
 | 4 | [`integration-and-plugin-platform.md`](./integration-and-plugin-platform.md) | P0 | Partial | Issue & Board Service, Workspace Authorization, Real-time Updates | `FR-INT-001`–`FR-INT-007`, `NFR-REL-002`, `NFR-SEC-001` |
 | 5 | [`agent-and-automation-surface.md`](./agent-and-automation-surface.md) | P0 | Partial | Workspace Authorization, Workflow Engine, Issue & Board Service, Integration & Plugin Platform | `FR-AUT-001`–`FR-AUT-003`, `NFR-MNT-001` |
-| 6 | [`audit-and-recovery.md`](./audit-and-recovery.md) | P0 | Partial | All other components | `FR-OPS-001`, `FR-OPS-002`, `NFR-AVL-001`, `NFR-REL-001` |
+| 6 | [`audit-and-recovery.md`](./audit-and-recovery.md) ([backup/restore plan](../plans/backup-and-restore.md)) | P0 | Partial — M7 backup/restore implemented (`FR-OPS-002`, `NFR-AVL-001`); `FR-OPS-001` audit **query** access is the residual gap | All other components | `FR-OPS-001`, `FR-OPS-002`, `NFR-AVL-001`, `NFR-REL-001` |
 | 7 | [`realtime-updates.md`](./realtime-updates.md) | P1 | Implemented | Workspace Authorization, Issue & Board Service | `FR-WRK-014`, `FR-INT-006`, `NFR-PERF-002` |
 | 8 | [`artifacts.md`](./artifacts.md) | P1 | Partial | Issue & Board Service, Workspace Authorization | `FR-ART-001`, `FR-ART-002` |
 | 9 | [`issue-linking.md`](./issue-linking.md) | P2 | Partial | Issue & Board Service, Workspace Authorization | `FR-LNK-001` |

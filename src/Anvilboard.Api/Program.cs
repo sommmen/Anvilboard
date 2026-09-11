@@ -1,5 +1,6 @@
 using Anvilboard.Api.Authorization;
 using Anvilboard.Api.Endpoints;
+using Anvilboard.Api.Middleware;
 using Anvilboard.Api.Realtime;
 using Anvilboard.Domain;
 using Anvilboard.Domain.Serialization;
@@ -73,11 +74,18 @@ app.UseStaticFiles();
 // login, webhooks, and the SPA fallback route below).
 app.UseMiddleware<WorkspaceAuthorizationMiddleware>();
 
+// Host-wide database-operation admission gate (plan §8.1/§8.4): every /api request leases itself
+// with IRestoreCoordinator so a restore in flight can drain active work before its safety copy and
+// file swap. Placed immediately after authentication/authorization so an unauthenticated or
+// forbidden request is rejected on those grounds first, without consuming a lease.
+app.UseMiddleware<DatabaseOperationMiddleware>();
+
 app.MapAuthEndpoints();
 app.MapIssueEndpoints();
 app.MapTeamEndpoints();
 app.MapDashboardEndpoints();
 app.MapWebhookEndpoints();
+app.MapBackupEndpoints();
 
 // Authorized by the same middleware as every REST route, so an unauthenticated client is refused
 // during the negotiate/connect request itself and never observes an established connection. The hub
