@@ -138,6 +138,24 @@ Each connection uses bounded outbound work. A slow client may receive a coalesce
 - Publication uses the post-commit path only. `Pre*` lifecycle hooks never publish a change representing an uncommitted mutation.
 - SignalR is the initial web transport, but `IRealtimeUpdatePublisher` must not depend on a web-controller type so a future transport can consume the same change envelopes.
 
+### Known limitation: connection lifetime vs. mid-session revocation
+
+`WorkspaceAuthorizationMiddleware` authorizes only the SignalR negotiate/connect handshake (see
+"Data Flow" above); an already-established hub connection is not re-checked afterward. If a
+member's workspace access is revoked (removed from the workspace, permission downgraded, session
+invalidated) while their browser holds an open connection, that connection keeps receiving
+envelopes for groups it joined before the revocation until the client disconnects on its own — a
+tab close, an explicit logout that tears down the connection client-side, or the process restarting
+the underlying transport session. There is no server-initiated "kick this connection out of its
+groups" path today.
+
+This is accepted as a known gap rather than an in-scope fix: revoking a live SignalR connection
+requires tracking membership from actor/session to `HubConnectionContext` and forcibly removing it
+from groups (or aborting it) the moment the authorization state changes elsewhere in the system —
+a cross-cutting change to session/permission management, not a `realtime-updates`-local one. Until
+that lands, deployments with a strict revocation requirement should keep the exposure window small
+(e.g., short-lived sessions) rather than relying on this component to enforce it.
+
 ### Configuration
 
 Bound from the `Realtime` section (`RealtimeOptions`):

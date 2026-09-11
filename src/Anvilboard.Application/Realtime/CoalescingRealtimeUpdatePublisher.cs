@@ -53,16 +53,17 @@ public sealed class RealtimeDispatchSignal : IDisposable
 
     public void Signal()
     {
-        if (available.CurrentCount == 0)
+        // Always attempt the release rather than checking CurrentCount first: the check and the
+        // release are not atomic, so a check-then-act pattern can race two concurrent signals and
+        // lose a wake-up. Attempting unconditionally and swallowing the (harmless, semaphore is
+        // already at its max count of 1) overflow exception is race-free.
+        try
         {
-            try
-            {
-                available.Release();
-            }
-            catch (SemaphoreFullException)
-            {
-                // Another publisher released concurrently; the dispatcher is already awake.
-            }
+            available.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // Another publisher already released; the dispatcher is already awake or about to be.
         }
     }
 
