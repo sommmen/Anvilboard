@@ -27,7 +27,8 @@ The most significant *implementation* gaps this audit surfaced (not fixed, per t
 decision for this task) are: no backup/restore capability exists despite being specified as a
 Critical requirement (FR-OPS-002 / NFR-AVL-001), the entire realtime-updates feature (FR-WRK-014,
 SignalR/WebSocket push) is unimplemented, and there is no dedicated `ArtifactService` application
-layer even though artifacts are otherwise persisted and exposed. Workspace authorization,
+layer even though artifacts are otherwise persisted and exposed. *(Of these three, realtime-updates
+has since been implemented — see CRIT-002 below. The other two remain open.)* Workspace authorization,
 workflow-engine administration, agent-surface identity/idempotency wiring, and sync health/backoff
 also have real, evidenced gaps relative to their specs. These are enumerated below as Critical/Major
 findings for a future implementation pass; per this task's instructions they were **flagged, not
@@ -37,8 +38,8 @@ fixed**.
 
 | Severity | Count | Categories |
 |----------|-------|------------|
-| Critical |   3   | audit-and-recovery (backup/restore missing), realtime-updates (entire feature unimplemented), artifacts (no ArtifactService) |
-| Major    |  20   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts |
+| Critical |   3   | audit-and-recovery (backup/restore missing), realtime-updates (entire feature unimplemented — **since resolved**), artifacts (no ArtifactService) |
+| Major    |  21   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap |
 | Minor    |   6   | README Kanban-column wording, PLUGINS.md staleness, workflow-engine API versioning, manifest validation, extra undocumented agent tools, IArtifactStore sole-caller claim |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
 
@@ -63,7 +64,16 @@ fixed**.
 - **Impact**: A core operational-safety requirement (data recovery) is entirely unimplemented; NFR-AVL-001 cannot currently be met or verified.
 - **Fix**: Implement `IBackupService` (or equivalent) with backup creation, integrity verification, and restore, backed by tests; until then, keep `docs/features/audit-and-recovery.md`'s Status row (already added by this audit) marked Partial/Not Started for this capability.
 
-### CRIT-002: Realtime updates (FR-WRK-014) — entire feature unimplemented
+### CRIT-002: Realtime updates (FR-WRK-014) — entire feature unimplemented — **RESOLVED**
+
+> **Resolved.** Implemented end to end, as described by
+> [`docs/features/realtime-updates.md`](./features/realtime-updates.md):
+> `IRealtimeUpdatePublisher` + `RealtimeChange` envelopes and a bounded coalescing
+> dispatcher in `src/Anvilboard.Application/Realtime/`, `WorkspaceRealtimeHub` +
+> `SignalRRealtimeTransport` at `/hubs/workspace` in `src/Anvilboard.Api/Realtime/`,
+> `RealtimeBoardSyncService` and in-place board patching in `src/anvilboard-web/`, and an
+> approval-gated `PluginEventRelay` for `FR-INT-006`. The original finding is kept below for history.
+
 - **Location**: `docs/features/realtime-updates.md`; `docs/anvilboard/srs.md` FR-WRK-014, FR-INT-006 (plugin-event relay), NFR-PERF-002; `docs/anvilboard/tech-design.md` §16 row M6.5
 - **Issue**: The spec describes live board/issue updates pushed to connected clients (SignalR or equivalent) plus a plugin-event relay. No SignalR hub, WebSocket endpoint, or equivalent push mechanism exists in `src/Anvilboard.Api` or elsewhere.
 - **Evidence**: No `Hub`, `SignalR`, or WebSocket-related types found via symbolic/text search across `src/`. The Angular frontend (`src/anvilboard-web`) has no realtime client (no `@microsoft/signalr` dependency, no socket/event-stream service).
@@ -176,6 +186,7 @@ fixed**.
 - **Evidence**: `IIssueHook` is a single post-mutation fire-and-forget hook, but no plugin-facing event-relay/pub-sub layer was found; this overlaps with CRIT-002's realtime relay gap.
 - **Impact**: Plugins cannot react to workspace activity in near-real-time as specified.
 - **Fix**: Implement an outbound plugin event-dispatch mechanism (may share infrastructure with the realtime-updates work in CRIT-002).
+- **Status**: Still open, but narrowed. CRIT-002's `IPluginEventPublisher`/`PluginEventRelay` carries events *from* a plugin *to* clients; this finding is the opposite direction — the core notifying plugins — and no such dispatch exists yet.
 
 ### MAJ-015: Agent/automation operations lack workspace-scoped auth and actor identity
 - **Location**: `docs/features/agent-and-automation-surface.md`
@@ -218,6 +229,13 @@ fixed**.
 - **Evidence**: See CRIT-003 for (1); no audit-event emission found at artifact persistence call sites for (2).
 - **Impact**: Artifacts are invisible to the audit trail and cannot be auto-populated from provider activity as specified.
 - **Fix**: Implement the lifecycle-hook artifact-expansion path (shared work with CRIT-003) and add audit-event emission on artifact mutation.
+
+### MAJ-021: Bootstrap seeds no workflow states, so issue creation fails on a fresh workspace
+- **Location**: `src/Anvilboard.Application/Authorization/WorkspaceAuthorizationService.cs` (`BootstrapFirstAdministratorAsync`); `src/Anvilboard.Application/Issues/IssueService.cs` (`GetInitialWorkflowStateIdAsync`)
+- **Issue**: Bootstrap creates a workspace and an administrator member but no workflow states. `IssueService.GetInitialWorkflowStateIdAsync` throws when a workspace has none, so `POST /api/issues` returns 500 on any freshly bootstrapped workspace until states are seeded by some other path.
+- **Evidence**: Found while implementing realtime updates — the API tests could not create an issue against a bootstrapped host and had to add `ApiFactory.SeedWorkflowStatesAsync()` as a workaround.
+- **Impact**: First-run issue creation fails for a self-hosted install that follows the documented bootstrap flow, and the failure surfaces as an opaque 500 rather than an actionable error.
+- **Fix**: Seed the default workflow states during bootstrap, or return a domain error that names the missing configuration. Unrelated to realtime; left unchanged there to keep that change set scoped.
 
 ## Minor Findings
 
@@ -295,6 +313,7 @@ graph TD
         D[Issue linking — core create/delete]
         E[GitHub / Linear integration sync]
         F[Plugin config & state store]
+        P[Realtime updates — CRIT-002 resolved]
     end
 
     subgraph "Partial — some implementation, real gaps"
@@ -310,7 +329,6 @@ graph TD
 
     subgraph "Not started"
         O[Backup / restore — CRIT-001]
-        P[Realtime updates — CRIT-002]
         Q[Artifact service / lifecycle expansion — CRIT-003]
         R[Outbound plugin events — MAJ-014]
     end
@@ -329,7 +347,7 @@ graph TD
 ## Recommended Priority Actions
 
 1. **Implement backup/restore (`IBackupService`) and verify NFR-AVL-001** — fixes CRIT-001, MAJ-019 — large
-2. **Build the realtime-updates push layer (SignalR/WebSocket) and outbound plugin event relay** — fixes CRIT-002, MAJ-014 — large
+2. ~~**Build the realtime-updates push layer (SignalR/WebSocket) and outbound plugin event relay**~~ — CRIT-002 done; MAJ-014 (core → plugin dispatch) still open — medium
 3. **Implement `ArtifactService` with upsert/refresh semantics and lifecycle-hook artifact expansion** — fixes CRIT-003, MAJ-020, MIN-006 — medium
 4. **Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation** — fixes MAJ-001, MAJ-002 — medium
 5. **Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations** — fixes MAJ-003, MAJ-004, MAJ-005 — medium

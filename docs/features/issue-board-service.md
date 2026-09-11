@@ -22,11 +22,11 @@ The Issue & Board Service is the single read/write path for issue data in Anvilb
 > `realtime-updates` as a dependency of this service. `docs/features/overview.md`'s "Execution
 > order and rationale" section builds Issue & Board Service *before* Real-time Updates and states
 > the service "remains able to make mutations if a real-time transport is degraded" — i.e. IBS only
-> depends on the *abstraction* it publishes events through (a future `IRealtimeUpdatePublisher`),
-> not on a working realtime transport/hub existing yet. The dependency is the other way around:
-> Real-time Updates consumes events IBS publishes, so it is listed under **Blocks** above instead.
-> This slice implements the workflow-transition delegation gap without adding a real-time publisher;
-> that remains scoped to the `realtime-updates` feature.
+> depends on the *abstraction* it publishes events through (`IRealtimeUpdatePublisher`), not on a
+> working realtime transport/hub. The dependency is the other way around: Real-time Updates consumes
+> events IBS publishes, so it is listed under **Blocks** above instead. `IssueService` now takes
+> `IRealtimeUpdatePublisher` and publishes post-commit; a host with no transport resolves the no-op
+> default, so mutations are unaffected either way.
 
 ## Scope
 
@@ -141,8 +141,8 @@ Current implementation (`Anvilboard.Application/Issues/IssueService.cs`) validat
 > `IWorkflowService.ValidateTransitionAsync` and updates `WorkflowStateId`/`Version` on success
 > (closing the previous gap where it mutated the legacy `IssueStatus` enum directly). It still
 > accepts the legacy `IssueStatus` enum rather than a `WorkflowStateId`/`expectedVersion` pair and
-> does not yet implement `PrePhaseChange`/`PostPhaseChange` hooks or real-time publish below — those
-> remain planned as described in this section.
+> does not yet implement the `PrePhaseChange`/`PostPhaseChange` hooks below — those remain planned
+> as described in this section. Post-commit real-time publication *is* implemented (see step 8).
 
 Replaces the current enum-based `ChangeStatusAsync(IssueId, IssueStatus, ...)` with a `WorkflowStateId`-based transition per tech-design §7.5/§8.3:
 

@@ -6,5 +6,10 @@
   "/webhooks": {
     "target": "http://localhost:5089",
     "secure": false
+  },
+  "/hubs": {
+    "target": "http://localhost:5089",
+    "secure": false,
+    "ws": true
   }
 }

@@ -1,7 +1,11 @@
 using Anvilboard.Api.Authorization;
 using Anvilboard.Api.Endpoints;
+using Anvilboard.Api.Realtime;
+using Anvilboard.Domain;
 using Anvilboard.Domain.Serialization;
 using Anvilboard.Application;
+using Anvilboard.Application.Automation;
+using Anvilboard.Application.Realtime;
 using Anvilboard.Infrastructure;
 using Anvilboard.Infrastructure.Persistence;
 using Anvilboard.Integrations.GitHub;
@@ -23,6 +27,18 @@ builder.Services.AddAnvilboardApplication();
 builder.Services.AddAnvilboardSyncCoordinator();
 builder.Services.AddGitHubIntegration(builder.Configuration);
 builder.Services.AddLinearIntegration(builder.Configuration);
+
+// Realtime: the bounded coalescing pipeline plus the SignalR transport that actually delivers.
+// Registered before AddAnvilboardRealtime's TryAdd so the no-op transport is never selected here.
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IRealtimeTransport, SignalRRealtimeTransport>();
+builder.Services.AddAnvilboardRealtime(builder.Configuration);
+
+// REST resolves the correlation id from the inbound header so a mutation, its audit record, its log
+// lines, and the realtime envelope it produces all carry the same value.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped(provider => CorrelationContext.FromHeaderOrNew(
+    provider.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request.Headers["X-Correlation-Id"]));
 
 var app = builder.Build();
 
@@ -62,6 +78,12 @@ app.MapIssueEndpoints();
 app.MapTeamEndpoints();
 app.MapDashboardEndpoints();
 app.MapWebhookEndpoints();
+
+// Authorized by the same middleware as every REST route, so an unauthenticated client is refused
+// during the negotiate/connect request itself and never observes an established connection. The hub
+// re-resolves the actor in OnConnectedAsync to pick its workspace group (§11.2 stays the single
+// enforcement point; the hub only reads the decision this middleware already made).
+app.MapHub<WorkspaceRealtimeHub>(WorkspaceRealtimeHub.HubPath).RequirePermission(Permission.ReadBoard);
 
 // Falls back to index.html for client-side routes so the whole product ships and runs as one
 // process and one executable with no separate web server or reverse proxy in front of it.

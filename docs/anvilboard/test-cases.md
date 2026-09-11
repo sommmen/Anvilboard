@@ -36,16 +36,17 @@
 | 7 | audit redaction | operations service | `Anvilboard.Application.Tests/Audit/AuditServiceTests.cs` | Yes | Covered — no backup/restore test file exists because no backup/restore service exists (Critical finding, see `docs/audit-report.md`) |
 | 8 | integration lifecycle, DP-API secret store | application / infrastructure services | `Anvilboard.Application.Tests/Integrations/IntegrationServiceTests.cs`; `Anvilboard.Infrastructure.Tests/Security/DataProtectionSecretStoreTests.cs` | Yes | Covered |
 | 9 | end-to-end API integration | integration boundary | `tests/Anvilboard.IntegrationTests` | No | None — project scaffold exists but contains no test files |
+| 10 | real-time publisher, coalescer, workspace hub, client sync | application service / transport boundary | `Anvilboard.Application.Tests/Realtime/RealtimeChangeBufferTests.cs`, `IssueServiceRealtimePublicationTests.cs`, `PluginEventRelayTests.cs`; `Anvilboard.Api.Tests/Realtime/WorkspaceRealtimeHubTests.cs`; `anvilboard-web/src/app/core/realtime-board-sync.service.spec.ts`; `anvilboard-web/src/app/board/board-page/board-page.spec.ts` | Yes | Covered — see [realtime-updates.md](../features/realtime-updates.md) |
 
 ### 1.3 Coverage Summary
 
 | Metric | Value |
 |---|---:|
 | Test projects | 6 `*.Tests` unit/integration projects with tests + 1 empty `Anvilboard.IntegrationTests` scaffold (no `.cs` test files yet) |
-| Testable boundaries with an existing test file | 8 of 9 listed above have at least one test file |
-| Total automated tests (last `dotnet test` run) | 114 (`5 + 5 + 7 + 94 + 2 + 1` across the 6 populated projects), all passing |
+| Testable boundaries with an existing test file | 9 of 10 listed above have at least one test file |
+| Total automated tests (last `dotnet test` run) | 150 (`5 + 9 + 7 + 116 + 12 + 1` across the 6 populated projects), all passing, plus 13 Angular tests (`ng test`) |
 | Test result | All passing, 0 failures |
-| Known coverage gaps | No `DashboardService`, `IssueService`, or `SyncCoordinator` test files; no backup/restore tests (service doesn't exist); no Angular component tests; no dedicated CLI/MCP contract-equivalence test project; `Anvilboard.IntegrationTests` project exists but is empty |
+| Known coverage gaps | No `DashboardService` or `SyncCoordinator` test files; no backup/restore tests (service doesn't exist); no dedicated CLI/MCP contract-equivalence test project; `Anvilboard.IntegrationTests` project exists but is empty |
 
 ### 1.4 Interaction Map
 
@@ -171,6 +172,20 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 | TC-PERF-002 | Recovery | Supported single-host recovery completes within the documented recovery objective | valid backup | Restored instance becomes operational within `NFR-AVL-001` target with integrity verification retained. | P1 | isolated host fixture | Planned |
 | TC-PERF-003 | Pilot | Representative pilot cohort validates performance and adoption gates | 5–10 workspaces, 20–50 users, 1,000+ issues | Board and issue-detail latency targets pass and baseline comparison shows improvement in at least two of the three target outcomes. | P1 | pilot-like dataset | Planned |
 
+### 3.7 Real-time updates
+
+Derived from [realtime-updates.md](../features/realtime-updates.md) `AC-RT-001`–`AC-RT-006`; that
+spec's File Structure and Test Module sections list the delivered source and test paths.
+
+| TC ID | Module | Title | Dimensions | Expected result | Priority | Infra | Automation |
+|---|---|---|---|---|---:|---|---|
+| TC-RT-001 | Realtime publication | Committed mutation publishes exactly one workspace-scoped versioned change | commit vs. rollback | A committed issue mutation yields one `RealtimeIssueChange` carrying workspace, issue identity, version, and correlation id; a mutation that throws before commit yields none. | P1 | recording fake publisher + SQLite | Automated (`IssueServiceRealtimePublicationTests.CreateAsync_PublishesCreatedIssueChangeScopedToTheOwningWorkspace`, `ChangeStatusAsync_DeniedTransition_PublishesNothing`, `CreateAsync_PropagatesTheAmbientCorrelationId`) |
+| TC-RT-002 | Hub authorization | Workspace isolation holds at connection and delivery | foreign workspace, unauthenticated | An unauthenticated connection is rejected with `WORKSPACE_ACCESS_DENIED`; a workspace-A client receives no workspace-B event and has no client-callable method to join an arbitrary group. | P1 | `WebApplicationFactory` + hub client | Automated (`WorkspaceRealtimeHubTests.Connect_WithoutCredential_IsRejected`, `Connect_WithInvalidCredential_IsRejected`, `CommittedMutation_IsNotDeliveredToADifferentWorkspacesClient`) |
+| TC-RT-003 | Mutation isolation | Slow or disconnected client neither delays the mutation nor grows unbounded work | deliberately slow client | Mutation-response latency is unchanged versus a no-client baseline; queued work stays bounded and drop/coalesce counters increment instead. | P1 | `WebApplicationFactory` + throttled hub client | Automated (`WorkspaceRealtimeHubTests.SlowClient_DoesNotDelayTheMutationResponse`; `RealtimeChangeBufferTests.Offer_BeyondCapacity_DropsNewKeysButStillAcceptsPendingOnes`; `IssueServiceRealtimePublicationTests.CreateAsync_WhenPublisherThrows_StillReturnsTheCommittedIssue`) |
+| TC-RT-004 | Coalescing | Burst of same-issue updates is coalesced without a full board redraw | burst load | N rapid changes to one issue deliver a bounded number of notifications carrying the highest version; the client patches the affected entry in place rather than re-rendering the whole list. | P1 | coalescer unit fixture + Angular component test | Automated (`RealtimeChangeBufferTests.Offer_BurstForSameIssue_CoalescesToLatestVersion`, `Offer_OutOfOrderVersions_KeepsHighestVersion`; `board-page.spec.ts` "patches the changed issue in place instead of re-listing the board") |
+| TC-RT-005 | Reconnect recovery | Reconnecting client converges by documented re-fetch, not server replay | connection drop | Reconnect triggers exactly one board re-fetch; the server performs no event replay and retains no per-client backlog. | P1 | Angular component test + hub client | Automated (`board-page.spec.ts` "re-fetches exactly once on reconnect, since the server never replays"; `realtime-board-sync.service.spec.ts` "signals a resync on reconnect rather than replaying the missed changes") |
+| TC-RT-006 | Plugin event relay | Only an operator-approved plugin event type reaches clients | approved vs. unapproved event type | An approved event type is relayed as a `RealtimePluginEventChange` carrying workspace, type, and optional issue identity; an unapproved type is dropped silently and no lifecycle hook runs; a relay failure never surfaces to the publishing plugin. | P1 | relay unit fixture + webhook receiver fixture + `WebApplicationFactory` | Automated (`PluginEventRelayTests.Publish_ApprovedEventType_PublishesPluginEventChange`, `Publish_UnapprovedEventType_DropsEvent`, `Publish_PublisherThrows_SurfacesNothingToThePlugin`; `GitHubWebhookReceiverTests.HandleAsync_MergedPullRequest_ReportsMergedEventType`; `WorkspaceRealtimeHubTests.ApprovedPluginEvent_FromAWebhook_ReachesTheConnectedWorkspaceClient`, `UnapprovedPluginEvent_FromAWebhook_ReachesNoClient`) |
+
 ## 4. Test Cases — Combination
 
 | TC ID | Units involved | Title | Expected result | Priority | Infra | Automation |
@@ -194,15 +209,18 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 | FR-WRK-002 | TC-ISSUE-001–005, TC-COMBO-001 | Covered |
 | FR-WRK-003 | TC-ISSUE-005, TC-BOARD-001, TC-COMBO-001 | Covered |
 | FR-WRK-004 | TC-DASH-001, TC-PERF-001 | Covered |
+| FR-WRK-014 | TC-RT-001–005 | Covered |
 | FR-INT-001 | TC-SYNC-003–005, TC-WEBHOOK-001 | Covered |
 | FR-INT-002 | TC-SYNC-001–004, TC-WEBHOOK-001, TC-COMBO-002 | Covered |
 | FR-INT-003 | TC-PLUGIN-001–002, TC-COMBO-005 | Covered |
+| FR-INT-006 | TC-RT-006 | Covered |
 | FR-AUT-001 | TC-AUTO-004–006, TC-COMBO-003 | Covered |
 | FR-AUT-002 | TC-AUTO-001–003, TC-COMBO-003 | Covered |
 | FR-AUT-003 | TC-AUTH-002–003, TC-AUTO-005–007 | Covered |
 | FR-OPS-001 | TC-AUDIT-001–003, TC-COMBO-001–005 | Covered |
 | FR-OPS-002 | TC-BACKUP-001–003, TC-PERF-002, TC-COMBO-004 | Covered |
 | NFR-PERF-001 | TC-PERF-001, TC-AUTO-007 | Covered |
+| NFR-PERF-002 | TC-RT-001, TC-RT-003–004 | Covered |
 | NFR-SEC-001 | TC-AUTH-003, TC-WEBHOOK-001, TC-AUDIT-002 | Covered |
 | NFR-SEC-002 | TC-AUTH-004–005, TC-AUDIT-003, TC-BACKUP-003 | Covered |
 | NFR-REL-001 | TC-ISSUE-003–004, TC-AUTO-001–003, TC-BACKUP-002 | Covered |
@@ -234,12 +252,14 @@ AC identifiers are intentionally qualified with their source document because se
 | [integration-and-plugin-platform.md](../features/integration-and-plugin-platform.md) | AC-009–010, AC-IPP-101–105 | TC-SYNC-001–005, TC-WEBHOOK-001, TC-PLUGIN-001–002, TC-COMBO-002, TC-COMBO-005 | Covered |
 | [agent-and-automation-surface.md](../features/agent-and-automation-surface.md) | AC-007–008, AC-101–105 | TC-AUTO-001–007, TC-COMBO-003 | Covered |
 | [audit-and-recovery.md](../features/audit-and-recovery.md) | AC-011–012, AC-201–204 | TC-AUDIT-001–003, TC-BACKUP-001–003, TC-COMBO-004 | Covered |
+| [realtime-updates.md](../features/realtime-updates.md) | AC-RT-001–005 | TC-RT-001–005 | Covered |
+| [realtime-updates.md](../features/realtime-updates.md) | AC-RT-006 | TC-RT-006 | Covered |
 
 ### 5.4 Error-catalog coverage
 
 | Catalog code | Representative test cases |
 |---|---|
-| `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED` | TC-AUTH-002–005, TC-BACKUP-003 |
+| `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED` | TC-AUTH-002–005, TC-BACKUP-003, TC-RT-002 |
 | `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND` | TC-ISSUE-002, TC-BOARD-002; add explicit missing-reference variant when the endpoint contracts are implemented |
 | `INVALID_WORKFLOW_TRANSITION`, `RESOURCE_ALREADY_EXISTS`, `CONCURRENCY_CONFLICT` | TC-WF-002–003, TC-ISSUE-003–004 |
 | `IDEMPOTENCY_KEY_REUSED`, `RATE_LIMITED` | TC-AUTO-003, TC-AUTO-007 |
@@ -253,6 +273,7 @@ AC identifiers are intentionally qualified with their source document because se
 | `Anvilboard.IntegrationTests` project is empty | The project scaffold and `WebApplicationFactory`-style dependencies exist, but no `.cs` test files were added. | Add the planned end-to-end integration test cases to this project. |
 | No `DashboardService`/`IssueService`/`SyncCoordinator` test files | These services exist in `Anvilboard.Application`/`Anvilboard.Infrastructure` but have no dedicated unit test file yet. | Add the planned unit test cases for these services. |
 | No Angular component or CLI/MCP contract-equivalence tests | The frontend and automation-adapter parity claims in this document are not backed by an existing test suite. | Add Angular component tests and a CLI/MCP contract-equivalence test project. |
+| Plugin-event relay coverage (`FR-INT-006`, `AC-RT-006`) | Closed — `PluginEventRelayTests` covers approval filtering and mapping, `GitHubWebhookReceiverTests` covers event reporting, and `WorkspaceRealtimeHubTests` drives a webhook delivery through to a connected hub client in both the approved and unapproved cases. | None. |
 | Deployability coverage (`NFR-PRT-001`) | The technical design defines supported deployment but does not yet provide executable deployment/upgrade detail. | Add deployment acceptance criteria and an environment smoke/upgrade test specification before packaging work. |
 | Explicit not-found contract exercise | The catalog defines `REFERENCED_ENTITY_NOT_FOUND`, but the feature test modules do not name a concrete endpoint case. | Add endpoint-level missing workflow state/member/reference tests when routes are finalized. |
 | UI accessibility and visual workflow coverage | The target Angular interface is described upstream but component-level behavior is not sufficiently detailed in feature specs. | Add UI component/e2e cases after the frontend interaction design is decomposed. |
@@ -261,11 +282,11 @@ AC identifiers are intentionally qualified with their source document because se
 
 | Metric | Value |
 |---|---:|
-| Total planned test cases | 52 |
+| Total planned test cases | 57 |
 | P0 critical cases | 41 |
-| P1 important cases | 11 |
-| Unit/boundary cases | 47 |
+| P1 important cases | 16 |
+| Unit/boundary cases | 52 |
 | Combination cases | 5 |
-| Security-focused cases | 12 |
+| Security-focused cases | 13 |
 | Persistence/recovery integrity cases | 11 |
-| Open traceability gaps | 3 |
+| Open traceability gaps | 4 |

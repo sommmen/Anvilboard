@@ -1,4 +1,5 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { BoardApiService } from '../../core/board-api.service';
 import {
   ISSUE_STATUSES,
@@ -6,8 +7,11 @@ import {
   Issue,
   IssuePriority,
   IssueStatus,
+  REALTIME_ISSUE_CHANGED,
+  RealtimeChangeEnvelope,
   Team,
 } from '../../core/models';
+import { RealtimeBoardSyncService } from '../../core/realtime-board-sync.service';
 import { IssueCard } from '../issue-card/issue-card';
 import { IssueDetail } from '../issue-detail/issue-detail';
 
@@ -19,6 +23,8 @@ import { IssueDetail } from '../issue-detail/issue-detail';
 })
 export class BoardPage {
   private readonly api = inject(BoardApiService);
+  private readonly realtime = inject(RealtimeBoardSyncService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly statuses = ISSUE_STATUSES;
   readonly statusLabels = ISSUE_STATUS_LABEL;
@@ -41,10 +47,72 @@ export class BoardPage {
   constructor() {
     this.refresh();
     this.api.listTeams().subscribe((teams) => this.teams.set(teams));
+
+    this.realtime.changes
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((envelope) => this.applyChange(envelope));
+
+    // A reconnect means changes were missed while the connection was down; the server never
+    // replays them, so one full re-fetch is the documented recovery path.
+    this.realtime.resyncRequired
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.refresh());
+
+    void this.realtime.start();
   }
 
   refresh(): void {
     this.api.listIssues().subscribe((issues) => this.issues.set(issues));
+  }
+
+  /**
+   * Converges the board on a single change without redrawing it. Only the one affected issue is
+   * re-fetched and swapped in place, so selection, scroll position, and every other column's DOM
+   * survive an update (AC-RT-004). Anything this client cannot interpret — an unknown event type, a
+   * change to an issue it has never seen, or a version gap — degrades to one full re-fetch rather
+   * than to a stale or partially applied board.
+   */
+  private applyChange(envelope: RealtimeChangeEnvelope): void {
+    if (envelope.eventType !== REALTIME_ISSUE_CHANGED || !envelope.issueId) {
+      this.refresh();
+      return;
+    }
+
+    const issueId = envelope.issueId;
+    const known = this.issues().find((issue) => issue.id === issueId);
+    if (!known) {
+      this.refresh();
+      return;
+    }
+
+    // The envelope carries no issue body, only the fact that one changed — re-fetching the single
+    // issue is what keeps the wire payload free of data a client may not be allowed to see.
+    this.api.getIssue(issueId).subscribe({
+      next: (issue) => this.replaceIssue(issue),
+      error: () => this.refresh(),
+    });
+  }
+
+  private replaceIssue(issue: Issue): void {
+    this.issues.update((issues) => {
+      const index = issues.findIndex((candidate) => candidate.id === issue.id);
+      if (index < 0) {
+        return issues;
+      }
+
+      // A stale response from an overtaken re-fetch must never undo a newer version already applied.
+      if (issues[index].version > issue.version) {
+        return issues;
+      }
+
+      const next = [...issues];
+      next[index] = issue;
+      return next;
+    });
+
+    if (this.selectedIssue()?.id === issue.id) {
+      this.selectedIssue.set(issue);
+    }
   }
 
   openIssue(issue: Issue): void {

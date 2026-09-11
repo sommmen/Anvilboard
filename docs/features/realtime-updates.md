@@ -8,7 +8,7 @@
 |-------|-------|
 | Component | realtime-updates |
 | Priority | P1 |
-| Status | **Not Started** — no SignalR hub, publisher, or transport code exists anywhere in `src/`. This spec describes a design target, not current implementation. See `docs/audit-report.md` for details. |
+| Status | **Implemented** — transport-neutral publisher, coalescing dispatcher, SignalR hub, Angular client, and the approved-plugin-event relay are all in `src/`. |
 | SRS Refs | FR-WRK-014, FR-INT-006, NFR-PERF-002 |
 | Tech Design Ref | §8.1 Component Overview; §9 API Design; §12 Performance Design |
 | Depends On | workspace-authorization, issue-board-service |
@@ -83,7 +83,7 @@ public sealed record RealtimeDashboardChange(
     : RealtimeChange(WorkspaceId, "dashboard.changed", CorrelationId, OccurredAt);
 ```
 
-The SignalR hub exposes no client-supplied workspace identifier for authorization. On connection, `WorkspaceRealtimeHub` resolves the authenticated actor's workspace memberships through Workspace Authorization and adds the connection to server-derived `workspace:{workspaceId}` groups. A client receives envelopes from those groups only.
+The SignalR hub exposes no client-supplied workspace identifier for authorization. Authorization happens one step earlier than this spec originally implied: the hub is mapped with `.RequirePermission(Permission.ReadBoard)`, so the existing `WorkspaceAuthorizationMiddleware` refuses an unauthenticated or unauthorized negotiate/connect request before SignalR ever runs hub code. This keeps the middleware the single enforcement point and is also the only placement an unauthorized client can actually observe — rejecting inside `OnConnectedAsync` (via `Context.Abort()` or a `HubException`) happens *after* the handshake completed, so the client's `start()` still resolves successfully. `WorkspaceRealtimeHub.OnConnectedAsync` therefore only reads the already-authorized `ActorContext` and adds the connection to the server-derived `workspace:{workspaceId}` group. A client receives envelopes from that group only.
 
 `IPluginEventPublisher` may translate an approved, UI-eligible typed plugin event to a `RealtimeChange`; this is separate from `ILifecycleHook<TEvent>` dispatch and has independent fault isolation.
 
@@ -136,6 +136,16 @@ Each connection uses bounded outbound work. A slow client may receive a coalesce
 - Publication uses the post-commit path only. `Pre*` lifecycle hooks never publish a change representing an uncommitted mutation.
 - SignalR is the initial web transport, but `IRealtimeUpdatePublisher` must not depend on a web-controller type so a future transport can consume the same change envelopes.
 
+### Configuration
+
+Bound from the `Realtime` section (`RealtimeOptions`):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Realtime:DebounceWindow` | `00:00:00.100` | How long the dispatcher waits after the first buffered change before draining, so a burst collapses into one send. |
+| `Realtime:QueueCapacity` | `1024` | Maximum number of *distinct* pending coalescing keys. A change whose key is already pending always fits; only a genuinely new key can be dropped. |
+| `Realtime:RelayedPluginEventTypes` | *(empty)* | Plugin event types approved for relay, e.g. `github.pull_request.merged`. Empty means no plugin event reaches a browser, so adding an event type to a plugin is never sufficient on its own. |
+
 ## Acceptance Criteria
 
 - **AC-RT-001:** A committed issue mutation produces a workspace-scoped, versioned `RealtimeIssueChange`; a rolled-back mutation produces none.
@@ -157,26 +167,46 @@ Each connection uses bounded outbound work. A slow client may receive a coalesce
 
 ## File Structure
 
+> The SignalR types live in `Anvilboard.Api`, not `Anvilboard.Infrastructure` as originally
+> sketched: `Anvilboard.Application` references `Anvilboard.Infrastructure` (not the reverse), and
+> `Anvilboard.Infrastructure` builds on `Microsoft.NET.Sdk`, so it can neither see the
+> transport-neutral seams nor pull in ASP.NET Core's SignalR. `Anvilboard.Api` is the only project
+> that already depends on both.
+
 ```text
 src/Anvilboard.Application/Realtime/
-  IRealtimeUpdatePublisher.cs
-  RealtimeChange.cs
-  RealtimeChangeCoalescer.cs
-src/Anvilboard.Infrastructure/Realtime/
-  SignalRRealtimeUpdatePublisher.cs
-  WorkspaceRealtimeHub.cs
-src/Anvilboard.Web/Features/Board/
-  realtimeBoardSync.ts
+  RealtimeChange.cs                      # envelopes: issue, activity, dashboard, plugin event
+  IRealtimeUpdatePublisher.cs            # post-commit handoff seam (+ null default)
+  IRealtimeTransport.cs                  # dispatcher -> clients seam (+ null default)
+  RealtimeOptions.cs                     # debounce window, queue capacity, approved plugin events
+  RealtimeChangeBuffer.cs                # bounded, key-coalescing buffer
+  CoalescingRealtimeUpdatePublisher.cs   # buffering publisher
+  RealtimeDispatcher.cs                  # background drain loop
+  RealtimeMetrics.cs                     # published/coalesced/dropped/latency counters
+  PluginEventRelay.cs                    # IPluginEventPublisher -> realtime, approved types only
+src/Anvilboard.Api/Realtime/
+  WorkspaceRealtimeHub.cs                # /hubs/workspace, joins the workspace:{id} group
+  SignalRRealtimeTransport.cs            # IRealtimeTransport over IHubContext
+  RealtimeChangeEnvelope.cs              # flat, additive-only wire shape
+src/Anvilboard.Plugins.Abstractions/
+  IPluginEventPublisher.cs               # PluginEvent + publisher a plugin host can call
+src/anvilboard-web/src/app/core/
+  realtime-board-sync.service.ts         # owns the HubConnection; changes + resyncRequired streams
 ```
 
 ## Test Module
 
 ```text
-tests/Anvilboard.IntegrationTests/Realtime/
-  RealtimeIssuePublicationTests.cs
-  WorkspaceHubAuthorizationTests.cs
-  RealtimeCoalescingTests.cs
-  RealtimeSlowClientIsolationTests.cs
-tests/Anvilboard.Web.Tests/board/
-  realtimeBoardSync.test.ts
+src/Anvilboard.Application.Tests/Realtime/
+  RealtimeChangeBufferTests.cs           # coalescing, capacity, merge precedence
+  IssueServiceRealtimePublicationTests.cs# post-commit publication and fault isolation
+  PluginEventRelayTests.cs               # approved-only relay, no lifecycle hooks
+src/Anvilboard.Api.Tests/Realtime/
+  WorkspaceRealtimeHubTests.cs           # hub authorization, group scoping, end-to-end delivery
+src/Anvilboard.Integrations.GitHub.Tests/
+  GitHubWebhookReceiverTests.cs          # merged-pull-request event reporting
+src/anvilboard-web/src/app/core/
+  realtime-board-sync.service.spec.ts    # start idempotency, reconnect, connect-failure tolerance
+src/anvilboard-web/src/app/board/board-page/
+  board-page.spec.ts                     # in-place patch, selection preservation, resync fallbacks
 ```

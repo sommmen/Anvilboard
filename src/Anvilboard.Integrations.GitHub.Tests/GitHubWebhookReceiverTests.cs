@@ -65,6 +65,30 @@ public sealed class GitHubWebhookReceiverTests
         Assert.Empty(result.Issues);
     }
 
+    [Fact]
+    public async Task HandleAsync_MergedPullRequest_ReportsMergedEventType()
+    {
+        const string body = """{"action":"closed","pull_request":{"merged":true}}""";
+
+        var result = await CreateReceiver().HandleAsync(CreateRequest("pull_request", body, signed: true), CancellationToken.None);
+
+        Assert.True(result.Accepted);
+        Assert.Empty(result.Issues);
+        Assert.Equal([GitHubWebhookReceiver.PullRequestMergedEventType], result.EventTypes);
+    }
+
+    [Theory]
+    [InlineData("""{"action":"closed","pull_request":{"merged":false}}""")]
+    [InlineData("""{"action":"opened","pull_request":{"merged":false}}""")]
+    [InlineData("{")]
+    public async Task HandleAsync_PullRequestThatDidNotMerge_ReportsNoEventType(string body)
+    {
+        var result = await CreateReceiver().HandleAsync(CreateRequest("pull_request", body, signed: true), CancellationToken.None);
+
+        Assert.True(result.Accepted);
+        Assert.Empty(result.EventTypes);
+    }
+
     private static GitHubWebhookReceiver CreateReceiver() => new(new StaticOptionsMonitor<GitHubOptions>(new GitHubOptions { TeamKey = "ENG", WebhookSecret = Secret }));
 
     private static WebhookRequest CreateRequest(string eventType, string body, bool signed) => new(

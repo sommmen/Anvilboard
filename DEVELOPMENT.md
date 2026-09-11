@@ -134,11 +134,11 @@ webhook validation:
 |---|---|
 | `src/Anvilboard.Application.Tests` | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior; also covers workspace authorization, issue linking, and the automation surface foundations (`IdempotencyService` replay/reuse detection, `CorrelationContext`, `ErrorCatalogTranslator`). No database — uses EF Core's in-memory-ish SQLite (`DataSource=:memory:`) per test. |
 | `src/Anvilboard.Infrastructure.Tests` | Migration integration test: seeds a legacy pre-workflow SQLite schema, runs the real EF Core migrations against it, and asserts the default workflow states/transitions were seeded and existing issues were backfilled to the matching workflow state. |
-| `src/Anvilboard.Api.Tests` | API-host integration tests for workspace authorization endpoints. |
+| `src/Anvilboard.Api.Tests` | API-host integration tests for workspace authorization endpoints and the real-time SignalR hub (connection authorization, workspace isolation, and mutation isolation from a slow client). |
 | `src/Anvilboard.Agent.Tests` | Agent operation-catalog coverage; requires the sibling `dotnet-agent-surface` checkout. |
 | `src/Anvilboard.Integrations.GitHub.Tests` | GitHub webhook signature validation and issue-event mapping. |
 | `src/Anvilboard.Integrations.Linear.Tests` | Linear webhook signature validation and issue-event mapping. |
-| `tests/Anvilboard.IntegrationTests` | Reserved for cross-cutting integration coverage, including planned real-time behavior. |
+| `tests/Anvilboard.IntegrationTests` | Reserved for cross-cutting integration coverage. |
 
 Run focused tests with:
 
@@ -153,9 +153,9 @@ dotnet test tests/Anvilboard.IntegrationTests/Anvilboard.IntegrationTests.csproj
 ```
 
 `dotnet test Anvilboard.slnx` also works once `dotnet-agent-surface` is checked out next to this
-repo, since the full solution build includes `Anvilboard.Agent` and its tests. The real-time
-integration project is intentionally scaffolded without tests until the corresponding production
-components exist.
+repo, since the full solution build includes `Anvilboard.Agent` and its tests. The
+`tests/Anvilboard.IntegrationTests` project is still an empty scaffold; real-time coverage lives in
+`src/Anvilboard.Application.Tests/Realtime` and `src/Anvilboard.Api.Tests/Realtime` instead.
 
 Frontend tests remain in `src/anvilboard-web` and run through Angular/Vitest (`npm test`). The
 feature specification paths `src/Anvilboard.Web` and `tests/Anvilboard.Web.Tests` are stale; do not

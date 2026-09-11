@@ -1,0 +1,279 @@
+using Anvilboard.Application.Automation;
+using Anvilboard.Application.Issues;
+using Anvilboard.Application.Realtime;
+using Anvilboard.Application.Workflows;
+using Anvilboard.Domain;
+using Anvilboard.Infrastructure.Persistence;
+using Anvilboard.Plugins.Abstractions;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Anvilboard.Application.Tests.Realtime;
+
+/// <summary>
+/// Covers TC-RT-001: a committed issue mutation publishes a workspace-scoped, versioned change, a
+/// denied mutation publishes nothing, and a failing publisher cannot fail the mutation.
+/// </summary>
+public sealed class IssueServiceRealtimePublicationTests
+{
+    [Fact]
+    public async Task CreateAsync_PublishesCreatedIssueChangeScopedToTheOwningWorkspace()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+
+        var issue = await service.CreateAsync(fixture.TeamId, "Publish me");
+
+        var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
+        Assert.Equal(fixture.WorkspaceId, change.WorkspaceId);
+        Assert.Equal(issue.Id, change.IssueId);
+        Assert.Equal(RealtimeIssueChangeKind.Created, change.ChangeKind);
+        Assert.Equal(issue.Version, change.Version);
+        Assert.Equal("issue.changed", change.EventType);
+    }
+
+    [Fact]
+    public async Task CreateAsync_PublishesAMatchingActivityChangeForTheSameIssue()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+
+        var issue = await service.CreateAsync(fixture.TeamId, "Publish me");
+
+        var activity = Assert.Single(publisher.Changes.OfType<RealtimeActivityChange>());
+        Assert.Equal(issue.Id, activity.IssueId);
+        Assert.Equal(fixture.WorkspaceId, activity.WorkspaceId);
+        Assert.NotEqual(default, activity.ActivityEventId);
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_PublishesTheIncrementedVersionAsAnUpdate()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        fixture.AllowTransitionToDone();
+        await fixture.Db.SaveChangesAsync();
+
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+        var issue = await service.CreateAsync(fixture.TeamId, "Move me");
+        publisher.Changes.Clear();
+
+        var updated = await service.ChangeStatusAsync(issue.Id, IssueStatus.Done);
+
+        var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
+        Assert.Equal(RealtimeIssueChangeKind.Updated, change.ChangeKind);
+        Assert.Equal(updated.Version, change.Version);
+        Assert.Equal(1, change.Version);
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_DeniedTransition_PublishesNothing()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+        var issue = await service.CreateAsync(fixture.TeamId, "Do not move me");
+        publisher.Changes.Clear();
+
+        await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
+            () => service.ChangeStatusAsync(issue.Id, IssueStatus.Done));
+
+        Assert.Empty(publisher.Changes);
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_PublishesActivityForAnIssueWhoseTeamWasNotPreloaded()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+        var issue = await service.CreateAsync(fixture.TeamId, "Comment on me");
+        publisher.Changes.Clear();
+
+        await service.AddCommentAsync(issue.Id, "A comment");
+
+        var activity = Assert.Single(publisher.Changes.OfType<RealtimeActivityChange>());
+        Assert.Equal(fixture.WorkspaceId, activity.WorkspaceId);
+        Assert.Equal(issue.Id, activity.IssueId);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenPublisherThrows_StillReturnsTheCommittedIssue()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var service = fixture.CreateService(new ThrowingRealtimeUpdatePublisher());
+
+        var issue = await service.CreateAsync(fixture.TeamId, "Survive publication failure");
+
+        Assert.Equal(issue.Id, (await fixture.Db.Issues.AsNoTracking().SingleAsync()).Id);
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_WhenWorkspaceResolutionFails_StillCommitsTheComment()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher);
+        var issue = await service.CreateAsync(fixture.TeamId, "Comment on me");
+
+        // The comment path resolves the workspace from the team; removing the team makes that
+        // lookup throw. It must be swallowed like any other publication failure, because the
+        // comment is already committed by the time realtime runs.
+        await fixture.RemoveTeamAsync();
+
+        await service.AddCommentAsync(issue.Id, "A comment");
+
+        Assert.NotEmpty(await fixture.Db.ActivityEvents.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task CreateAsync_PropagatesTheAmbientCorrelationId()
+    {
+        await using var fixture = await RealtimeFixture.CreateAsync();
+        var publisher = new RecordingRealtimeUpdatePublisher();
+        var service = fixture.CreateService(publisher, CorrelationContext.FromHeaderOrNew("corr-123"));
+
+        await service.CreateAsync(fixture.TeamId, "Trace me");
+
+        Assert.All(publisher.Changes, change => Assert.Equal("corr-123", change.CorrelationId));
+    }
+
+    private sealed class RecordingRealtimeUpdatePublisher : IRealtimeUpdatePublisher
+    {
+        public List<RealtimeChange> Changes { get; } = [];
+
+        public ValueTask PublishAsync(RealtimeChange change, CancellationToken ct = default)
+        {
+            Changes.Add(change);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingRealtimeUpdatePublisher : IRealtimeUpdatePublisher
+    {
+        public ValueTask PublishAsync(RealtimeChange change, CancellationToken ct = default) =>
+            throw new InvalidOperationException("Transport unavailable.");
+    }
+
+    private sealed class FakePluginRegistry : IPluginRegistry
+    {
+        public IReadOnlyList<IAnvilboardPlugin> All { get; } = [];
+        public IReadOnlyList<IIngestionSource> IngestionSources { get; } = [];
+        public IReadOnlyList<IWebhookReceiver> WebhookReceivers { get; } = [];
+        public IReadOnlyList<IIssueHook> IssueHooks { get; } = [];
+    }
+
+    private sealed class RealtimeFixture : IAsyncDisposable
+    {
+        private readonly SqliteConnection connection;
+        private readonly WorkflowState backlog;
+        private readonly WorkflowState done;
+
+        private RealtimeFixture(
+            SqliteConnection connection,
+            AnvilboardDbContext db,
+            WorkspaceId workspaceId,
+            TeamId teamId,
+            WorkflowState backlog,
+            WorkflowState done)
+        {
+            this.connection = connection;
+            this.backlog = backlog;
+            this.done = done;
+            Db = db;
+            WorkspaceId = workspaceId;
+            TeamId = teamId;
+        }
+
+        public AnvilboardDbContext Db { get; }
+        public WorkspaceId WorkspaceId { get; }
+        public TeamId TeamId { get; }
+
+        public IssueService CreateService(
+            IRealtimeUpdatePublisher publisher,
+            CorrelationContext? correlationContext = null) => new(
+            Db,
+            new FakePluginRegistry(),
+            new WorkflowEngine(Db),
+            publisher,
+            correlationContext ?? CorrelationContext.FromHeaderOrNew(null),
+            NullLogger<IssueService>.Instance);
+
+        /// <summary>
+        /// Deletes the team so workspace resolution from a team id fails, without disturbing issues
+        /// that already reference it.
+        /// </summary>
+        public async Task RemoveTeamAsync()
+        {
+            await Db.Teams.Where(team => team.Id == TeamId).ExecuteDeleteAsync();
+            Db.ChangeTracker.Clear();
+        }
+
+        public void AllowTransitionToDone() => Db.WorkflowTransitions.Add(new WorkflowTransition
+        {
+            Id = WorkflowTransitionId.New(),
+            WorkspaceId = WorkspaceId,
+            FromStateId = backlog.Id,
+            ToStateId = done.Id,
+        });
+
+        public static async Task<RealtimeFixture> CreateAsync()
+        {
+            var connection = new SqliteConnection("Data Source=:memory:");
+            await connection.OpenAsync();
+            var options = new DbContextOptionsBuilder<AnvilboardDbContext>().UseSqlite(connection).Options;
+            var db = new AnvilboardDbContext(options);
+            await db.Database.EnsureCreatedAsync();
+
+            var workspaceId = WorkspaceId.New();
+            db.Workspaces.Add(new Workspace
+            {
+                Id = workspaceId,
+                Name = "Realtime workspace",
+                Slug = "realtime-workspace",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+            var teamId = TeamId.New();
+            db.Teams.Add(new Team
+            {
+                Id = teamId,
+                WorkspaceId = workspaceId,
+                Name = "Realtime team",
+                Key = "RT",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+            var backlog = new WorkflowState
+            {
+                Id = WorkflowStateId.New(),
+                WorkspaceId = workspaceId,
+                Key = "backlog",
+                DisplayName = "Backlog",
+                Order = 0,
+            };
+            var done = new WorkflowState
+            {
+                Id = WorkflowStateId.New(),
+                WorkspaceId = workspaceId,
+                Key = "done",
+                DisplayName = "Done",
+                Order = 1,
+                IsTerminal = true,
+            };
+            db.WorkflowStates.AddRange(backlog, done);
+            await db.SaveChangesAsync();
+
+            return new RealtimeFixture(connection, db, workspaceId, teamId, backlog, done);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Db.DisposeAsync();
+            await connection.DisposeAsync();
+        }
+    }
+}

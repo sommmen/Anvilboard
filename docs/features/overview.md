@@ -22,7 +22,7 @@ feature needs more granular coverage.
 | 4 | [`integration-and-plugin-platform.md`](./integration-and-plugin-platform.md) | P0 | Partial | Issue & Board Service, Workspace Authorization, Real-time Updates | `FR-INT-001`–`FR-INT-007`, `NFR-REL-002`, `NFR-SEC-001` |
 | 5 | [`agent-and-automation-surface.md`](./agent-and-automation-surface.md) | P0 | Partial | Workspace Authorization, Workflow Engine, Issue & Board Service, Integration & Plugin Platform | `FR-AUT-001`–`FR-AUT-003`, `NFR-MNT-001` |
 | 6 | [`audit-and-recovery.md`](./audit-and-recovery.md) | P0 | Partial | All other components | `FR-OPS-001`, `FR-OPS-002`, `NFR-AVL-001`, `NFR-REL-001` |
-| 7 | [`realtime-updates.md`](./realtime-updates.md) | P1 | Not Started | Workspace Authorization, Issue & Board Service | `FR-WRK-014`, `FR-INT-006`, `NFR-PERF-002` |
+| 7 | [`realtime-updates.md`](./realtime-updates.md) | P1 | Implemented | Workspace Authorization, Issue & Board Service | `FR-WRK-014`, `FR-INT-006`, `NFR-PERF-002` |
 | 8 | [`artifacts.md`](./artifacts.md) | P1 | Partial | Issue & Board Service, Workspace Authorization | `FR-ART-001`, `FR-ART-002` |
 | 9 | [`issue-linking.md`](./issue-linking.md) | P2 | Partial | Issue & Board Service, Workspace Authorization | `FR-LNK-001` |
 
@@ -89,11 +89,12 @@ Feature specs were authored against the current
 [`docs/anvilboard/srs.md`](../anvilboard/srs.md), grounded in the existing `src/` codebase where
 components already exist (e.g. `IssueService`, `DashboardService`, `SyncCoordinator`,
 `BoardAgentService`) and clearly marking planned additions that did not yet exist in code at the
-time of authoring. Two specs have since been implemented and merged: `issue-linking.md`
-(`IIssueLinkService`) and `workspace-authorization.md` (`IWorkspaceAuthorizationService`,
-`WorkspaceAuthorizationMiddleware`). The remaining specs (`workflow-engine.md`,
+time of authoring. Three specs have since been implemented and merged: `issue-linking.md`
+(`IIssueLinkService`), `workspace-authorization.md` (`IWorkspaceAuthorizationService`,
+`WorkspaceAuthorizationMiddleware`), and `realtime-updates.md` (`IRealtimeUpdatePublisher`,
+`WorkspaceRealtimeHub`, `RealtimeBoardSyncService`). The remaining specs (`workflow-engine.md`,
 `issue-board-service.md`, `integration-and-plugin-platform.md`, `agent-and-automation-surface.md`,
-`audit-and-recovery.md`, `realtime-updates.md`, `artifacts.md`) are still in **draft** status —
+`audit-and-recovery.md`, `artifacts.md`) are still in **draft** status —
 treat them as the target contract, not the current behavior, until an implementation PR lands and
 this line is updated. See each spec's own `Status` field for its individual state.
 
