@@ -24,7 +24,7 @@ public sealed class IssueServiceRealtimePublicationTests
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
 
-        var issue = await service.CreateAsync(fixture.TeamId, "Publish me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Publish me");
 
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
         Assert.Equal(fixture.WorkspaceId, change.WorkspaceId);
@@ -41,7 +41,7 @@ public sealed class IssueServiceRealtimePublicationTests
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
 
-        var issue = await service.CreateAsync(fixture.TeamId, "Publish me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Publish me");
 
         var activity = Assert.Single(publisher.Changes.OfType<RealtimeActivityChange>());
         Assert.Equal(issue.Id, activity.IssueId);
@@ -58,10 +58,10 @@ public sealed class IssueServiceRealtimePublicationTests
 
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
-        var issue = await service.CreateAsync(fixture.TeamId, "Move me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Move me");
         publisher.Changes.Clear();
 
-        var updated = await service.ChangeStatusAsync(issue.Id, IssueStatus.Done);
+        var updated = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Done);
 
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
         Assert.Equal(RealtimeIssueChangeKind.Updated, change.ChangeKind);
@@ -75,10 +75,10 @@ public sealed class IssueServiceRealtimePublicationTests
         await using var fixture = await RealtimeFixture.CreateAsync();
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
-        var issue = await service.CreateAsync(fixture.TeamId, "Assign me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Assign me");
         publisher.Changes.Clear();
 
-        var updated = await service.AssignAsync(issue.Id, MemberId.New());
+        var updated = await service.AssignAsync(fixture.WorkspaceId, issue.Id, MemberId.New());
 
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
         Assert.Equal(1, updated.Version);
@@ -92,10 +92,10 @@ public sealed class IssueServiceRealtimePublicationTests
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
         var original = new NormalizedIssue(IntegrationProvider.GitHub, "repo#1", "RT", "Original", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
-        var created = await service.UpsertFromExternalAsync(original);
+        var created = await service.UpsertFromExternalUnscopedAsync(original);
         publisher.Changes.Clear();
 
-        var updated = await service.UpsertFromExternalAsync(original with { Title = "Changed", SyncFingerprint = "two" });
+        var updated = await service.UpsertFromExternalUnscopedAsync(original with { Title = "Changed", SyncFingerprint = "two" });
 
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
         Assert.Equal(created.Id, updated.Id);
@@ -113,7 +113,7 @@ public sealed class IssueServiceRealtimePublicationTests
         // File the issue via the untargeted overload first, so the external link ends up owned by
         // the fixture's own workspace/team.
         var original = new NormalizedIssue(IntegrationProvider.GitHub, "cross-tenant#1", "RT", "Original", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
-        await service.UpsertFromExternalAsync(original);
+        await service.UpsertFromExternalUnscopedAsync(original);
 
         // A second workspace that happens to also configure a team keyed "RT" — team keys are only
         // unique within a workspace, so this is a legal, if coincidental, configuration.
@@ -142,7 +142,7 @@ public sealed class IssueServiceRealtimePublicationTests
         var sameLinkDifferentTenant = original with { Title = "Hijacked", SyncFingerprint = "two" };
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => service.UpsertFromExternalAsync(sameLinkDifferentTenant, otherWorkspaceId));
+            () => service.UpsertFromExternalAsync(otherWorkspaceId, sameLinkDifferentTenant));
     }
 
     [Fact]
@@ -179,7 +179,7 @@ public sealed class IssueServiceRealtimePublicationTests
         var normalized = new NormalizedIssue(IntegrationProvider.GitHub, "ambiguous#1", "RT", "Ambiguous", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => service.UpsertFromExternalAsync(normalized));
+            () => service.UpsertFromExternalUnscopedAsync(normalized));
 
         Assert.Contains("more than one workspace", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(publisher.Changes);
@@ -191,11 +191,11 @@ public sealed class IssueServiceRealtimePublicationTests
         await using var fixture = await RealtimeFixture.CreateAsync();
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
-        var issue = await service.CreateAsync(fixture.TeamId, "Do not move me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Do not move me");
         publisher.Changes.Clear();
 
         await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
-            () => service.ChangeStatusAsync(issue.Id, IssueStatus.Done));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Done));
 
         Assert.Empty(publisher.Changes);
     }
@@ -206,10 +206,10 @@ public sealed class IssueServiceRealtimePublicationTests
         await using var fixture = await RealtimeFixture.CreateAsync();
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
-        var issue = await service.CreateAsync(fixture.TeamId, "Comment on me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Comment on me");
         publisher.Changes.Clear();
 
-        await service.AddCommentAsync(issue.Id, "A comment");
+        await service.AddCommentAsync(fixture.WorkspaceId, issue.Id, "A comment");
 
         var activity = Assert.Single(publisher.Changes.OfType<RealtimeActivityChange>());
         Assert.Equal(fixture.WorkspaceId, activity.WorkspaceId);
@@ -222,27 +222,30 @@ public sealed class IssueServiceRealtimePublicationTests
         await using var fixture = await RealtimeFixture.CreateAsync();
         var service = fixture.CreateService(new ThrowingRealtimeUpdatePublisher());
 
-        var issue = await service.CreateAsync(fixture.TeamId, "Survive publication failure");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Survive publication failure");
 
         Assert.Equal(issue.Id, (await fixture.Db.Issues.AsNoTracking().SingleAsync()).Id);
     }
 
     [Fact]
-    public async Task AddCommentAsync_WhenWorkspaceResolutionFails_StillCommitsTheComment()
+    public async Task AddCommentAsync_WhenTheTeamDisappears_RejectsTheCommentInsteadOfWritingIt()
     {
         await using var fixture = await RealtimeFixture.CreateAsync();
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
-        var issue = await service.CreateAsync(fixture.TeamId, "Comment on me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Comment on me");
 
-        // The comment path resolves the workspace from the team; removing the team makes that
-        // lookup throw. It must be swallowed like any other publication failure, because the
-        // comment is already committed by the time realtime runs.
+        // Workspace membership is established by the issue's team. Once the team is gone the issue
+        // is no longer provably inside the caller's workspace, so the scoped lookup must fail
+        // closed rather than append a comment that nobody can attribute to a tenant. (Before
+        // MAJ-022 this path resolved the workspace lazily at publication time, so the comment was
+        // written first and only the realtime notification failed.)
         await fixture.RemoveTeamAsync();
 
-        await service.AddCommentAsync(issue.Id, "A comment");
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.AddCommentAsync(fixture.WorkspaceId, issue.Id, "A comment"));
 
-        Assert.NotEmpty(await fixture.Db.ActivityEvents.AsNoTracking().ToListAsync());
+        Assert.Empty(await fixture.Db.Comments.AsNoTracking().ToListAsync());
     }
 
     [Fact]
@@ -252,7 +255,7 @@ public sealed class IssueServiceRealtimePublicationTests
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher, CorrelationContext.FromHeaderOrNew("corr-123"));
 
-        await service.CreateAsync(fixture.TeamId, "Trace me");
+        await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Trace me");
 
         Assert.All(publisher.Changes, change => Assert.Equal("corr-123", change.CorrelationId));
     }

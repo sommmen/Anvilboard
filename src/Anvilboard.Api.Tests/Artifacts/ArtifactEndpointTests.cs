@@ -84,7 +84,7 @@ public sealed class ArtifactEndpointTests
     }
 
     [Fact]
-    public async Task Attach_UnknownIssue_ReturnsNotFoundProblem()
+    public async Task Attach_UnknownIssue_ReturnsWorkspaceAccessDenied()
     {
         await using var factory = new ApiFactory();
         using var client = await CreateAuthenticatedClientAsync(factory);
@@ -96,9 +96,12 @@ public sealed class ArtifactEndpointTests
             contentReference = "https://example.test",
         }, CancellationToken.None);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        // An unknown id and an id belonging to somebody else's workspace are deliberately
+        // indistinguishable on ID-addressed routes: replying 404 for one and 403 for the other
+        // would turn the endpoint into an existence oracle for foreign issues.
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(CancellationToken.None));
-        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", problem.RootElement.GetProperty("title").GetString());
+        Assert.Equal("WORKSPACE_ACCESS_DENIED", problem.RootElement.GetProperty("title").GetString());
     }
 
     [Fact]

@@ -3,7 +3,7 @@
 > **Status:** This document originally described a target-state QA specification for a proof of
 > concept with no automated test projects. That is now **stale** — the solution has 6 populated
 > xUnit test projects (plus 1 empty `Anvilboard.IntegrationTests` scaffold) with real, passing
-> coverage: `dotnet test Anvilboard.slnx` reports **320 passing, 0 failing**. The tables below have
+> coverage: `dotnet test Anvilboard.slnx` reports **348 passing, 0 failing**. The tables below have
 > been updated to reflect actual existing tests; see [`docs/audit-report.md`](../audit-report.md)
 > for the audit that surfaced this and the remaining gaps (no dedicated
 > `DashboardService`/`IssueService`/`SyncCoordinator` test file, and no CLI/MCP
@@ -22,7 +22,7 @@
 | **Tech Stack** | .NET 10 / ASP.NET Core, Angular, EF Core, SQLite for supported single-host deployment |
 | **Test Framework** | xUnit across 6 populated test projects (`Application.Tests`, `Api.Tests`, `Infrastructure.Tests`, `Agent.Tests`, `Integrations.GitHub.Tests`, `Integrations.Linear.Tests`) plus an empty `IntegrationTests` scaffold, spanning 38 test files; Angular/Vitest (`ng test`) covers a handful of components and services (`app.spec.ts`, `board-page.spec.ts`, `realtime-board-sync.service.spec.ts`) but no dedicated CLI/MCP contract-equivalence test project exists yet |
 | **Scan Date** | Updated by doc/implementation audit — see `docs/audit-report.md` |
-| **Input Mode** | Code Mode — verified against the actual `dotnet test` run for `Anvilboard.slnx` (320 passing, 0 failing) |
+| **Input Mode** | Code Mode — verified against the actual `dotnet test` run for `Anvilboard.slnx` (348 passing, 0 failing) |
 
 ### 1.2 Testable Units
 
@@ -45,7 +45,7 @@
 |---|---:|
 | Test projects | 6 `*.Tests` unit/integration projects with tests + 1 empty `Anvilboard.IntegrationTests` scaffold (no `.cs` test files yet) |
 | Testable boundaries with an existing test file | 9 of 10 listed above have at least one test file |
-| Total automated tests (last run) | 341 total: 320 .NET (`dotnet test Anvilboard.slnx` — Application 192, Infrastructure 41, Agent 40, Api 30, GitHub 12, Linear 5) plus 21 Angular (`ng test`, 3 spec files), all passing |
+| Total automated tests (last run) | 369 total: 348 .NET (`dotnet test Anvilboard.slnx` — Application 195, Api 55, Infrastructure 41, Agent 40, GitHub 12, Linear 5) plus 21 Angular (`ng test`, 3 spec files), all passing |
 | Test result | All passing, 0 failures |
 | Known coverage gaps | No dedicated `DashboardService`, `IssueService`, or `SyncCoordinator` test file; no CLI/MCP contract-equivalence test project (though `Anvilboard.Agent.Tests` now covers authorization, the operation catalog, request guards, and MCP stdout isolation); `Anvilboard.IntegrationTests` project exists but is empty |
 
@@ -104,9 +104,11 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 | TC-AUTH-002 | Authorization | Missing protected-channel credential is rejected | unauthenticated | `401 AUTHENTICATION_REQUIRED`; no handler or data access runs. | P0 | REST/CLI/MCP fixture | Planned |
 | TC-AUTH-003 | Authorization | Expired or invalid credential is rejected safely | invalid credential | `401 CREDENTIAL_INVALID_OR_EXPIRED`; response exposes neither credential material nor workspace data. | P0 | credential fixture | Planned |
 | TC-AUTH-004 | Authorization | Viewer cannot mutate issue or workflow configuration | viewer role | `403 WORKSPACE_ACCESS_DENIED`; no state or audit mutation is written. | P0 | SQLite fixture | Planned |
-| TC-AUTH-005 | Authorization | Cross-workspace read and mutation are denied without disclosure | another workspace | `403 WORKSPACE_ACCESS_DENIED`; protected entity identifiers/details are not disclosed. | P0 | two-workspace fixture | Planned |
+| TC-AUTH-005 | Authorization | Cross-workspace read and mutation are denied without disclosure | another workspace | `403 WORKSPACE_ACCESS_DENIED`; protected entity identifiers/details are not disclosed. | P0 | two-workspace fixture | Automated (`CrossWorkspaceIsolationEndpointTests`, 13 cases spanning issue, dashboard, link, and artifact routes; denied mutations additionally assert no row changed) |
 | TC-AUTH-006 | Authorization | First administrator bootstrap is one-time and auditable | bootstrap | First valid bootstrap succeeds; a second bootstrap is rejected and cannot elevate another actor. | P0 | SQLite fixture | Planned |
-| TC-AUTH-007 | Authorization | Authenticated cross-workspace denial uses the uniform public contract | authorized actor, foreign workspace | Returns HTTP `403 WORKSPACE_ACCESS_DENIED` without resource fields; a missing entity inside an authorized workspace uses `404 REFERENCED_ENTITY_NOT_FOUND`. | P0 | REST/CLI/MCP fixture | Planned |
+| TC-AUTH-007 | Authorization | Authenticated cross-workspace denial uses the uniform public contract | authorized actor, foreign workspace | Returns HTTP `403 WORKSPACE_ACCESS_DENIED` without resource fields; a missing entity inside an authorized workspace uses `404 REFERENCED_ENTITY_NOT_FOUND`. | P0 | REST/CLI/MCP fixture | Automated (`CrossWorkspaceIsolationEndpointTests.AssertDeniedAsync` pins the body shape; `RestWorkspaceScopeTests` covers the guard) |
+| TC-AUTH-008 | Authorization | An ID-addressed route is not an existence oracle | foreign id vs. nonexistent id | Both calls return an identical status **and** an identical body, so a caller cannot learn which identifiers exist in other workspaces. | P0 | two-workspace fixture | Automated (`CrossWorkspaceIsolationEndpointTests.GetIssue_FromAnotherWorkspace_IsDeniedIndistinguishablyFromAnUnknownId`) |
+| TC-AUTH-009 | Authorization | Unfiltered reads never span workspaces | no filter supplied | `GET /api/issues` and `GET /api/dashboard/summary` compute results from the authenticated workspace alone; a filter naming another workspace's team is denied rather than silently empty. | P0 | two-workspace fixture | Automated (`ListIssues_NeverIncludesAnotherWorkspacesIssues`, `DashboardSummary_CountsOnlyTheCallersOwnWorkspace`, `ListIssues_FilteredByAnotherWorkspacesTeam_IsDenied`) |
 | TC-WF-001 | Workflow | Allowed transition updates issue state and activity | allowed target | State changes to target and emits required activity/audit intent. | P0 | domain + SQLite fixture | Automated (`WorkflowEngineTests.ChangeStatusAsync_AllowedTransition_UpdatesWorkflowStateVersionAndStatus`) |
 | TC-WF-002 | Workflow | Disallowed transition returns cataloged conflict | disallowed target | `409 INVALID_WORKFLOW_TRANSITION` identifies current state, target, and rule; issue remains unchanged. | P0 | domain fixture | Automated (`WorkflowEngineTests.ChangeStatusAsync_DisallowedTransition_ThrowsWorkflowTransitionDeniedAndLeavesIssueUnchanged`) |
 | TC-WF-003 | Workflow | Archived or inactive state cannot be selected | inactive state | `409 INVALID_WORKFLOW_TRANSITION`; no issue update occurs. | P0 | SQLite fixture | Planned |
@@ -228,7 +230,7 @@ spec's File Structure and Test Module sections list the delivered source and tes
 | NFR-PERF-001 | TC-PERF-001, TC-AUTO-007 | Covered |
 | NFR-PERF-002 | TC-RT-001, TC-RT-003–004 | Covered |
 | NFR-SEC-001 | TC-AUTH-003, TC-WEBHOOK-001, TC-AUDIT-002 | Covered |
-| NFR-SEC-002 | TC-AUTH-004–005, TC-AUDIT-003, TC-BACKUP-003 | Covered |
+| NFR-SEC-002 | TC-AUTH-004–005, TC-AUTH-007–009, TC-AUDIT-003, TC-BACKUP-003 | Covered |
 | NFR-REL-001 | TC-ISSUE-003–004, TC-AUTO-001–003, TC-BACKUP-002 | Covered |
 | NFR-REL-002 | TC-SYNC-003–004, TC-PLUGIN-001–002 | Covered |
 | NFR-AVL-001 | TC-BACKUP-001–002, TC-PERF-002 | Covered |

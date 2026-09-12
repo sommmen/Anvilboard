@@ -145,7 +145,7 @@ graph TD
 
 **Alternative flows:**
 - **AF-1 Invalid or missing credential:** The system returns `AUTHENTICATION_REQUIRED` without exposing workspace existence.
-- **AF-2 Valid credential, missing workspace permission:** The system returns `WORKSPACE_ACCESS_DENIED` with HTTP 403 and a correlation ID; it does not return workspace data. A 404 is reserved for a missing entity inside an already-authorized workspace.
+- **AF-2 Valid credential, missing workspace permission:** The system returns `WORKSPACE_ACCESS_DENIED` with HTTP 403 and a correlation ID; it does not return workspace data. A caller-supplied entity identifier that cannot be resolved inside the authorized workspace also returns 403, whether it belongs to another workspace or does not exist at all — answering differently would let a caller enumerate identifiers outside its workspace. A 404 is reserved for a *dependent* entity that is missing after workspace scoping has already succeeded.
 - **AF-3 Credential revoked or expired:** The system returns `CREDENTIAL_INVALID_OR_EXPIRED`; an agent treats this as non-retryable until a human refreshes authorization.
 
 #### FR-WS-002: Workspace configuration and workflow governance

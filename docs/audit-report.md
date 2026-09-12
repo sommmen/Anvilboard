@@ -41,7 +41,7 @@ fixed**.
 | Severity | Count | Categories |
 |----------|-------|------------|
 | Critical |   3   | audit-and-recovery (backup/restore missing — **since resolved**), realtime-updates (entire feature unimplemented — **since resolved**), artifacts (no ArtifactService) |
-| Major    |  22   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap (**resolved**: MAJ-001, MAJ-002 audit correction, MAJ-015–MAJ-017, MAJ-019, MAJ-021; **new/open**: MAJ-022 REST/application workspace scoping) |
+| Major    |  22   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap (**resolved**: MAJ-001, MAJ-002 audit correction, MAJ-015–MAJ-017, MAJ-019, MAJ-021, MAJ-022 REST/application workspace scoping) |
 | Minor    |   7   | PLUGINS.md staleness, workflow-engine API versioning, manifest validation (**open**); README Kanban-column wording, extra undocumented agent tools, IArtifactStore sole-caller claim, post-implementation doc drift (**resolved**: MIN-001, MIN-005, MIN-006, MIN-007) |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
 
@@ -309,14 +309,37 @@ fixed**.
 - **Fix**: Seed the default workflow states during bootstrap, or return a domain error that names the missing configuration. Unrelated to realtime; left unchanged there to keep that change set scoped.
 - **Status**: **Resolved.** See the resolution note above for the delivered change and its test coverage (`WorkspaceAuthorizationServiceTests.BootstrapFirstAdministratorAsync_NoExistingWorkspace_SeedsDefaultWorkflow`).
 
-### MAJ-022: REST/application issue and dashboard queries are not workspace-bound
+### MAJ-022: REST/application issue and dashboard queries are not workspace-bound — **RESOLVED**
+
+> **Resolved.** `WorkspaceId` is now the first, required parameter of every affected application
+> method on `IssueService`, `IssueLinkService`, `ArtifactService`, and `DashboardService`, and each
+> resolves issues through the single shared `WorkspaceScopedQueries.InWorkspace` predicate. Making
+> the parameter leading and non-optional turns this leak class into a compile error: the original
+> bug was written as a skipped trailing optional argument (`ct: ct`), which is no longer
+> expressible. At the REST boundary `RestWorkspaceScope` — the mirror of `AgentWorkspaceScope` —
+> validates every caller-supplied team, issue, and member id against the authenticated workspace
+> before the route reaches a service. Two-workspace integration coverage
+> (`CrossWorkspaceIsolationEndpointTests`, 15 cases) exercises all 13 previously leaking routes and
+> asserts that denied writes also changed nothing; `RestWorkspaceScopeTests` covers the guard
+> itself. `Anvilboard.Agent.Tests` passes unmodified, confirming the change is a re-signature rather
+> than a behavior change on the already-correct agent surface.
+>
+> Two related defects were found and fixed while implementing: `IssueLinkService.CreateLinkAsync`
+> compared the two issues' workspaces *to each other*, so a pair drawn entirely from a foreign
+> workspace passed; and `ArtifactService.RemoveArtifactAsync` never validated the issue at all.
+>
+> **Breaking change:** ID-addressed REST routes now answer `403 WORKSPACE_ACCESS_DENIED` for
+> unknown ids as well as foreign ones — most visibly `GET /api/issues/{unknownId}`, previously
+> `404`. Replying differently to the two cases would make every such route an existence oracle for
+> other workspaces' data.
 
 - **Location**: `src/Anvilboard.Api/Endpoints/IssueEndpoints.cs`; `src/Anvilboard.Api/Endpoints/DashboardEndpoints.cs`; `src/Anvilboard.Application/Issues/IssueService.cs`; `src/Anvilboard.Application/Dashboard/DashboardService.cs`
 - **Issue**: REST authorization establishes an authenticated workspace but application queries resolve supplied issue/team/member IDs by primary key alone, and omitted team filters start from all issues. The REST issue-list and dashboard-summary paths do not pass the authenticated workspace into those queries.
 - **Evidence**: `IssueService.ListAsync(null, ...)` and `DashboardService.GetSummaryAsync(null)` begin from the complete issue set; entity lookups likewise lack a workspace predicate. The agent surface required explicit `AgentWorkspaceScope` guards and workspace-scoped unfiltered query overloads to prevent the same behavior.
 - **Impact**: A REST caller can potentially read or act on a foreign workspace entity by ID, and unfiltered issue/dashboard reads can disclose data or aggregate counts from other workspaces in the same SQLite database.
 - **Fix**: Make workspace identity an application-service query input (or an ambient, mandatory application authorization context), apply it before every entity lookup and aggregate, and add two-workspace REST integration tests covering explicit foreign IDs and omitted filters.
-- **Status**: **Open.** The current implementation closes this class of leak on CLI/MCP only; no claim of full REST isolation should be made until the endpoint/application boundary is migrated.
+- **Plan**: [`docs/plans/workspace-query-scoping.md`](./plans/workspace-query-scoping.md) — the evidence-backed technical design and dependency-ordered work breakdown. Adopts the required-`WorkspaceId`-input option and extends coverage to the artifact and issue-link read paths, which are the same leak reached through different routes. Delivered; see the resolution note above.
+- **Status**: **Resolved.** REST and CLI/MCP now enforce the same workspace boundary, so full workspace isolation holds across every authenticated surface.
 
 ## Minor Findings
 
@@ -331,7 +354,19 @@ fixed**.
 - **Impact**: Low — the README isn't factually wrong about the out-of-the-box experience, but the wording could mislead a reader into thinking columns are fixed rather than configurable.
 - **Fix**: Reword to "ships with a default workflow of \[...\] columns, fully configurable per workspace" or similar.
 
-### MIN-002: `PLUGINS.md` contains outdated proof-of-concept-era implementation references
+### MIN-002: `PLUGINS.md` contains outdated proof-of-concept-era implementation references — **RESOLVED**
+
+> **Resolved.** `PLUGINS.md` now opens with an explicit **Superseded** banner naming
+> [`docs/features/integration-and-plugin-platform.md`](features/integration-and-plugin-platform.md)
+> as the canonical replacement, and closes with a "Where to look instead" routing table
+> (`PLUGINS.md` lines 36–43) mapping each question — platform requirements, architecture,
+> how to implement a provider today, and how it is verified — to its canonical document.
+> The body is scoped under "What this document was" / "Why it was retired as the source of
+> truth", so the PoC-era mechanics read as history rather than instruction. The final
+> paragraph clarifies that `src/Anvilboard.Plugins.Abstractions` remains the real extension
+> point at the code level, with the feature spec as the current contract description. This
+> was exactly the optional fix recorded below; no further action is required.
+
 - **Location**: `PLUGINS.md` (self-declared historical/superseded)
 - **Issue**: Contains references to plugin-loading mechanics that predate the current `IPluginConfigStore`/`IPluginStateStore` implementation (`src/Anvilboard.Infrastructure/Plugins/PluginConfigStateStore.cs`).
 - **Evidence**: Cross-reference of `PLUGINS.md`'s described mechanism against the current plugin config/state store implementation and its tests (`PluginConfigStateStoreTests.cs`).
@@ -464,7 +499,7 @@ graph TD
 1. ~~**Implement backup/restore (`IBackupService`) and verify NFR-AVL-001**~~ — CRIT-001 and MAJ-019 done; `FR-OPS-001` audit query access (MAJ-018) still open — large
 2. ~~**Build the realtime-updates push layer (SignalR/WebSocket) and outbound plugin event relay**~~ — CRIT-002 done; MAJ-014 (core → plugin dispatch) still open — medium
 3. ~~**Implement `ArtifactService` with upsert/refresh semantics and lifecycle-hook artifact expansion**~~ — CRIT-003 and MIN-006 done, MAJ-020 audit emission done; MAJ-020's `IIssueHook` artifact-expansion path still open — medium
-4. ~~**Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation**~~ — MAJ-001 closed; MAJ-002 was already implemented and is corrected above — done. **Residual:** enforce authenticated-workspace predicates throughout REST/application reads and mutations (MAJ-022).
+4. ~~**Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation**~~ — MAJ-001 closed; MAJ-002 was already implemented and is corrected above — done. ~~**Residual:** enforce authenticated-workspace predicates throughout REST/application reads and mutations (MAJ-022).~~ — MAJ-022 closed; REST and CLI/MCP now enforce the same workspace boundary.
 5. **Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations** — fixes MAJ-003, MAJ-004, MAJ-005 — medium
 6. ~~**Wire agent-surface authorization, idempotency, and an `apiVersion` contract field**~~ — MAJ-015, MAJ-016, and MAJ-017 closed with SQLite-backed integration coverage — done
 7. **Add sync-health/backoff tracking and enforce paused-integration webhook rejection** — fixes MAJ-012, MAJ-013 — medium

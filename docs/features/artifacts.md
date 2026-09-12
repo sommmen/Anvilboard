@@ -9,7 +9,7 @@
 | Component | artifacts |
 | Priority | P1 |
 | Status | Implemented — the `Artifact` domain model, `IArtifactStore`/SQLite BLOB storage abstraction, `ArtifactService` (attach/list/refresh/remove with dedup-key upsert), REST endpoints, and artifact audit-event emission are all in place. The lifecycle-hook artifact-expansion path is tracked separately under `integration-and-plugin-platform`. See `docs/plans/artifact-service.md` for the implementation plan. |
-| Last verified | 2026-09-12 against commit `3eaacbb` — `dotnet test Anvilboard.slnx` 320 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
 | SRS Refs | FR-ART-001, FR-ART-002 |
 | Tech Design Ref | §8.1 — Issue Artifacts row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `Artifacts` table |
 | Depends On | issue-board-service, workspace-authorization |
@@ -185,7 +185,8 @@ Every anticipated failure resolves to a §7.7 catalog code; no raw store I/O exc
 
 | Condition | Code | HTTP status | Notes |
 |---|---:|---|---|
-| Issue referenced by `issueId` does not exist or is outside the caller's workspace | `REFERENCED_ENTITY_NOT_FOUND` | 404 | Also applies to `artifactId` not belonging to the given `issueId`. |
+| Issue referenced by `issueId` does not exist or is outside the caller's workspace | `WORKSPACE_ACCESS_DENIED` | 403 | Over REST, `RestWorkspaceScope.RequireIssueAsync` resolves `issueId` before the service runs, so foreign and nonexistent ids are indistinguishable by design (no existence oracle). The service's own `REFERENCED_ENTITY_NOT_FOUND` remains the contract for non-REST callers. |
+| `artifactId` does not belong to the given `issueId` | `REFERENCED_ENTITY_NOT_FOUND` | 404 | Checked *after* the issue is already workspace-scoped, so revealing the artifact's absence leaks nothing about another tenant. |
 | `kind` is not one of `file`/`link`/`deployment`/`pull_request` | `VALIDATION_FAILED` | 400 | Names the invalid `kind` value. |
 | `RefreshArtifactAsync` called with a non-refreshable `kind` (not `pull_request`) | `VALIDATION_FAILED` | 400 | Names the kind and states refresh only applies to `pull_request` artifacts. |
 | `title` or `contentReference` missing/empty | `VALIDATION_FAILED` | 400 | Names the missing field. |

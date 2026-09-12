@@ -9,7 +9,7 @@
 | Component | realtime-updates |
 | Priority | P1 |
 | Status | **Implemented** — transport-neutral publisher, coalescing dispatcher, SignalR hub, Angular client, and the approved-plugin-event relay are all in `src/`. |
-| Last verified | 2026-09-12 against commit `3eaacbb` — `dotnet test Anvilboard.slnx` 320 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
 | SRS Refs | FR-WRK-014, FR-INT-006, NFR-PERF-002 |
 | Tech Design Ref | §8.1 Component Overview; §9 API Design; §12 Performance Design |
 | Depends On | workspace-authorization, issue-board-service |

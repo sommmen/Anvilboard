@@ -9,7 +9,7 @@
 | Component | issue-board-service |
 | Priority | P0 |
 | Status | Partial — backend CRUD, board/list querying/filtering/grouping, and dashboard aggregation are implemented; the web UI only groups by status (no filter stack), the issue-detail activity feed is not rendered, comments are flat (not threaded), and optimistic concurrency (`Issue.Version`) and the link-update endpoint are incomplete. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `3eaacbb` — `dotnet test Anvilboard.slnx` 320 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
 | SRS Refs | FR-WRK-001, FR-WRK-002, FR-WRK-003, FR-WRK-004, FR-WRK-005, FR-WRK-006, FR-WRK-007, FR-WRK-008, FR-WRK-009, FR-WRK-010, FR-WRK-011, FR-WRK-012, FR-WRK-013, FR-WRK-014, NFR-PERF-001, NFR-PERF-002, NFR-USB-001 |
 | Tech Design Ref | §8.1 — Issue & Board Service row; also §7.5 Computation Rules, §9 API Design, §12 Performance Design |
 | Depends On | workflow-engine, workspace-authorization |
@@ -288,6 +288,7 @@ Every anticipated failure resolves to a §7.7 catalog code; no raw EF Core or pr
 | `expectedVersion` does not match persisted `Issue.Version` | `CONCURRENCY_CONFLICT` | 409 | Response supplies current version for refetch/retry. |
 | Duplicate `(WorkspaceId, Key)` on issue creation | `RESOURCE_ALREADY_EXISTS` | 409 | UNIQUE constraint translation (tech-design §7.6). |
 | Idempotency key reused with a different payload/actor | `IDEMPOTENCY_KEY_REUSED` | 409 | Detected via the automation surface's `IdempotencyRecords`; this component must not apply a second mutation. |
+| `issueId` (or a `teamId`/`assigneeId` filter) is unknown or belongs to another workspace | `WORKSPACE_ACCESS_DENIED` | 403 | Over REST, `RestWorkspaceScope` resolves every ID-addressed route parameter before the service runs; foreign and nonexistent ids return an identical body so neither can be used as an existence oracle. |
 | Query/mutation for a workspace the actor cannot access | `WORKSPACE_ACCESS_DENIED` | 403 | Enforced by `workspace-authorization` upstream of this component; this component never re-derives it independently. |
 | `parentCommentId` does not resolve to a comment on the same issue | `REFERENCED_ENTITY_NOT_FOUND` | 404 | Applies to `AddCommentAsync`. |
 | `parentCommentId` resolves to a comment that is itself a reply | `VALIDATION_FAILED` | 400 | Names "single level of replies only" (FR-WRK-010). |

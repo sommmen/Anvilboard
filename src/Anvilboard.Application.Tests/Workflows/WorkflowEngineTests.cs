@@ -21,7 +21,7 @@ public sealed class WorkflowEngineTests
         await fixture.Db.SaveChangesAsync();
 
         var service = CreateIssueService(fixture);
-        var issue = await service.CreateAsync(fixture.TeamId, "Plan v0.1");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Plan v0.1");
 
         Assert.Equal(fixture.Current.Id, issue.WorkflowStateId);
         Assert.NotEqual(laterState.Id, issue.WorkflowStateId);
@@ -46,7 +46,7 @@ public sealed class WorkflowEngineTests
             null,
             DateTimeOffset.UtcNow);
 
-        var issue = await service.UpsertFromExternalAsync(normalized);
+        var issue = await service.UpsertFromExternalUnscopedAsync(normalized);
 
         Assert.Equal(fixture.Current.Id, issue.WorkflowStateId);
     }
@@ -60,7 +60,7 @@ public sealed class WorkflowEngineTests
         var service = CreateIssueService(fixture);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => service.CreateAsync(fixture.TeamId, "No available state"));
+            () => service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "No available state"));
 
         Assert.Contains("no active workflow state", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -185,7 +185,7 @@ public sealed class WorkflowEngineTests
         await fixture.Db.SaveChangesAsync();
 
         var service = CreateIssueService(fixture);
-        var updated = await service.ChangeStatusAsync(issue.Id, IssueStatus.Todo);
+        var updated = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Todo);
 
         Assert.Equal(IssueStatus.Todo, updated.Status);
         Assert.Equal(todo.Id, updated.WorkflowStateId);
@@ -207,7 +207,7 @@ public sealed class WorkflowEngineTests
         var service = CreateIssueService(fixture);
 
         var exception = await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
-            () => service.ChangeStatusAsync(issue.Id, IssueStatus.Done));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Done));
 
         Assert.Equal("INVALID_WORKFLOW_TRANSITION", exception.ErrorCode);
         var unchanged = await fixture.Db.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id);
@@ -227,7 +227,7 @@ public sealed class WorkflowEngineTests
         await fixture.Db.SaveChangesAsync();
 
         var service = CreateIssueService(fixture);
-        var result = await service.ChangeStatusAsync(issue.Id, IssueStatus.Backlog);
+        var result = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Backlog);
 
         Assert.Equal(0, result.Version);
         Assert.Equal(backlog.Id, result.WorkflowStateId);
@@ -246,7 +246,7 @@ public sealed class WorkflowEngineTests
         var service = CreateIssueService(fixture);
 
         var exception = await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
-            () => service.ChangeStatusAsync(issue.Id, IssueStatus.Todo));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Todo));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", exception.ErrorCode);
         var unchanged = await fixture.Db.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id);
