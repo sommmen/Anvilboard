@@ -43,10 +43,15 @@ architecture rather than introducing a new one.
    dotnet build Anvilboard.slnx
    cd src/anvilboard-web && npm run build
    ```
-5. There's no automated test suite yet (see [DEVELOPMENT.md's testing section](DEVELOPMENT.md#testing)).
-   Describe what you manually verified in your PR description — which UI flows you clicked
-   through, which CLI/MCP operations you called, which endpoints you hit. If your change is
-   substantial, adding tests for the parts of `Anvilboard.Application` you touched is a
+5. Run the tests before you open a PR (see
+   [DEVELOPMENT.md's testing section](DEVELOPMENT.md#testing)):
+   ```powershell
+   dotnet test Anvilboard.slnx
+   cd src/anvilboard-web && npm test
+   ```
+   Coverage is broad but not complete, so also describe what you manually verified in your PR
+   description — which UI flows you clicked through, which CLI/MCP operations you called, which
+   endpoints you hit. Adding tests for the parts of `Anvilboard.Application` you touched is a
    particularly welcome addition on top of the fix/feature itself.
 6. Keep pull requests scoped to one change. A plugin addition, a core feature, and a doc fix are
    three PRs, not one.

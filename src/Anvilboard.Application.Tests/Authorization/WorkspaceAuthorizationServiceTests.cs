@@ -195,6 +195,30 @@ public sealed class WorkspaceAuthorizationServiceTests
     }
 
     [Fact]
+    public async Task BootstrapFirstAdministratorAsync_NoExistingWorkspace_SeedsDefaultWorkflow()
+    {
+        await using var fixture = await AuthorizationFixture.CreateEmptyAsync();
+        var service = fixture.CreateService();
+        var request = new BootstrapRequest("Acme", "acme", "Root Admin", "root", "s3cret!");
+
+        var actor = await service.BootstrapFirstAdministratorAsync(request);
+
+        var states = await fixture.Db.WorkflowStates
+            .Where(state => state.WorkspaceId == actor.WorkspaceId)
+            .OrderBy(state => state.Order)
+            .ToListAsync();
+        Assert.Equal(
+            new[] { "backlog", "todo", "in_progress", "in_review", "done", "cancelled" },
+            states.Select(state => state.Key));
+        Assert.Equal(new[] { "done", "cancelled" }, states.Where(state => state.IsTerminal).Select(state => state.Key));
+
+        var transitions = await fixture.Db.WorkflowTransitions
+            .Where(transition => transition.WorkspaceId == actor.WorkspaceId)
+            .CountAsync();
+        Assert.True(transitions > 0);
+    }
+
+    [Fact]
     public async Task BootstrapFirstAdministratorAsync_WorkspaceAlreadyExists_ThrowsValidationFailed()
     {
         await using var fixture = await AuthorizationFixture.CreateAsync();

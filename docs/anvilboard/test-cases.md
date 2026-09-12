@@ -3,10 +3,11 @@
 > **Status:** This document originally described a target-state QA specification for a proof of
 > concept with no automated test projects. That is now **stale** — the solution has 6 populated
 > xUnit test projects (plus 1 empty `Anvilboard.IntegrationTests` scaffold) with real, passing
-> coverage (`dotnet test` reports all green as of this audit). The tables below have been updated
-> to reflect actual existing tests; see [`docs/audit-report.md`](../audit-report.md) for the audit
-> that surfaced this and remaining gaps (e.g. no `DashboardService`/`SyncCoordinator`/backup-restore
-> test files exist yet).
+> coverage: `dotnet test Anvilboard.slnx` reports **320 passing, 0 failing**. The tables below have
+> been updated to reflect actual existing tests; see [`docs/audit-report.md`](../audit-report.md)
+> for the audit that surfaced this and the remaining gaps (no dedicated
+> `DashboardService`/`IssueService`/`SyncCoordinator` test file, and no CLI/MCP
+> contract-equivalence test project).
 >
 > **Source chain:** [PRD](./prd.md) → [SRS](./srs.md) → [Technical Design](./tech-design.md) → [feature specifications](../features/overview.md).
 
@@ -19,9 +20,9 @@
 | **Project** | Anvilboard |
 | **Project Type** | Multi-workspace issue-management web application with REST, CLI, MCP, provider integration, and plugin surfaces |
 | **Tech Stack** | .NET 10 / ASP.NET Core, Angular, EF Core, SQLite for supported single-host deployment |
-| **Test Framework** | xUnit across 6 populated test projects (`Application.Tests`, `Api.Tests`, `Infrastructure.Tests`, `Agent.Tests`, `Integrations.GitHub.Tests`, `Integrations.Linear.Tests`) plus an empty `IntegrationTests` scaffold; Angular/Vitest (`ng test`) covers a handful of components and services (`app.spec.ts`, `board-page.spec.ts`, `realtime-board-sync.service.spec.ts`) but no dedicated CLI/MCP contract-test project exists yet |
+| **Test Framework** | xUnit across 6 populated test projects (`Application.Tests`, `Api.Tests`, `Infrastructure.Tests`, `Agent.Tests`, `Integrations.GitHub.Tests`, `Integrations.Linear.Tests`) plus an empty `IntegrationTests` scaffold, spanning 38 test files; Angular/Vitest (`ng test`) covers a handful of components and services (`app.spec.ts`, `board-page.spec.ts`, `realtime-board-sync.service.spec.ts`) but no dedicated CLI/MCP contract-equivalence test project exists yet |
 | **Scan Date** | Updated by doc/implementation audit — see `docs/audit-report.md` |
-| **Input Mode** | Code Mode — verified against the actual `dotnet test` run for `Anvilboard.slnx` |
+| **Input Mode** | Code Mode — verified against the actual `dotnet test` run for `Anvilboard.slnx` (320 passing, 0 failing) |
 
 ### 1.2 Testable Units
 
@@ -32,8 +33,8 @@
 | 3 | `WorkflowEngine` and legacy-status migration | domain service / migration | `Anvilboard.Application.Tests/Workflows/WorkflowEngineTests.cs`; `Anvilboard.Infrastructure.Tests/Migrations/LegacyStatusMigrationTests.cs` | Yes | Covered |
 | 4 | `BoardQueryService`, `IssueLinkService` | application services | `Anvilboard.Application.Tests/Issues/BoardQueryServiceTests.cs`; `Anvilboard.Application.Tests/Issues/IssueLinkServiceTests.cs` | Yes | Covered — no `DashboardService`/`IssueService` test file exists; see `docs/audit-report.md` |
 | 5 | webhook receivers, plugin registry, plugin config/state store | integration boundary | `Anvilboard.Integrations.GitHub.Tests/GitHubWebhookReceiverTests.cs`; `Anvilboard.Integrations.Linear.Tests/LinearWebhookReceiverTests.cs`; `Anvilboard.Infrastructure.Tests/Plugins/PluginRegistryTests.cs`; `Anvilboard.Infrastructure.Tests/Plugins/PluginConfigStateStoreTests.cs`; `Anvilboard.Api.Tests/Realtime/WebhookEndpointsTests.cs` | Yes | Covered — no dedicated `SyncCoordinator` test file exists |
-| 6 | idempotency, correlation context, error-catalog translation, agent board surface | application / transport | `Anvilboard.Application.Tests/Automation/IdempotencyServiceTests.cs`; `Anvilboard.Application.Tests/Automation/CorrelationContextTests.cs`; `Anvilboard.Application.Tests/Automation/ErrorCatalogTranslatorTests.cs`; `Anvilboard.Agent.Tests/BoardAgentServiceTests.cs` | Yes | Covered — no dedicated CLI/MCP contract-equivalence test project exists |
-| 7 | audit redaction | operations service | `Anvilboard.Application.Tests/Audit/AuditServiceTests.cs` | Yes | Covered — no backup/restore test file exists because no backup/restore service exists (Critical finding, see `docs/audit-report.md`) |
+| 6 | idempotency, correlation context, error-catalog translation, agent board surface | application / transport | `Anvilboard.Application.Tests/Automation/IdempotencyServiceTests.cs`; `Anvilboard.Application.Tests/Automation/CorrelationContextTests.cs`; `Anvilboard.Application.Tests/Automation/ErrorCatalogTranslatorTests.cs`; `Anvilboard.Agent.Tests/BoardAgentServiceTests.cs`; `Anvilboard.Agent.Tests/AgentAuthorizationIntegrationTests.cs`; `Anvilboard.Agent.Tests/AgentCatalogInvariantsTests.cs`; `Anvilboard.Agent.Tests/AgentRequestGuardTests.cs`; `Anvilboard.Agent.Tests/Hosting/McpStdoutTests.cs` | Yes | Covered — agent authentication, permission enforcement, workspace isolation, catalog invariants, and MCP stdout isolation are tested; a dedicated CLI/MCP contract-*equivalence* project still does not exist |
+| 7 | audit redaction, backup and restore | operations services | `Anvilboard.Application.Tests/Audit/AuditServiceTests.cs`; `Anvilboard.Application.Tests/Backup/*` (`BackupServiceTests`, `BackupRoundTripTests`, `BackupSecretScanTests`, `RestoreCoordinatorTests`); `Anvilboard.Infrastructure.Tests/Persistence/Backup/*` (`SqliteBackupArchiverTests`, `FileSystemBackupArchiveStoreTests`, `AnvilboardDbOptionsBackupTests`); `Anvilboard.Api.Tests/Backup/BackupEndpointTests.cs` | Yes | Covered — backup/restore shipped (CRIT-001, MAJ-019 RESOLVED in `docs/audit-report.md`) |
 | 8 | integration lifecycle, DP-API secret store | application / infrastructure services | `Anvilboard.Application.Tests/Integrations/IntegrationServiceTests.cs`; `Anvilboard.Infrastructure.Tests/Security/DataProtectionSecretStoreTests.cs` | Yes | Covered |
 | 9 | end-to-end API integration | integration boundary | `tests/Anvilboard.IntegrationTests` | No | None — project scaffold exists but contains no test files |
 | 10 | real-time publisher, coalescer, workspace hub, client sync | application service / transport boundary | `Anvilboard.Application.Tests/Realtime/RealtimeChangeBufferTests.cs`, `IssueServiceRealtimePublicationTests.cs`, `PluginEventRelayTests.cs`; `Anvilboard.Api.Tests/Realtime/WorkspaceRealtimeHubTests.cs`; `anvilboard-web/src/app/core/realtime-board-sync.service.spec.ts`; `anvilboard-web/src/app/board/board-page/board-page.spec.ts` | Yes | Covered — see [realtime-updates.md](../features/realtime-updates.md) |
@@ -44,9 +45,9 @@
 |---|---:|
 | Test projects | 6 `*.Tests` unit/integration projects with tests + 1 empty `Anvilboard.IntegrationTests` scaffold (no `.cs` test files yet) |
 | Testable boundaries with an existing test file | 9 of 10 listed above have at least one test file |
-| Total automated tests (last `dotnet test` run) | 189 total: 168 .NET (`125 + 14 + 11 + 1 + 12 + 5` across the 6 populated projects, in the order listed above) plus 21 Angular (`ng test`), all passing |
+| Total automated tests (last run) | 341 total: 320 .NET (`dotnet test Anvilboard.slnx` — Application 192, Infrastructure 41, Agent 40, Api 30, GitHub 12, Linear 5) plus 21 Angular (`ng test`, 3 spec files), all passing |
 | Test result | All passing, 0 failures |
-| Known coverage gaps | No `DashboardService` or `SyncCoordinator` test files; no backup/restore tests (service doesn't exist); no dedicated CLI/MCP contract-equivalence test project; `Anvilboard.IntegrationTests` project exists but is empty |
+| Known coverage gaps | No dedicated `DashboardService`, `IssueService`, or `SyncCoordinator` test file; no CLI/MCP contract-equivalence test project (though `Anvilboard.Agent.Tests` now covers authorization, the operation catalog, request guards, and MCP stdout isolation); `Anvilboard.IntegrationTests` project exists but is empty |
 
 ### 1.4 Interaction Map
 
@@ -277,7 +278,8 @@ AC identifiers are intentionally qualified with their source document because se
 |---|---|---|
 | `Anvilboard.IntegrationTests` project is empty | The project scaffold and `WebApplicationFactory`-style dependencies exist, but no `.cs` test files were added. | Add the planned end-to-end integration test cases to this project. |
 | No `DashboardService`/`IssueService`/`SyncCoordinator` test files | These services exist in `Anvilboard.Application`/`Anvilboard.Infrastructure` but have no dedicated unit test file yet. | Add the planned unit test cases for these services. |
-| No Angular component or CLI/MCP contract-equivalence tests | The frontend and automation-adapter parity claims in this document are not backed by an existing test suite. | Add Angular component tests and a CLI/MCP contract-equivalence test project. |
+| No CLI/MCP contract-equivalence tests | `Anvilboard.Agent.Tests` covers authorization, catalog invariants, request guards, and MCP stdout isolation, but nothing asserts that the CLI and MCP transports produce identical envelopes and error codes for the same operation. | Add a CLI/MCP contract-equivalence test project. |
+| Thin Angular component coverage | `ng test` runs 21 tests across 3 spec files (`app`, `board-page`, `realtime-board-sync.service`); the remaining components and services are untested. | Add Angular component tests as the frontend interaction design is decomposed. |
 | Plugin-event relay coverage (`FR-INT-006`, `AC-RT-006`) | Closed — `PluginEventRelayTests` covers approval filtering and mapping, `GitHubWebhookReceiverTests` covers event reporting, and `WorkspaceRealtimeHubTests` drives a webhook delivery through to a connected hub client in both the approved and unapproved cases. | None. |
 | Deployability coverage (`NFR-PRT-001`) | The technical design defines supported deployment but does not yet provide executable deployment/upgrade detail. | Add deployment acceptance criteria and an environment smoke/upgrade test specification before packaging work. |
 | Explicit not-found contract exercise | The catalog defines `REFERENCED_ENTITY_NOT_FOUND`, but the feature test modules do not name a concrete endpoint case. | Add endpoint-level missing workflow state/member/reference tests when routes are finalized. |

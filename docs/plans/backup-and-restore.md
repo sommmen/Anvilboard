@@ -16,7 +16,7 @@
 | Audit finding | [`audit-report.md`](../audit-report.md) **CRIT-001** (and **MAJ-019** NFR-AVL-001 not met) |
 | SRS refs | `FR-OPS-002` (primary), `NFR-AVL-001` (primary), `FR-OPS-001` + `NFR-REL-001` + `NFR-SEC-001` (touched) |
 | Acceptance criteria | `AC-011`, `AC-012`, `AC-202`, `AC-203`, `AC-204` (from [`audit-and-recovery.md`](../features/audit-and-recovery.md)) |
-| Status | Plan — not yet implemented |
+| Status | **Implemented** — `IBackupService`/`BackupService`, `IRestoreCoordinator`/`RestoreCoordinator`, the SQLite archiver/archive store, and `BackupEndpoints` are all delivered; CRIT-001 and MAJ-019 are marked RESOLVED in [`audit-report.md`](../audit-report.md). |
 | Created | 2026-09-10 |
 
 ## 2. Why this feature was selected
@@ -626,7 +626,7 @@ which makes them simultaneously CLI commands and MCP tools:
 `restore` is deliberately **not** exposed to the agent surface in this milestone: MAJ-015 records
 that agent/automation operations currently lack workspace-scoped authorization and actor identity,
 so exposing an instance-wide destructive operation there would be a privilege escalation. Recorded
-as §17 OQ-P3, gated on MAJ-015.
+as §17 OQ-P3; MAJ-015 is closed, but restore remains excluded under DR-AGT-004 because authorization alone cannot provide trustworthy confirmation for an instance-wide destructive operation.
 
 ## 10. Data & Storage Design
 
@@ -806,7 +806,7 @@ Doc-first discipline: these are edited **in place**; no parallel or `-v2` files,
 |---|---|---|---|
 | OQ-P1 | REST routes: `/api/backups` (matching code) or `/api/v1/backups` (matching tech-design §9.1)? | Resolved | Use `/api/backups`. No route in `src/` carries a `/v1` segment; introducing one in a single feature would fragment the surface. The `/v1` discrepancy is pre-existing and cross-cutting and belongs to a dedicated versioning change. |
 | OQ-P2 | Reuse `RATE_LIMITED` for the restore-in-progress window, or add `RESTORE_IN_PROGRESS`? | Resolved | Reuse `RATE_LIMITED` + `Retry-After`. A new code requires §7.7 and SRS Appendix A edits for a transient sub-second condition whose correct client action is already exactly "retry shortly". Revisit if operators report ambiguity. |
-| OQ-P3 | Expose `restore` on the CLI/MCP agent surface? | Deferred | No, pending MAJ-015 (agent surface lacks workspace-scoped authorization and actor identity). Exposing an instance-wide destructive operation on an unauthenticated surface would be a privilege escalation. Re-open when MAJ-015 closes. |
+| OQ-P3 | Expose `restore` on the CLI/MCP agent surface? | Resolved | No. MAJ-015 is closed: the agent surface now has workspace-scoped authorization and actor identity. Restore remains excluded because it is destructive and instance-wide, needs a dangerous-operation confirmation policy, and MCP has no trustworthy interactive confirmation channel; a client-supplied confirmation flag is not sufficient. See `agent-surface-authorization.md` DR-AGT-004. |
 | OQ-P4 | Does this plan also close `FR-OPS-001`'s missing `IAuditService.QueryAsync` (MAJ-018)? | Resolved | No. Same feature spec, independent capability, independently shippable. Keeping them separate keeps this milestone at its 1-week §16 estimate. |
 | OQ-P5 | Should backup artifacts be encrypted at rest? | Deferred | Not in this milestone — it needs a key-management decision that would also have to cover key backup (an encrypted backup whose key is only in the lost database is not a backup). Mitigation documented in §11.3. |
 | OQ-P6 | `wal_checkpoint` + copy, or `BackupDatabase`? | Resolved | `BackupDatabase`, preceded by a `TRUNCATE` checkpoint. Consistent under concurrent writers, and still satisfies the feature spec's step 1 literally. |

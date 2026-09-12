@@ -69,6 +69,10 @@ else
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// Echoes the resolved correlation id on every response, including authentication/authorization
+// denials, which is why it runs ahead of the enforcement point below.
+app.UseMiddleware<CorrelationIdMiddleware>();
+
 // Every route mapped after this point is authenticated by WorkspaceAuthorizationMiddleware (§11.2
 // single enforcement point) unless it explicitly opts out with `.AllowAnonymous()` (bootstrap,
 // login, webhooks, and the SPA fallback route below).

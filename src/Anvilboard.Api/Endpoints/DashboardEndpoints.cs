@@ -10,7 +10,7 @@ public static class DashboardEndpoints
     {
         app.MapGet("/api/dashboard/summary", async (DashboardService service, Guid? teamId, CancellationToken ct) =>
         {
-            var summary = await service.GetSummaryAsync(teamId is { } t ? new TeamId(t) : null, ct);
+            var summary = await service.GetSummaryAsync(teamId is { } t ? new TeamId(t) : null, ct: ct);
             return Results.Ok(summary);
         }).WithTags("Dashboard").RequirePermission(Permission.ReadDashboard);
     }

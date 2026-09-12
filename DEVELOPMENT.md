@@ -97,20 +97,49 @@ API host runs standalone and the Angular dev server handles the UI with live rel
 `ng serve` prints (typically `http://localhost:4200`), not the API's port, while doing frontend
 work this way.
 
-**Agent CLI**, one-shot:
+**Agent CLI**, one-shot. First create an automation credential with
+`POST /api/auth/credentials` as a workspace administrator; copy the returned token because only its
+hash is stored. Configure that token for every CLI or MCP process:
 
 ```powershell
+$env:ANVILBOARD_AGENT__APITOKEN = '<automation-credential-token>'
 cd src/Anvilboard.Agent
 dotnet run -- issues list-issues --full
-dotnet run -- issues create-issue --teamId <guid> --title "Fix the thing"
+dotnet run -- issues create-issue --teamId <guid> --title "Fix the thing" --idempotencyKey "dev-create-001"
 ```
+
+Every operation is authenticated and authorized within the credential's workspace. Each invocation
+gets an isolated dependency-injection scope and correlation ID, and returns
+`{"apiVersion":"1.0","correlationId":"...","data":...}`. The six workspace-data mutations require
+`--idempotencyKey value`; the key is scoped by workspace, actor, and operation and is retained for
+30 days. Use `--name value` syntax rather than `name=value`.
+
+The surface exposes 13 operations, all of which are also registered as MCP tools:
+
+| Category | Operation | Idempotency key required |
+|---|---|---|
+| `issues` | `list-issues`, `get-issue` | No (reads) |
+| `issues` | `create-issue`, `change-issue-status`, `assign-issue`, `comment-on-issue` | **Yes** |
+| `issues` | `list-issue-links` | No (read) |
+| `issues` | `create-issue-link`, `remove-issue-link` | **Yes** |
+| `dashboard` | `dashboard-summary` | No (read) |
+| `backup` | `create-backup`, `list-backups`, `verify-backup` | No |
+
+Restore is deliberately **not** exposed to the agent surface — it is an administrator-only REST
+operation (`DR-AGT-004`). Effective permissions are the intersection of the credential's grants and
+the actor's workspace role.
 
 **Agent MCP server**, long-running (also the only mode that runs the ingestion polling loop):
 
 ```powershell
+$env:ANVILBOARD_AGENT__APITOKEN = '<automation-credential-token>'
 cd src/Anvilboard.Agent
 dotnet run -- mcp
 ```
+
+MCP creates and disposes a scope and correlation ID per tool call. Standard output is reserved for
+JSON-RPC; diagnostics are written to standard error. This authenticated, versioned, idempotent
+contract is intentionally breaking relative to the earlier agent surface.
 
 ## Configuration
 
@@ -195,18 +224,19 @@ once a drill is confirmed good.
 
 ## Testing
 
-The xUnit projects cover the Workflow Engine, endpoint authorization, agent-operation metadata, and
-webhook validation:
+The xUnit projects cover the Workflow Engine, endpoint authorization, the agent surface, backup and
+restore, artifacts, real-time delivery, and webhook validation. A full `dotnet test Anvilboard.slnx`
+run is **320 passing, 0 failing**:
 
-| Project | What it covers |
-|---|---|
-| `src/Anvilboard.Application.Tests` | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior; also covers workspace authorization, issue linking, and the automation surface foundations (`IdempotencyService` replay/reuse detection, `CorrelationContext`, `ErrorCatalogTranslator`). No database — uses EF Core's in-memory-ish SQLite (`DataSource=:memory:`) per test. |
-| `src/Anvilboard.Infrastructure.Tests` | Migration integration test: seeds a legacy pre-workflow SQLite schema, runs the real EF Core migrations against it, and asserts the default workflow states/transitions were seeded and existing issues were backfilled to the matching workflow state. |
-| `src/Anvilboard.Api.Tests` | API-host integration tests for workspace authorization endpoints and the real-time SignalR hub (connection authorization, workspace isolation, and mutation isolation from a slow client). |
-| `src/Anvilboard.Agent.Tests` | Agent operation-catalog coverage; requires the sibling `dotnet-agent-surface` checkout. |
-| `src/Anvilboard.Integrations.GitHub.Tests` | GitHub webhook signature validation and issue-event mapping. |
-| `src/Anvilboard.Integrations.Linear.Tests` | Linear webhook signature validation and issue-event mapping. |
-| `tests/Anvilboard.IntegrationTests` | Reserved for cross-cutting integration coverage. |
+| Project | Tests | What it covers |
+|---|---:|---|
+| `src/Anvilboard.Application.Tests` | 192 | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior; also covers workspace authorization, issue linking, artifacts (`ArtifactService`), audit redaction, backup/restore round-trips and secret scanning, real-time dispatch/coalescing/plugin-event relay, and the automation surface foundations (`IdempotencyService` replay/reuse detection, `CorrelationContext`, `ErrorCatalogTranslator`). No database file — uses SQLite `DataSource=:memory:` per test. |
+| `src/Anvilboard.Infrastructure.Tests` | 41 | Migration integration test (seeds a legacy pre-workflow SQLite schema, runs the real EF Core migrations, asserts default workflow states/transitions were seeded and issues backfilled), plus plugin registry/config-state storage, the SQLite backup archiver and archive store, and the data-protection secret store. |
+| `src/Anvilboard.Api.Tests` | 30 | API-host integration tests for workspace authorization endpoints, artifact and backup endpoints, the `X-Correlation-Id` middleware, webhook endpoints, and the real-time SignalR hub (connection authorization, workspace isolation, and mutation isolation from a slow client). |
+| `src/Anvilboard.Agent.Tests` | 40 | Agent operation-catalog invariants, request guards, SQLite-backed authorization integration tests (credential authentication, permission enforcement, workspace isolation, actor attribution), and MCP stdout isolation. Requires the sibling `dotnet-agent-surface` checkout. |
+| `src/Anvilboard.Integrations.GitHub.Tests` | 12 | GitHub webhook signature validation and issue-event mapping. |
+| `src/Anvilboard.Integrations.Linear.Tests` | 5 | Linear webhook signature validation and issue-event mapping. |
+| `tests/Anvilboard.IntegrationTests` | 0 | Reserved for cross-cutting integration coverage; still an empty scaffold. |
 
 Run focused tests with:
 
@@ -229,9 +259,9 @@ Frontend tests remain in `src/anvilboard-web` and run through Angular/Vitest (`n
 feature specification paths `src/Anvilboard.Web` and `tests/Anvilboard.Web.Tests` are stale; do not
 create a separate frontend test project at those paths.
 
-Beyond the Workflow Engine, most of the codebase (`IssueService`, `DashboardService`, the API
-endpoints, the agent surface) still has no automated coverage. The canonical test strategy and
-coverage plan going forward is
+Coverage is now broad but not uniform: `IssueService`, `DashboardService`, and `SyncCoordinator`
+still have no dedicated test file of their own, and there is no CLI/MCP contract-equivalence test
+project. The canonical test strategy and coverage plan going forward is
 [`docs/anvilboard/test-cases.md`](docs/anvilboard/test-cases.md). If you're adding a non-trivial
 feature elsewhere, adding tests for it (following the pattern in
 `Anvilboard.Application.Tests`) is a welcome contribution — see [CONTRIBUTING.md](CONTRIBUTING.md).

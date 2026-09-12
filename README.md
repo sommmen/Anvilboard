@@ -32,9 +32,9 @@ up ownership of the data or standing up infrastructure to get it.
   one executable. `dotnet run` (or one published binary) is the whole deployment.
 - **Local-first storage.** One SQLite file. Back it up by copying a file; move it by copying a
   file.
-- **Kanban board + dashboard.** Backlog → Todo → In Progress → In Review → Done/Cancelled columns,
-  quick-create, an issue detail panel, and a dashboard with throughput, status/source breakdowns,
-  and open-load-by-assignee.
+- **Kanban board + dashboard.** Ships with a default Backlog → Todo → In Progress → In Review →
+  Done/Cancelled workflow, fully configurable per workspace. Plus quick-create, an issue detail
+  panel, and a dashboard with throughput, status/source breakdowns, and open-load-by-assignee.
 - **Live board updates.** Open boards patch themselves over SignalR when anyone — a teammate, an
   agent, or an integration — changes an issue, so you are not refreshing to find out what moved.
   A connection only ever receives its own workspace's changes, and a dropped connection re-fetches
@@ -115,12 +115,24 @@ workflow in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ### Using the agent surface
 
+Create an automation credential for the target workspace through `POST /api/auth/credentials`, then
+provide its one-time token to the agent process. The environment variable name has two underscores
+between `AGENT` and `APITOKEN` because it maps to the `Agent:ApiToken` configuration key.
+
 ```powershell
+$env:ANVILBOARD_AGENT__APITOKEN = '<automation-credential-token>'
 cd src/Anvilboard.Agent
-dotnet run -- issues create-issue --teamId <guid> --title "Fix the thing"
+dotnet run -- issues create-issue --teamId <guid> --title "Fix the thing" --idempotencyKey "create-fix-001"
 dotnet run -- issues list-issues --status InProgress
 dotnet run -- mcp   # long-running MCP server over stdio, for an MCP-aware agent host
 ```
+
+All CLI and MCP operations return a JSON envelope shaped as
+`{"apiVersion":"1.0","correlationId":"...","data":...}`. Mutating issue and link operations require
+a non-empty `--idempotencyKey`; replaying the same key and payload returns the original result, while
+reusing it with a different payload is rejected. This is a breaking change from the previous
+unauthenticated, unenveloped CLI/MCP contract. Backup operations derive their workspace from the
+authenticated credential, and restore remains REST-only.
 
 The CLI and MCP surface both call `BoardAgentService`, the same application services the REST API
 calls — see [`docs/features/agent-and-automation-surface.md`](docs/features/agent-and-automation-surface.md)

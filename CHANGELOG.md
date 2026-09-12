@@ -7,6 +7,17 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking — agent CLI/MCP contract:** all operations now require an automation credential through
+  `ANVILBOARD_AGENT__APITOKEN`, enforce credential permissions and workspace ownership, and return
+  `{ apiVersion, correlationId, data }` envelopes. The six issue/link mutations now require an
+  `idempotencyKey`; backup operations derive the workspace from the credential instead of accepting
+  a caller-supplied workspace ID. Each CLI invocation and MCP tool call gets an isolated DI scope,
+  and MCP reserves stdout for JSON-RPC while routing diagnostics to stderr.
+- REST responses now echo or generate `X-Correlation-Id`, including authentication and
+  authorization failures.
+
 ### Added
 
 - Artifact application layer (`FR-ART-001`, `FR-ART-002`, closing audit finding `CRIT-003` and
@@ -86,3 +97,8 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 - `anvilboard-web/proxy.conf.json` pointed `ng serve`'s dev proxy at port `5289`, which doesn't
   match `Anvilboard.Api`'s actual `launchSettings.json` port (`5089`); corrected so the Angular
   dev server workflow described in [DEVELOPMENT.md](DEVELOPMENT.md) works out of the box.
+- `POST /api/auth/bootstrap` now seeds the same six default `WorkflowState` rows and linear
+  `WorkflowTransition` adjacency that migration `20260908093300_AddWorkflowStates.cs` seeds for
+  pre-existing workspaces (closing audit finding `MAJ-021`). Previously, bootstrap created only the
+  workspace and administrator, so `POST /api/issues` against a freshly bootstrapped (self-hosted)
+  workspace failed with an opaque 500 because no workflow state existed to assign to the new issue.

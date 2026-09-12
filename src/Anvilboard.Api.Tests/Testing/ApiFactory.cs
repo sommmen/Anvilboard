@@ -66,38 +66,6 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncDisposabl
     }
 
     /// <summary>
-    /// Seeds the workflow states a workspace needs before an issue can be created. The bootstrap
-    /// endpoint does not seed them (only the <c>AddWorkflowStates</c> migration does, for workspaces
-    /// that already existed), so a test that creates issues has to supply them itself.
-    /// </summary>
-    public async Task SeedWorkflowStatesAsync()
-    {
-        using var scope = Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
-        var workspaceId = await db.Workspaces.Select(workspace => workspace.Id).FirstAsync();
-
-        db.WorkflowStates.AddRange(
-            new WorkflowState
-            {
-                Id = WorkflowStateId.New(),
-                WorkspaceId = workspaceId,
-                Key = "backlog",
-                DisplayName = "Backlog",
-                Order = 0,
-            },
-            new WorkflowState
-            {
-                Id = WorkflowStateId.New(),
-                WorkspaceId = workspaceId,
-                Key = "done",
-                DisplayName = "Done",
-                Order = 1,
-                IsTerminal = true,
-            });
-        await db.SaveChangesAsync();
-    }
-
-    /// <summary>
     /// Seeds a second workspace with its own administrator directly through the DbContext, and
     /// returns that workspace's id. The bootstrap endpoint refuses to run twice, so tests that need
     /// two tenants on <em>one</em> host — the only way to prove cross-workspace isolation inside a

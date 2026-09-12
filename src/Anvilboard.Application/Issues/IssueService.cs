@@ -49,12 +49,18 @@ public sealed class IssueService(
         TeamId? teamId = null,
         IssueStatus? status = null,
         MemberId? assigneeId = null,
+        WorkspaceId? workspaceId = null,
         CancellationToken ct = default)
     {
         var query = db.Issues.AsNoTracking().AsQueryable();
         if (teamId is { } team) query = query.Where(i => i.TeamId == team);
         if (status is { } s) query = query.Where(i => i.Status == s);
         if (assigneeId is { } assignee) query = query.Where(i => i.AssigneeId == assignee);
+        if (workspaceId is { } workspace)
+        {
+            query = query.Where(issue => db.Teams.Any(
+                team => team.Id == issue.TeamId && team.WorkspaceId == workspace));
+        }
 
         // Sorted client-side: SQLite's EF provider cannot translate ORDER BY over a DateTimeOffset
         // column, and at this project's target scale (a single team/workspace) materializing the

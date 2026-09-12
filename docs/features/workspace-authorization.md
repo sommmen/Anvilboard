@@ -8,7 +8,8 @@
 |-------|-------|
 | Component | workspace-authorization |
 | Priority | P0 |
-| Status | Partial — `WorkspaceAuthorizationService`, `WorkspaceAuthorizationMiddleware`, `AuthEndpoints`, and `RequiresPermissionAttribute` are implemented and unit-tested. REST includes administrator credential listing and immediate revocation with audit emission; CLI/MCP enforcement remains outstanding. See `docs/audit-report.md` for details. |
+| Status | Partial — `WorkspaceAuthorizationService`, `WorkspaceAuthorizationMiddleware`, `AuthEndpoints`, and `RequiresPermissionAttribute` are implemented and unit-tested. REST includes administrator credential listing and immediate revocation with audit emission, and bootstrap seeds the default workflow states transactionally (MAJ-021). CLI/MCP now authenticate and authorize every operation through `WorkspaceAuthorizationPolicy`/`AgentWorkspaceScope` (MAJ-001, MAJ-015). The residual gap is REST/application query scoping: reads and mutations are not yet uniformly bound to the authenticated workspace (MAJ-022). See `docs/audit-report.md` for details. |
+| Last verified | 2026-09-12 against commit `3eaacbb` — `dotnet test Anvilboard.slnx` 320 passing, `npm test` 21 passing |
 | SRS Refs | FR-WS-001, NFR-SEC-002 |
 | Tech Design Ref | §8.1 Workspace & Authorization; §11.2 Authorization |
 | Depends On | — |

@@ -46,10 +46,12 @@ public sealed class BoardAgentServiceTests
     [Fact]
     public void Discover_DoesNotExposeRestore()
     {
-        // `restore` is deliberately excluded from the agent surface (`docs/plans/backup-and-restore.md`
-        // §9.3, MAJ-015): the agent host has no workspace-scoped authorization or actor identity, so
-        // exposing an instance-wide destructive operation here would be a privilege escalation. This
-        // guards against it being silently reintroduced.
+        // `restore` is deliberately excluded from the agent surface
+        // (`docs/plans/agent-surface-authorization.md` DR-AGT-004). Authorization now exists, so the
+        // blocker is no longer identity: restore is instance-wide and destructive, so it would need
+        // `AgentSafetyLevel.Dangerous` plus an `IConfirmationEnforcingPolicy` — and MCP has no
+        // trustworthy interactive confirmation channel, since a client can set the confirmed flag
+        // itself. This guards against it being silently reintroduced.
         var catalog = OperationCatalog.Discover(typeof(BoardAgentService));
 
         Assert.DoesNotContain(catalog.Operations, operation => operation.Name.Contains("restore", StringComparison.OrdinalIgnoreCase));
