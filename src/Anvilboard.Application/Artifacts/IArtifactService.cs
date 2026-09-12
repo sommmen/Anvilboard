@@ -10,8 +10,11 @@ namespace Anvilboard.Application.Artifacts;
 /// </summary>
 /// <remarks>
 /// Implementations assume the request is already authorized by the host (the REST group's
-/// permission requirement, or the hook's capability grant) and enforce only workspace reachability
-/// of the target issue. All anticipated failures surface as
+/// permission requirement, or the hook's capability grant) and confirm only that the target issue
+/// is reachable through a team; they take no <c>WorkspaceId</c> and do not themselves scope the
+/// lookup to a caller's workspace (like <c>IssueService</c> and <c>IssueLinkService</c>). Direct
+/// CLI/MCP/hook callers bypassing the REST authorization layer are covered by audit findings
+/// MAJ-001/MAJ-015, not by this service. All anticipated failures surface as
 /// <see cref="ArtifactException"/> carrying a catalogued error code.
 /// </remarks>
 public interface IArtifactService
@@ -29,7 +32,7 @@ public interface IArtifactService
     /// <c>"local"</c> for manual attachment.
     /// </param>
     /// <exception cref="ArtifactException">
-    /// <c>REFERENCED_ENTITY_NOT_FOUND</c> when the issue is unknown or outside the workspace;
+    /// <c>REFERENCED_ENTITY_NOT_FOUND</c> when the issue is unknown or not reachable through a team;
     /// <c>VALIDATION_FAILED</c> naming the offending field; <c>ARTIFACT_STORE_UNAVAILABLE</c> when
     /// inline content could not be stored — in which case no artifact row is persisted.
     /// </exception>
@@ -49,7 +52,7 @@ public interface IArtifactService
     /// Lists every artifact attached to <paramref name="issueId"/>, oldest first.
     /// </summary>
     /// <exception cref="ArtifactException">
-    /// <c>REFERENCED_ENTITY_NOT_FOUND</c> when the issue is unknown or outside the workspace.
+    /// <c>REFERENCED_ENTITY_NOT_FOUND</c> when the issue is unknown or not reachable through a team.
     /// </exception>
     Task<IReadOnlyList<ArtifactDto>> ListArtifactsAsync(IssueId issueId, CancellationToken ct = default);
 
@@ -65,7 +68,7 @@ public interface IArtifactService
     /// a public REST write path.
     /// </remarks>
     /// <exception cref="ArtifactException">
-    /// <c>REFERENCED_ENTITY_NOT_FOUND</c> when the issue is unknown or outside the workspace;
+    /// <c>REFERENCED_ENTITY_NOT_FOUND</c> when the issue is unknown or not reachable through a team;
     /// <c>VALIDATION_FAILED</c> when the kind is not refreshable or a field is invalid.
     /// </exception>
     Task<ArtifactDto> RefreshArtifactAsync(
