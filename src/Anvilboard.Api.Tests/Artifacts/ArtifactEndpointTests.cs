@@ -148,7 +148,6 @@ public sealed class ArtifactEndpointTests
     {
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("Cookie", await ApiFactory.BootstrapAndGetSessionCookieAsync(client));
-        await factory.SeedWorkflowStatesAsync();
         return client;
     }
 

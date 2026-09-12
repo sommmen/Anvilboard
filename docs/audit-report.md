@@ -40,7 +40,7 @@ fixed**.
 | Severity | Count | Categories |
 |----------|-------|------------|
 | Critical |   3   | audit-and-recovery (backup/restore missing — **since resolved**), realtime-updates (entire feature unimplemented — **since resolved**), artifacts (no ArtifactService) |
-| Major    |  21   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap |
+| Major    |  21   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap (**since resolved**: MAJ-019, MAJ-021) |
 | Minor    |   6   | README Kanban-column wording, PLUGINS.md staleness, workflow-engine API versioning, manifest validation, extra undocumented agent tools, IArtifactStore sole-caller claim |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
 
@@ -282,12 +282,21 @@ fixed**.
 - **Fix**: Implement the lifecycle-hook artifact-expansion path (shared work with CRIT-003) and add audit-event emission on artifact mutation.
 - **Status**: **Partially resolved.** Gap (2) is closed — `ArtifactService` emits `ArtifactAttached`/`ArtifactRefreshed`/`ArtifactRemoved` activity events on every mutation (see CRIT-003). Gap (1) remains open: no `IIssueHook` implementation calls `RefreshArtifactAsync` yet, though that seam now exists for it to consume.
 
-### MAJ-021: Bootstrap seeds no workflow states, so issue creation fails on a fresh workspace
+### MAJ-021: Bootstrap seeds no workflow states, so issue creation fails on a fresh workspace — **RESOLVED**
+
+> **Resolved.** `BootstrapFirstAdministratorAsync` now seeds the same six default `WorkflowState`
+> rows and linear `WorkflowTransition` adjacency as migration `20260908093300_AddWorkflowStates.cs`
+> seeds for pre-existing workspaces, in the same transaction as the workspace/administrator rows.
+> `POST /api/issues` now succeeds immediately after bootstrap without any out-of-band seeding step.
+> The test-only `ApiFactory.SeedWorkflowStatesAsync()` workaround has been removed since it is no
+> longer needed (and would now violate the `(WorkspaceId, Key)` uniqueness constraint).
+
 - **Location**: `src/Anvilboard.Application/Authorization/WorkspaceAuthorizationService.cs` (`BootstrapFirstAdministratorAsync`); `src/Anvilboard.Application/Issues/IssueService.cs` (`GetInitialWorkflowStateIdAsync`)
 - **Issue**: Bootstrap creates a workspace and an administrator member but no workflow states. `IssueService.GetInitialWorkflowStateIdAsync` throws when a workspace has none, so `POST /api/issues` returns 500 on any freshly bootstrapped workspace until states are seeded by some other path.
 - **Evidence**: Found while implementing realtime updates — the API tests could not create an issue against a bootstrapped host and had to add `ApiFactory.SeedWorkflowStatesAsync()` as a workaround.
 - **Impact**: First-run issue creation fails for a self-hosted install that follows the documented bootstrap flow, and the failure surfaces as an opaque 500 rather than an actionable error.
 - **Fix**: Seed the default workflow states during bootstrap, or return a domain error that names the missing configuration. Unrelated to realtime; left unchanged there to keep that change set scoped.
+- **Status**: **Resolved.** See the resolution note above for the delivered change and its test coverage (`WorkspaceAuthorizationServiceTests.BootstrapFirstAdministratorAsync_NoExistingWorkspace_SeedsDefaultWorkflow`).
 
 ## Minor Findings
 

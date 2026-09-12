@@ -86,3 +86,8 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 - `anvilboard-web/proxy.conf.json` pointed `ng serve`'s dev proxy at port `5289`, which doesn't
   match `Anvilboard.Api`'s actual `launchSettings.json` port (`5089`); corrected so the Angular
   dev server workflow described in [DEVELOPMENT.md](DEVELOPMENT.md) works out of the box.
+- `POST /api/auth/bootstrap` now seeds the same six default `WorkflowState` rows and linear
+  `WorkflowTransition` adjacency that migration `20260908093300_AddWorkflowStates.cs` seeds for
+  pre-existing workspaces (closing audit finding `MAJ-021`). Previously, bootstrap created only the
+  workspace and administrator, so `POST /api/issues` against a freshly bootstrapped (self-hosted)
+  workspace failed with an opaque 500 because no workflow state existed to assign to the new issue.

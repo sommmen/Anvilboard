@@ -61,7 +61,6 @@ public sealed class WorkspaceRealtimeHubTests
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
         client.DefaultRequestHeaders.Add("Cookie", cookie);
-        await factory.SeedWorkflowStatesAsync();
         var teamId = await CreateTeamAsync(client);
 
         await using var connection = BuildConnection(factory, cookie);
@@ -97,7 +96,6 @@ public sealed class WorkspaceRealtimeHubTests
         using var mutatingClient = factory.CreateClient();
         var mutatingCookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(mutatingClient, "workspace-a");
         mutatingClient.DefaultRequestHeaders.Add("Cookie", mutatingCookie);
-        await factory.SeedWorkflowStatesAsync();
         var teamId = await CreateTeamAsync(mutatingClient);
 
         await factory.SeedAdditionalWorkspaceAsync("workspace-b", "admin-b");
@@ -133,7 +131,6 @@ public sealed class WorkspaceRealtimeHubTests
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
         client.DefaultRequestHeaders.Add("Cookie", cookie);
-        await factory.SeedWorkflowStatesAsync();
         var teamId = await CreateTeamAsync(client);
 
         await using var connection = BuildConnection(factory, cookie);
