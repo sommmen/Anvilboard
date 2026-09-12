@@ -8,7 +8,8 @@
 |-------|-------|
 | Component | agent-and-automation-surface |
 | Priority | P0 |
-| Status | Partial — CLI/MCP authentication, workspace authorization, actor attribution, mutation idempotency, per-invocation correlation, response contract versioning, and stdio isolation are implemented. REST still lacks the common `{ apiVersion, correlationId, data }` body envelope and shared idempotency contract, and REST/application queries still require workspace-bound filtering (MAJ-021). |
+| Status | Partial — CLI/MCP authentication, workspace authorization, actor attribution, mutation idempotency, per-invocation correlation, response contract versioning, and stdio isolation are implemented. REST still lacks the common `{ apiVersion, correlationId, data }` body envelope and shared idempotency contract, and REST/application queries still require workspace-bound filtering (MAJ-022). |
+| Last verified | 2026-09-12 against commit `3eaacbb` — `dotnet test Anvilboard.slnx` 320 passing, `npm test` 21 passing |
 | SRS Refs | FR-AUT-001, FR-AUT-002, FR-AUT-003, NFR-MNT-001 |
 | Tech Design Ref | §8.1 Component Overview — Automation Surface (REST/CLI/MCP) row; §7.3 Parameter Validation; §7.6 Error Handling Strategy; §9 API Design; §10.1 `IdempotencyRecords` |
 | Depends On | workspace-authorization, workflow-engine, issue-board-service, integration-and-plugin-platform |

@@ -1,10 +1,10 @@
 # Documentation Audit Report
 
 > Project: Anvilboard
-> Audited: 2025 (this session)
-> Scope: Full — `docs/anvilboard/*`, `docs/features/*`, `docs/project-anvilboard.md`, root-level docs (`README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CHANGELOG.md`, `SPEC.md`, `FUNCTIONAL_SPEC.md`, `PLUGINS.md`)
-> Documents reviewed: 23
-> Code alignment: Yes — cross-referenced against `src/` (.NET 10 solution, `Anvilboard.slnx`) and `src/anvilboard-web` (Angular), plus a full `dotnet test Anvilboard.slnx --configuration Release` run
+> Audited: initial full pass, then re-verified against the code after the backup/restore, realtime, artifact, and agent-authorization work landed
+> Scope: Full — `docs/anvilboard/*`, `docs/features/*`, `docs/plans/*`, `docs/project-anvilboard.md`, `ideas/anvilboard/draft.md`, root-level docs (`README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CHANGELOG.md`, `SPEC.md`, `FUNCTIONAL_SPEC.md`, `PLUGINS.md`)
+> Documents reviewed: 30 Markdown documents
+> Code alignment: Yes — cross-referenced against `src/` (.NET 10 solution, `Anvilboard.slnx`) and `src/anvilboard-web` (Angular), plus a full `dotnet test Anvilboard.slnx` run: **320 passing, 0 failing** (Application 192, Agent 40, Infrastructure 41, Api 30, GitHub 12, Linear 5)
 
 ## Executive Summary
 
@@ -15,8 +15,9 @@ not structure but **currency**: several of the most-read documents (`docs/anvilb
 §16 milestone table, `docs/anvilboard/test-cases.md`, most of `docs/features/*.md`) were written as
 target-state / pre-implementation documents and were never updated as real code landed. Before this
 audit, `tech-design.md` §16 marked **every** milestone "Not Started" even though M1–M4.5 and parts of
-M5–M6.7 are substantially implemented and covered by 114 passing automated tests across 6 populated
-xUnit test projects; `test-cases.md` claimed there were **zero** automated test projects at all.
+M5–M6.7 are substantially implemented and covered by passing automated tests across 6 populated
+xUnit test projects (114 at the time of the first pass, **320** as of the latest re-verification);
+`test-cases.md` claimed there were **zero** automated test projects at all.
 
 The audit updated the doc/implementation-status claims across all 9 feature docs, the
 `docs/features/overview.md` index, the `tech-design.md` §16 milestone table, and the factual
@@ -41,7 +42,7 @@ fixed**.
 |----------|-------|------------|
 | Critical |   3   | audit-and-recovery (backup/restore missing — **since resolved**), realtime-updates (entire feature unimplemented — **since resolved**), artifacts (no ArtifactService) |
 | Major    |  22   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap (**resolved**: MAJ-001, MAJ-002 audit correction, MAJ-015–MAJ-017, MAJ-019, MAJ-021; **new/open**: MAJ-022 REST/application workspace scoping) |
-| Minor    |   6   | README Kanban-column wording, PLUGINS.md staleness, workflow-engine API versioning, manifest validation, extra undocumented agent tools, IArtifactStore sole-caller claim |
+| Minor    |   7   | PLUGINS.md staleness, workflow-engine API versioning, manifest validation (**open**); README Kanban-column wording, extra undocumented agent tools, IArtifactStore sole-caller claim, post-implementation doc drift (**resolved**: MIN-001, MIN-005, MIN-006, MIN-007) |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
 
 ## Document Health Matrix
@@ -52,8 +53,10 @@ fixed**.
 | `docs/anvilboard/srs.md` | A | B | A | C | B |
 | `docs/anvilboard/tech-design.md` | A | B (body) / D (§16 table, now corrected) | A | C (now corrected to B) | B |
 | `docs/anvilboard/test-cases.md` | B | D — claimed zero test projects (now corrected) | B | D (now corrected to B) | C |
-| `docs/features/*.md` (9 files) | A | C — several overstated "Implemented" claims (now corrected) | A | C (now corrected to B) | B |
-| `README.md` / `DEVELOPMENT.md` / `CONTRIBUTING.md` / `AGENTS.md` | A | A (one Minor wording nuance) | A | A | A |
+| `docs/features/*.md` (9 component specs + `overview.md`) | A | C — several overstated "Implemented" claims (now corrected) | A | C (now corrected to B) | B |
+| `README.md` / `AGENTS.md` | A | A (one Minor wording nuance) | A | A | A |
+| `DEVELOPMENT.md` / `CONTRIBUTING.md` | A | B — test-project descriptions and "no automated test suite yet" claims went stale as coverage grew (now corrected) | A | C (now corrected to A) | A |
+| `docs/plans/*.md` | A | B — `backup-and-restore.md` still said "Plan — not yet implemented" after shipping (now corrected) | A | B (now corrected to A) | A |
 | `SPEC.md` / `FUNCTIONAL_SPEC.md` / `PLUGINS.md` | — | — (self-declared historical/superseded) | A | PLUGINS.md has stale PoC-era code references (Minor) | — |
 
 ## Critical Findings
@@ -317,7 +320,11 @@ fixed**.
 
 ## Minor Findings
 
-### MIN-001: README Kanban-column list implies fixed columns, but the model is configurable
+### MIN-001: README Kanban-column list implies fixed columns, but the model is configurable — **RESOLVED**
+
+> **Resolved.** The README bullet now reads "Ships with a default Backlog → Todo → In Progress →
+> In Review → Done/Cancelled workflow, fully configurable per workspace."
+
 - **Location**: `README.md:35`
 - **Issue**: README states a fixed sequence of Kanban columns. The actual `WorkflowState` domain model (`src/Anvilboard.Domain/WorkflowState.cs:10-31`) is fully configurable per workspace; the listed columns are only the *default* seed values from migration `20260908093300_AddWorkflowStates.cs`.
 - **Evidence**: Direct code inspection of `WorkflowState.cs` (no hardcoded column list) versus the migration's seed data (matches README's list exactly).
@@ -345,7 +352,16 @@ fixed**.
 - **Impact**: Low-to-moderate — a malformed manifest could cause a less graceful failure than the spec implies.
 - **Fix**: Strengthen manifest validation (schema-based or explicit required-field checks) with corresponding tests.
 
-### MIN-005: Undocumented extra agent tools exist beyond the documented set
+### MIN-005: Undocumented extra agent tools exist beyond the documented set — **RESOLVED**
+
+> **Resolved.** [`DEVELOPMENT.md`](../DEVELOPMENT.md) now documents the complete 13-operation
+> catalog (`list-issues`, `get-issue`, `create-issue`, `change-issue-status`, `assign-issue`,
+> `comment-on-issue`, `list-issue-links`, `create-issue-link`, `remove-issue-link`,
+> `dashboard-summary`, `create-backup`, `list-backups`, `verify-backup`) with each operation's
+> category and idempotency-key requirement, and records that restore is deliberately not exposed
+> (`DR-AGT-004`). Verified against the `[AgentOperation(...)]` attributes in
+> `src/Anvilboard.Agent/BoardAgentService.cs`.
+
 - **Location**: `docs/features/agent-and-automation-surface.md`
 - **Issue**: The MCP/agent tool surface in code exposes additional tools not listed in the feature doc's documented tool catalog.
 - **Evidence**: Enumeration of registered MCP tools versus the doc's tool list during the earlier agent pass found extras.
@@ -363,6 +379,22 @@ fixed**.
 - **Impact**: Low on its own; becomes moot once CRIT-003 is resolved.
 - **Fix**: Verify/consolidate call sites once `ArtifactService` is introduced.
 
+### MIN-007: Post-implementation documentation drift across plans, contributor docs, and finding IDs — **RESOLVED**
+
+> **Resolved.** Every claim listed below was corrected in place during the documentation-currency
+> re-verification pass.
+
+- **Location**: `docs/features/workspace-authorization.md:11`; `docs/anvilboard/tech-design.md` §16 (M1, M4 rows); `docs/features/agent-and-automation-surface.md:11`; `docs/features/overview.md`; `docs/plans/backup-and-restore.md:19`; `DEVELOPMENT.md` (Testing section); `CONTRIBUTING.md:46`; `docs/anvilboard/test-cases.md` §1.1–§1.3, §6
+- **Issue**: Five classes of drift accumulated after the backup/restore, artifact, realtime, and agent-authorization work landed:
+  1. **Stale status claims** — `workspace-authorization.md` and tech-design §16's M1 row still said CLI/MCP enforcement was outstanding after MAJ-001/MAJ-015 shipped; `docs/plans/backup-and-restore.md` still read `Status | Plan — not yet implemented` after CRIT-001/MAJ-019 were resolved.
+  2. **Wrong finding IDs** — three documents cited **MAJ-021** (the resolved bootstrap-seeding finding) where they meant **MAJ-022** (the open REST/application workspace-query scoping gap), making a resolved finding look open and an open finding look absent.
+  3. **Stale test counts** — docs cited a 114- or 189-test suite; the real figure is **320 .NET + 21 Angular = 341**, across 38 test files.
+  4. **Understated coverage** — `DEVELOPMENT.md` described `Api.Tests` and `Agent.Tests` far more narrowly than their actual contents, and claimed "the agent surface … still has no automated coverage"; `CONTRIBUTING.md` told contributors "there's no automated test suite yet".
+  5. **Stale gap lists** — `test-cases.md` §1.3/§6 still listed backup/restore as untestable "because no backup/restore service exists".
+- **Evidence**: `dotnet test Anvilboard.slnx` → 320 passing / 0 failing (Application 192, Infrastructure 41, Agent 40, Api 30, GitHub 12, Linear 5); `npm test` in `src/anvilboard-web` → 21 passing across 3 spec files; direct inspection of `src/Anvilboard.Application/Backup/` (12 files including `BackupService.cs`, `RestoreCoordinator.cs`) and the 13 `[RequiresAgentPermission]` operations on `BoardAgentService`.
+- **Impact**: Medium-low but corrosive — a contributor reading `CONTRIBUTING.md` would skip running tests, and the MAJ-021/MAJ-022 confusion could cause an already-fixed bug to be "re-fixed" while the real open gap stayed unaddressed.
+- **Fix**: Applied. All affected documents were corrected in place; see INFO-005 for the drift-prevention suggestion.
+
 ## Observations & Suggestions
 
 ### INFO-001: PRD §11 (user-story checklists) and §12 (requirement statuses) predate most implementation and were left as-is
@@ -371,7 +403,7 @@ fixed**.
 
 ### INFO-002: `test-cases.md` forward-looking sections (§2 Test Strategy/Pyramid, §3–5 planned `TC-*` test case tables, §7 Statistics) were left as target-state content
 - **Location**: `docs/anvilboard/test-cases.md` §2 onward
-- **Note**: These sections describe a target test-coverage strategy and a catalog of planned test cases (`TC-AUTH-*`, `TC-WF-*`, etc.) rather than claims about current-state coverage, so they were left in place. Only the current-state claims (header callout, §1.1–1.3 tables, §6 Gap Analysis's "no test projects" line) were corrected to reflect the real 114-passing-test suite.
+- **Note**: These sections describe a target test-coverage strategy and a catalog of planned test cases (`TC-AUTH-*`, `TC-WF-*`, etc.) rather than claims about current-state coverage, so they were left in place. Only the current-state claims (header callout, §1.1–1.3 tables, §6 Gap Analysis's "no test projects" line) were corrected to reflect the real passing test suite (114 at the time of the first pass, 320 as of the latest re-verification).
 
 ### INFO-003: `IssueLinkService` directional/zero-cascade design is a positive finding, not a gap
 - **Location**: `docs/features/issue-linking.md`
@@ -383,6 +415,7 @@ fixed**.
 
 ### INFO-005: Consider a lightweight recurring-audit convention
 - **Note**: Given how quickly `tech-design.md` §16 and `test-cases.md` drifted from reality, consider adding a short "last verified against code" date stamp to each `docs/features/*.md` Status row and to `tech-design.md` §16, updated whenever a milestone's implementation state changes, to make the next audit faster and prevent similar drift.
+- **Status**: **Implemented.** Each `docs/features/*.md` now carries a `Last verified` row directly beneath its `Status` row, `docs/features/overview.md` carries one in its header block, and `tech-design.md` §16 carries a `**Last verified:**` line in its status callout. Each records the date, the commit audited, and the test totals observed. Re-stamp these whenever implementation state changes.
 
 ## Coverage Map
 
@@ -437,4 +470,4 @@ graph TD
 7. **Add sync-health/backoff tracking and enforce paused-integration webhook rejection** — fixes MAJ-012, MAJ-013 — medium
 8. **Close remaining UI/UX gaps (board filter parity, issue-detail activity feed, link-update endpoint)** — fixes MAJ-007, MAJ-008, MAJ-010, MAJ-011 — medium
 9. **Add a generic filterable audit-query method (`QueryAsync`-equivalent)** — fixes MAJ-018 — small
-10. **Reword the README Kanban-column description and add missing agent tools to the documented catalog** — fixes MIN-001, MIN-005 — small
+10. ~~**Reword the README Kanban-column description and add missing agent tools to the documented catalog**~~ — MIN-001 and MIN-005 both closed during the documentation-currency pass (see MIN-007) — done

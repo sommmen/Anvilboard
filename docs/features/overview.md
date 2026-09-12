@@ -3,6 +3,8 @@
 > Index of implementation-facing feature specs for Anvilboard's target architecture.
 > Source: `docs/anvilboard/tech-design.md` §8.1 Component Overview.
 > Created: 2026-09-05
+> Last verified: 2026-09-12 against commit `3eaacbb` — `dotnet test Anvilboard.slnx` 320 passing,
+> `npm test` 21 passing.
 
 Each spec in this directory documents one architectural component from
 [`docs/anvilboard/tech-design.md`](../anvilboard/tech-design.md) at implementation-planning depth:
@@ -16,7 +18,7 @@ feature needs more granular coverage.
 
 | # | Feature Spec | Priority | Status | Depends On | SRS Refs |
 |---|---|---|---|---|---|
-| 1 | [`workspace-authorization.md`](./workspace-authorization.md) | P0 | Partial | — | `FR-WS-001`, `NFR-SEC-002` |
+| 1 | [`workspace-authorization.md`](./workspace-authorization.md) | P0 | Partial — model, middleware, REST and CLI/MCP enforcement, admin revocation, and bootstrap seeding implemented; workspace-bound REST/application query filtering (MAJ-022) remains | — | `FR-WS-001`, `NFR-SEC-002` |
 | 2 | [`workflow-engine.md`](./workflow-engine.md) | P0 | Partial | — | `FR-WS-002`, `FR-WS-003` |
 | 3 | [`issue-board-service.md`](./issue-board-service.md) | P0 | Partial | Workspace Authorization, Workflow Engine | `FR-WRK-001`–`FR-WRK-014`, `NFR-PERF-001`, `NFR-PERF-002`, `NFR-USB-001` |
 | 4 | [`integration-and-plugin-platform.md`](./integration-and-plugin-platform.md) | P0 | Partial | Issue & Board Service, Workspace Authorization, Real-time Updates | `FR-INT-001`–`FR-INT-007`, `NFR-REL-002`, `NFR-SEC-001` |
@@ -51,7 +53,7 @@ The dependency order above is also the recommended build order:
    once the Issue & Board Service exists. The agent CLI/MCP surface now wraps application services
    with authenticated workspace scoping, actor attribution, idempotency, per-call correlation, and
    versioned response envelopes. REST envelope/idempotency normalization remains separate work, as
-   does closing MAJ-021's REST/application workspace-query gap. The integration platform is
+   does closing MAJ-022's REST/application workspace-query gap. The integration platform is
    additive (new providers, ingestion, webhooks) and does not block the core board experience.
    Both connect to Real-time Updates only through its non-blocking publisher contract.
 6. **Audit & Recovery** last in terms of full completion, but its `IAuditService` interface should

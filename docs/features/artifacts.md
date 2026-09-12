@@ -9,6 +9,7 @@
 | Component | artifacts |
 | Priority | P1 |
 | Status | Implemented — the `Artifact` domain model, `IArtifactStore`/SQLite BLOB storage abstraction, `ArtifactService` (attach/list/refresh/remove with dedup-key upsert), REST endpoints, and artifact audit-event emission are all in place. The lifecycle-hook artifact-expansion path is tracked separately under `integration-and-plugin-platform`. See `docs/plans/artifact-service.md` for the implementation plan. |
+| Last verified | 2026-09-12 against commit `3eaacbb` — `dotnet test Anvilboard.slnx` 320 passing, `npm test` 21 passing |
 | SRS Refs | FR-ART-001, FR-ART-002 |
 | Tech Design Ref | §8.1 — Issue Artifacts row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `Artifacts` table |
 | Depends On | issue-board-service, workspace-authorization |

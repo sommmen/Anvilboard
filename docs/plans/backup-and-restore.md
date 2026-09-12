@@ -16,7 +16,7 @@
 | Audit finding | [`audit-report.md`](../audit-report.md) **CRIT-001** (and **MAJ-019** NFR-AVL-001 not met) |
 | SRS refs | `FR-OPS-002` (primary), `NFR-AVL-001` (primary), `FR-OPS-001` + `NFR-REL-001` + `NFR-SEC-001` (touched) |
 | Acceptance criteria | `AC-011`, `AC-012`, `AC-202`, `AC-203`, `AC-204` (from [`audit-and-recovery.md`](../features/audit-and-recovery.md)) |
-| Status | Plan — not yet implemented |
+| Status | **Implemented** — `IBackupService`/`BackupService`, `IRestoreCoordinator`/`RestoreCoordinator`, the SQLite archiver/archive store, and `BackupEndpoints` are all delivered; CRIT-001 and MAJ-019 are marked RESOLVED in [`audit-report.md`](../audit-report.md). |
 | Created | 2026-09-10 |
 
 ## 2. Why this feature was selected

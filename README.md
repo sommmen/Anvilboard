@@ -32,9 +32,9 @@ up ownership of the data or standing up infrastructure to get it.
   one executable. `dotnet run` (or one published binary) is the whole deployment.
 - **Local-first storage.** One SQLite file. Back it up by copying a file; move it by copying a
   file.
-- **Kanban board + dashboard.** Backlog → Todo → In Progress → In Review → Done/Cancelled columns,
-  quick-create, an issue detail panel, and a dashboard with throughput, status/source breakdowns,
-  and open-load-by-assignee.
+- **Kanban board + dashboard.** Ships with a default Backlog → Todo → In Progress → In Review →
+  Done/Cancelled workflow, fully configurable per workspace. Plus quick-create, an issue detail
+  panel, and a dashboard with throughput, status/source breakdowns, and open-load-by-assignee.
 - **Live board updates.** Open boards patch themselves over SignalR when anyone — a teammate, an
   agent, or an integration — changes an issue, so you are not refreshing to find out what moved.
   A connection only ever receives its own workspace's changes, and a dropped connection re-fetches
