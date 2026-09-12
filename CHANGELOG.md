@@ -9,6 +9,26 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ### Added
 
+- Artifact application layer (`FR-ART-001`, `FR-ART-002`, closing audit finding `CRIT-003` and
+  `MIN-006`), designed in [`docs/plans/artifact-service.md`](docs/plans/artifact-service.md):
+  - `IArtifactService`/`ArtifactService` — attach, list, refresh, and remove file, link,
+    deployment, and pull-request artifacts on an issue. This is now the sole writer of the
+    `Artifacts` table and the sole caller of `IArtifactStore`, making the spec's "sole caller"
+    claim true.
+  - Dedup-key upsert (`RefreshArtifactAsync`): a provider re-reporting the same correlated
+    artifact refreshes the existing row in place rather than accumulating duplicates, preserving
+    the original `CreatedAt` and attributing actor. This is the seam GitHub PR correlation
+    consumes.
+  - Fail-closed content storage: artifact bytes are written through `IArtifactStore` *before* the
+    `Artifact` row is added, so a store outage surfaces as `ARTIFACT_STORE_UNAVAILABLE` (502)
+    with no row pointing at content that does not exist.
+  - Audit trail: every mutation emits `ArtifactAttached`, `ArtifactRefreshed`, or
+    `ArtifactRemoved`, carrying only artifact identity and never artifact content.
+  - REST endpoints under `/api/issues/{id}/artifacts` (`GET`, `POST`, and
+    `DELETE .../{artifactId}`), guarded by the issue's own mutation permissions. `Refresh` is
+    deliberately not exposed — it is reachable only from the owning plugin's correlation logic.
+  - `AC-ART-001`–`AC-ART-011` service tests plus API-level tests covering routing, DI, auth, and
+    response shape.
 - Real-time updates end to end (`AC-RT-001`–`AC-RT-006`, closing audit finding `CRIT-002`):
   - Transport-neutral `IRealtimeUpdatePublisher`/`IRealtimeTransport` seams and versioned
     issue/activity/dashboard/plugin change envelopes (`Anvilboard.Application/Realtime`).
@@ -53,6 +73,9 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ### Fixed
 
+- `IArtifactStore` is now registered in dependency injection. `SqliteArtifactStore` existed and was
+  tested but was never wired up, so any consumer resolving `IArtifactStore` at runtime would have
+  failed.
 - `IssueService.ChangeStatusAsync` now delegates transition legality to
   `IWorkflowService.ValidateTransitionAsync` instead of mutating the legacy `IssueStatus` enum
   unconditionally: it resolves the requested status to the workspace's seeded `WorkflowState`,
