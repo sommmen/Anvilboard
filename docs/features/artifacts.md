@@ -8,7 +8,7 @@
 |-------|-------|
 | Component | artifacts |
 | Priority | P1 |
-| Status | Partial — the `Artifact` domain model and `IArtifactStore`/SQLite BLOB storage abstraction are implemented; there is no application service for attach/list/remove, no refreshable PR-artifact upsert/dedup-key logic, no lifecycle-hook artifact-expansion path, and no artifact audit-event emission. See `docs/audit-report.md` for details. |
+| Status | Implemented — the `Artifact` domain model, `IArtifactStore`/SQLite BLOB storage abstraction, `ArtifactService` (attach/list/refresh/remove with dedup-key upsert), REST endpoints, and artifact audit-event emission are all in place. The lifecycle-hook artifact-expansion path is tracked separately under `integration-and-plugin-platform`. See `docs/plans/artifact-service.md` for the implementation plan. |
 | SRS Refs | FR-ART-001, FR-ART-002 |
 | Tech Design Ref | §8.1 — Issue Artifacts row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `Artifacts` table |
 | Depends On | issue-board-service, workspace-authorization |
@@ -48,9 +48,9 @@ Issue Artifacts lets an authorized actor or automation attach a file, link, depl
 ## Interfaces
 
 ### Inputs
-- **`AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?)`** — via `POST /api/v1/issues/{id}/artifacts` and equivalent CLI/MCP operations; `source`/`actorId` distinguish manual (actor-driven) from automated (hook-driven, `actorId` omitted) attachment; `metadata` is an optional opaque key-value bag used only by refreshable kinds (currently `pull_request`: `{ number, state, checksStatus }`), ignored/absent for the other kinds.
-- **`ListArtifactsAsync(issueId)`** — via `GET /api/v1/issues/{id}/artifacts`.
-- **`RemoveArtifactAsync(issueId, artifactId, actorId)`** — via `DELETE /api/v1/issues/{id}/artifacts/{artifactId}`.
+- **`AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?)`** — via `POST /api/issues/{id}/artifacts` and equivalent CLI/MCP operations; `source`/`actorId` distinguish manual (actor-driven) from automated (hook-driven, `actorId` omitted) attachment; `metadata` is an optional opaque key-value bag used only by refreshable kinds (currently `pull_request`: `{ number, state, checksStatus }`), ignored/absent for the other kinds.
+- **`ListArtifactsAsync(issueId)`** — via `GET /api/issues/{id}/artifacts`.
+- **`RemoveArtifactAsync(issueId, artifactId, actorId)`** — via `DELETE /api/issues/{id}/artifacts/{artifactId}`.
 - **`RefreshArtifactAsync(issueId, kind, dedupKey, contentReference, metadata, source)`** (realization of FR-ART-001 idempotent upsert) — an idempotent upsert used by refreshable kinds: if an artifact matching `(issueId, kind, dedupKey)` exists, its `ContentReference`/`Metadata` are updated in place; otherwise a new artifact is attached. Not exposed as a distinct public endpoint — invoked only by the owning plugin's correlation logic (e.g. the GitHub plugin's `GitHubPullRequestArtifactSync`), never by a human/API/CLI/MCP caller directly.
 - **Lifecycle-hook calls** — a `Post*` `ILifecycleHook<TEvent>` implementation (owned by `integration-and-plugin-platform`, e.g. registered for `PostAddComment`/`PostIngest`) calls `AttachArtifactAsync` exactly as any other caller would, with `actorId` omitted and `source` set to its hook key; the GitHub PR-correlation plugin calls `RefreshArtifactAsync` with `source = "github"`.
 
@@ -99,7 +99,7 @@ sequenceDiagram
 
 ## Key Behaviors
 
-### `AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?)` (planned; new)
+### `AttachArtifactAsync(issueId, kind, title, contentReference, source?, actorId?, metadata?)`
 
 1. Validate `issueId` resolves to an existing issue in the caller's authorized workspace — `REFERENCED_ENTITY_NOT_FOUND` if not.
 2. Validate `kind` is one of `file`, `link`, `deployment`, `pull_request` — `VALIDATION_FAILED` naming the invalid value otherwise. (This is a small closed set describing *artifact shape*, not the free-form `Type`/`Priority` taxonomy on `Issue` — it is not workspace-configurable.)
@@ -109,7 +109,7 @@ sequenceDiagram
 6. Emit `ArtifactAttached` audit/activity event with `(issueId, artifactId, kind, source)` — never raw content.
 7. Return the `Artifact` DTO.
 
-### `ListArtifactsAsync(issueId)` (planned; new)
+### `ListArtifactsAsync(issueId)`
 
 Returns all `Artifact` rows for the issue ordered by `CreatedAt` ascending (oldest first, matching comment ordering conventions in `issue-board-service`). `REFERENCED_ENTITY_NOT_FOUND` if the issue does not exist or is outside the caller's workspace.
 
@@ -123,7 +123,7 @@ Realization of FR-ART-001 idempotent upsert capability:
 4. This operation is idempotent: refreshing with identical `contentReference`/`metadata` values is a no-op from the caller's perspective (still emits `ArtifactRefreshed` for audit completeness, but no user-visible content changes).
 5. Return the `Artifact` DTO.
 
-### `RemoveArtifactAsync(issueId, artifactId, actorId)` (planned; new)
+### `RemoveArtifactAsync(issueId, artifactId, actorId)`
 
 1. Validate the artifact exists and belongs to the given issue — `REFERENCED_ENTITY_NOT_FOUND` otherwise.
 2. Delete the `Artifact` row. Deletion is a metadata-level removal; whether the underlying `IArtifactStore` content is immediately purged or retained per a documented retention/archive policy is a store-implementation decision (the SQLite BLOB-backed store purges the associated BLOB on removal; a future implementation may instead archive) — either way, removal is never silent: an `ArtifactRemoved` audit event is always emitted (FR-ART-001 AC4).
@@ -196,25 +196,26 @@ Every anticipated failure resolves to a §7.7 catalog code; no raw store I/O exc
 ```
 src/
 ├── Anvilboard.Domain/
-│   └── Artifact.cs                       # Planned: Id/IssueId/Kind/Title/ContentReference/Source/AddedById/CreatedAt/Metadata entity (Metadata nullable, populated only for pull_request kind)
+│   └── Artifact.cs                       # Id/IssueId/Kind/Title/ContentReference/Source/AddedById/CreatedAt/Metadata entity (Metadata nullable, populated only for pull_request kind)
 ├── Anvilboard.Application/
 │   └── Artifacts/
-│       ├── IArtifactService.cs           # Planned: AttachArtifactAsync/ListArtifactsAsync/RemoveArtifactAsync/RefreshArtifactAsync contract
-│       └── ArtifactService.cs            # Planned: implementation, calls IArtifactStore + IIssueService authorization checks
+│       ├── IArtifactService.cs           # AttachArtifactAsync/ListArtifactsAsync/RemoveArtifactAsync/RefreshArtifactAsync contract
+│       └── ArtifactService.cs            # Implementation, calls IArtifactStore + IIssueService authorization checks
 ├── Anvilboard.Infrastructure/
 │   └── Artifacts/
-│       ├── IArtifactStore.cs             # Planned: Store/Retrieve/Delete-by-opaque-reference contract
-│       └── SqliteArtifactStore.cs        # Planned: first-release SQLite BLOB-backed implementation
+│       ├── IArtifactStore.cs             # Store/Retrieve/Delete-by-opaque-reference contract
+│       └── SqliteArtifactStore.cs        # First-release SQLite BLOB-backed implementation
 └── Anvilboard.Api/
     └── Endpoints/
-        └── ArtifactEndpoints.cs          # Planned: GET/POST /api/v1/issues/{id}/artifacts, DELETE .../{artifactId} (RefreshArtifactAsync has no endpoint — plugin-only)
+        └── ArtifactEndpoints.cs          # GET/POST /api/issues/{id}/artifacts, DELETE .../{artifactId} (RefreshArtifactAsync has no endpoint — plugin-only)
 ```
 
 See `integration-and-plugin-platform.md`'s File Structure for the owning `GitHubPullRequestArtifactSync.cs` plugin component that calls `RefreshArtifactAsync`.
 
 ## Test Module
 
-**Test file**: `src/Anvilboard.Application.Tests/Artifacts/ArtifactServiceTests.cs`
+**Test files**: `src/Anvilboard.Application.Tests/Artifacts/ArtifactServiceTests.cs`,
+`src/Anvilboard.Api.Tests/Artifacts/ArtifactEndpointTests.cs`
 
 **Test scope**:
 - **Unit**: `kind` validation (accepted values `file`/`link`/`deployment`/`pull_request`, rejection of an unrecognized value), required-field validation (`title`, `contentReference`), provenance defaulting (`source = "local"` when `actorId` provided and `source` omitted).
