@@ -40,7 +40,7 @@ fixed**.
 | Severity | Count | Categories |
 |----------|-------|------------|
 | Critical |   3   | audit-and-recovery (backup/restore missing — **since resolved**), realtime-updates (entire feature unimplemented — **since resolved**), artifacts (no ArtifactService) |
-| Major    |  21   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap (**since resolved**: MAJ-019, MAJ-021) |
+| Major    |  22   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap (**resolved**: MAJ-001, MAJ-002 audit correction, MAJ-015–MAJ-017, MAJ-019, MAJ-021; **new/open**: MAJ-022 REST/application workspace scoping) |
 | Minor    |   6   | README Kanban-column wording, PLUGINS.md staleness, workflow-engine API versioning, manifest validation, extra undocumented agent tools, IArtifactStore sole-caller claim |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
 
@@ -133,19 +133,23 @@ fixed**.
 
 ## Major Findings
 
-### MAJ-001: Workspace authorization only enforced at the REST boundary
-- **Location**: `docs/features/workspace-authorization.md`
-- **Issue**: The spec's "single enforcement point" framing implies all surfaces (REST, CLI, MCP) are protected identically. Only REST middleware was found enforcing workspace authorization; CLI and MCP adapters do not appear to route through the same enforcement path.
-- **Evidence**: `WorkspaceAuthorizationService` and its REST middleware integration are implemented and tested (`WorkspaceAuthorizationServiceTests.cs`), but no equivalent enforcement call was found in the CLI/MCP adapter code paths.
-- **Impact**: CLI/MCP callers may bypass workspace-scoped authorization checks that REST callers cannot.
-- **Fix**: Route CLI/MCP command execution through the same authorization service/middleware as REST, or clearly document the current REST-only enforcement scope as an interim limitation.
+### MAJ-001: Workspace authorization only enforced at the REST boundary — **RESOLVED**
 
-### MAJ-002: Credential/session revocation is not admin-triggerable
-- **Location**: `docs/features/workspace-authorization.md`
-- **Issue**: Spec describes an administrator-triggered revocation flow. No such admin-facing revocation endpoint/command was found.
-- **Evidence**: No revocation endpoint in the REST API surface; no matching CLI/MCP command.
-- **Impact**: Administrators cannot proactively revoke a compromised credential/session; they must wait for natural expiry.
-- **Fix**: Add an admin revocation endpoint (and audit-event emission on use) or scope the spec down to "expiry-based" revocation only until implemented.
+> **Resolved.** CLI and MCP now execute every operation through `WorkspaceAuthorizationPolicy`,
+> which authenticates the configured automation credential, intersects credential grants with the
+> actor's current workspace role, and establishes the authenticated workspace/actor context inside
+> a per-invocation dependency-injection scope. `AgentWorkspaceScope` additionally rejects supplied
+> team, issue, and member IDs outside that workspace and constrains unfiltered issue/dashboard
+> reads. Integration coverage exercises missing, invalid, expired, under-permissioned, and foreign-
+> workspace calls. MAJ-022 separately records the pre-existing REST/application query-scoping gap.
+
+### MAJ-002: Credential/session revocation is not admin-triggerable — **RESOLVED (AUDIT CORRECTION)**
+
+> **Resolved before this finding was written.** The original audit missed both
+> `WorkspaceAuthorizationService.RevokeCredentialAsync` and
+> `DELETE /api/auth/credentials/{id:guid}`. Together they provide the documented administrator-
+> triggered revocation path and persist the revocation state used by subsequent authentication.
+> No implementation change was required; this status corrects stale audit evidence.
 
 ### MAJ-003: No admin transition CRUD surface for the workflow engine
 - **Location**: `docs/features/workflow-engine.md`
@@ -232,26 +236,30 @@ fixed**.
 - **Fix**: Implement an outbound plugin event-dispatch mechanism (may share infrastructure with the realtime-updates work in CRIT-002).
 - **Status**: Still open, but narrowed. CRIT-002's `IPluginEventPublisher`/`PluginEventRelay` carries events *from* a plugin *to* clients; this finding is the opposite direction — the core notifying plugins — and no such dispatch exists yet.
 
-### MAJ-015: Agent/automation operations lack workspace-scoped auth and actor identity
-- **Location**: `docs/features/agent-and-automation-surface.md`
-- **Issue**: Agent-surface operations (MCP tools, automation credentials) do not appear to route through `WorkspaceAuthorizationService`, and mutations performed via the agent surface do not carry a distinct actor identity separate from a generic "automation" actor.
-- **Evidence**: Agent tool implementations inspected show no authorization-service calls; audit events emitted from agent-triggered mutations do not appear to disambiguate which automation/credential performed the action.
-- **Impact**: The agent surface is effectively unauthenticated/unauthorized relative to workspace boundaries, and audit trails cannot attribute agent actions to a specific credential — both are security/compliance gaps.
-- **Fix**: Route agent tool execution through workspace authorization and stamp audit events with the specific automation credential identity.
+### MAJ-015: Agent/automation operations lack workspace-scoped auth and actor identity — **RESOLVED**
 
-### MAJ-016: Idempotency service not wired through the agent surface
-- **Location**: `docs/features/agent-and-automation-surface.md`
-- **Issue**: An idempotency mechanism (`IdempotencyRecord`/idempotency-key handling) is specified for agent/automation calls to make retries safe, but the agent-surface tool handlers do not appear to check/record idempotency keys.
-- **Evidence**: Idempotency types exist in the codebase, but agent tool call sites were not found to reference them.
-- **Impact**: Automation clients that retry a call (e.g., after a timeout) risk duplicate side effects.
-- **Fix**: Wire idempotency-key checking into the agent-surface command dispatch path.
+> **Resolved.** `WorkspaceAuthorizationPolicy` authenticates and authorizes each CLI invocation and
+> MCP tool call before target resolution. `AgentActorAccessor` supplies the credential actor to
+> mutations and audit events; spoofable actor/workspace parameters were removed. `AgentWorkspaceScope`
+> denies foreign IDs and scopes unfiltered reads. SQLite-backed integration tests verify denials,
+> zero writes after denial, authenticated actor attribution, and workspace isolation.
 
-### MAJ-017: No `apiVersion` contract field on the agent/automation surface
-- **Location**: `docs/features/agent-and-automation-surface.md`
-- **Issue**: Spec describes a versioned contract (`apiVersion` field) for forward compatibility of agent tool calls. No such field was found in the MCP tool schemas/responses.
-- **Evidence**: MCP tool definitions inspected show no version field in request/response shapes.
-- **Impact**: Future breaking changes to agent tool contracts have no built-in negotiation/compatibility signal.
-- **Fix**: Add an `apiVersion` field to agent tool schemas and response envelopes.
+### MAJ-016: Idempotency service not wired through the agent surface — **RESOLVED**
+
+> **Resolved.** All six workspace-data mutations require a non-blank `idempotencyKey` and execute
+> through `AgentIdempotency`. The persisted tuple is workspace + actor + operation + key; matching
+> retries replay the original response and conflicting payloads return
+> `IDEMPOTENCY_KEY_REUSED`. Integration tests also cover workspace-separated keys and expired-key
+> replacement. The implementation uses an indexed lookup plus an in-memory `DateTimeOffset`
+> expiration comparison because EF Core SQLite cannot translate that predicate.
+
+### MAJ-017: No `apiVersion` contract field on the agent/automation surface — **RESOLVED**
+
+> **Resolved for CLI/MCP.** Every agent operation now returns `AgentResponse<T>` containing
+> `apiVersion`, `correlationId`, and `data`; version 1 is serialized through the host's shared JSON
+> options. Catalog and integration tests verify the envelope. Request-side version negotiation is
+> intentionally deferred until a second contract version exists, and REST body-envelope migration
+> remains explicit M4 follow-up work.
 
 ### MAJ-018: FR-OPS-001 partial — no generic `QueryAsync` for audit history
 - **Location**: `docs/features/audit-and-recovery.md`; `docs/anvilboard/srs.md` FR-OPS-001
@@ -297,6 +305,15 @@ fixed**.
 - **Impact**: First-run issue creation fails for a self-hosted install that follows the documented bootstrap flow, and the failure surfaces as an opaque 500 rather than an actionable error.
 - **Fix**: Seed the default workflow states during bootstrap, or return a domain error that names the missing configuration. Unrelated to realtime; left unchanged there to keep that change set scoped.
 - **Status**: **Resolved.** See the resolution note above for the delivered change and its test coverage (`WorkspaceAuthorizationServiceTests.BootstrapFirstAdministratorAsync_NoExistingWorkspace_SeedsDefaultWorkflow`).
+
+### MAJ-022: REST/application issue and dashboard queries are not workspace-bound
+
+- **Location**: `src/Anvilboard.Api/Endpoints/IssueEndpoints.cs`; `src/Anvilboard.Api/Endpoints/DashboardEndpoints.cs`; `src/Anvilboard.Application/Issues/IssueService.cs`; `src/Anvilboard.Application/Dashboard/DashboardService.cs`
+- **Issue**: REST authorization establishes an authenticated workspace but application queries resolve supplied issue/team/member IDs by primary key alone, and omitted team filters start from all issues. The REST issue-list and dashboard-summary paths do not pass the authenticated workspace into those queries.
+- **Evidence**: `IssueService.ListAsync(null, ...)` and `DashboardService.GetSummaryAsync(null)` begin from the complete issue set; entity lookups likewise lack a workspace predicate. The agent surface required explicit `AgentWorkspaceScope` guards and workspace-scoped unfiltered query overloads to prevent the same behavior.
+- **Impact**: A REST caller can potentially read or act on a foreign workspace entity by ID, and unfiltered issue/dashboard reads can disclose data or aggregate counts from other workspaces in the same SQLite database.
+- **Fix**: Make workspace identity an application-service query input (or an ambient, mandatory application authorization context), apply it before every entity lookup and aggregate, and add two-workspace REST integration tests covering explicit foreign IDs and omitted filters.
+- **Status**: **Open.** The current implementation closes this class of leak on CLI/MCP only; no claim of full REST isolation should be made until the endpoint/application boundary is migrated.
 
 ## Minor Findings
 
@@ -372,7 +389,7 @@ fixed**.
 ```mermaid
 graph TD
     subgraph "Well covered — implemented & tested"
-        A[Workspace model & REST auth]
+        A[Workspace model & boundary auth]
         B[Workflow engine — core state machine]
         C[Issue board — core CRUD & query]
         D[Issue linking — core create/delete]
@@ -380,15 +397,15 @@ graph TD
         F[Plugin config & state store]
         P[Realtime updates — CRIT-002 resolved]
         S[Backup / restore — CRIT-001 resolved]
+        T[Agent surface — auth, scopes, attribution, idempotency, v1 envelopes]
     end
 
     subgraph "Partial — some implementation, real gaps"
-        G[Workspace auth — CLI/MCP enforcement]
+        G[REST/application workspace query scoping — MAJ-022]
         H[Workflow engine — admin CRUD & audit events]
         I[Issue board — UI filter parity, concurrency]
         J[Issue linking — update endpoint]
         K[Integration platform — pause enforcement, sync health]
-        L[Agent surface — auth wiring, idempotency, apiVersion]
         M[Audit & recovery — query flexibility]
         N[Artifacts — service, endpoints, audit events done; lifecycle expansion open]
     end
@@ -414,9 +431,9 @@ graph TD
 1. ~~**Implement backup/restore (`IBackupService`) and verify NFR-AVL-001**~~ — CRIT-001 and MAJ-019 done; `FR-OPS-001` audit query access (MAJ-018) still open — large
 2. ~~**Build the realtime-updates push layer (SignalR/WebSocket) and outbound plugin event relay**~~ — CRIT-002 done; MAJ-014 (core → plugin dispatch) still open — medium
 3. ~~**Implement `ArtifactService` with upsert/refresh semantics and lifecycle-hook artifact expansion**~~ — CRIT-003 and MIN-006 done, MAJ-020 audit emission done; MAJ-020's `IIssueHook` artifact-expansion path still open — medium
-4. **Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation** — fixes MAJ-001, MAJ-002 — medium
+4. ~~**Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation**~~ — MAJ-001 closed; MAJ-002 was already implemented and is corrected above — done. **Residual:** enforce authenticated-workspace predicates throughout REST/application reads and mutations (MAJ-022).
 5. **Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations** — fixes MAJ-003, MAJ-004, MAJ-005 — medium
-6. **Wire agent-surface authorization, idempotency, and an `apiVersion` contract field** — fixes MAJ-015, MAJ-016, MAJ-017 — medium
+6. ~~**Wire agent-surface authorization, idempotency, and an `apiVersion` contract field**~~ — MAJ-015, MAJ-016, and MAJ-017 closed with SQLite-backed integration coverage — done
 7. **Add sync-health/backoff tracking and enforce paused-integration webhook rejection** — fixes MAJ-012, MAJ-013 — medium
 8. **Close remaining UI/UX gaps (board filter parity, issue-detail activity feed, link-update endpoint)** — fixes MAJ-007, MAJ-008, MAJ-010, MAJ-011 — medium
 9. **Add a generic filterable audit-query method (`QueryAsync`-equivalent)** — fixes MAJ-018 — small

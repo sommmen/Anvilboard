@@ -25,7 +25,7 @@ public static class IssueEndpoints
                 teamId is { } t ? new TeamId(t) : null,
                 status,
                 assigneeId is { } a ? new MemberId(a) : null,
-                ct);
+                ct: ct);
             return Results.Ok(issues);
         });
 

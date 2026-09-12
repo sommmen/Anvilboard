@@ -18,7 +18,7 @@
 | Audit findings | [`audit-report.md`](../audit-report.md) **MAJ-015**, **MAJ-016**, **MAJ-017**, plus the CLI/MCP half of **MAJ-001** — Recommended Priority Action **#6** (and the unstruck part of **#4**) |
 | SRS refs | `FR-AUT-002` (primary), `NFR-MNT-001` (primary), `FR-AUT-001` + `FR-AUT-003` + `NFR-SEC-001` + `NFR-SEC-002` (touched) |
 | Acceptance criteria | `AC-007`, `AC-008`, `AC-101`, `AC-103`, `AC-105`, and the CLI/MCP half of `AC-102` (from [`agent-and-automation-surface.md`](../features/agent-and-automation-surface.md)) |
-| Status | Plan — not yet implemented |
+| Status | Implemented and verified — T1–T16 complete |
 | Created | 2026-09-12 |
 
 ## 2. Why this feature was selected
@@ -903,22 +903,22 @@ Dependency-ordered. Total ≈ 71 h, inside the §16 **M4** two-week allowance.
 
 | # | Task | Files | Depends on | Est. |
 |---|---|---|---|---|
-| T1 | `AgentOptions` + `AgentCredentialSource` (bind `Agent:ApiToken`, produce `ChannelCredential`) | `src/Anvilboard.Agent/Hosting/` | — | 2 h |
-| T2 | `AgentInvocationScope` + rewritten `ScopedServiceProvider` (ambient scope, proper disposal) | `src/Anvilboard.Agent/Hosting/`, `src/Anvilboard.Agent/Program.cs` | — | 5 h |
-| T3 | `RequiresAgentPermissionAttribute`, `AgentActorAccessor`, `AgentActorId` | `src/Anvilboard.Agent/Authorization/` | — | 2 h |
-| T4 | `WorkspaceAuthorizationPolicy` (§8.3) + DI registration + `OperationInvoker` policy wiring | `src/Anvilboard.Agent/Authorization/`, `Program.cs` | T1, T2, T3 | 6 h |
-| T5 | `AgentContract`, `AgentResponse<T>`, `AgentOperationException` + failure-document translator | `src/Anvilboard.Agent/Contracts/` | — | 3 h |
-| T6 | `AgentRequestGuard` + `CanonicalRequestHash` | `src/Anvilboard.Agent/Automation/` | T5 | 3 h |
-| T7 | `AgentIdempotency.ExecuteAsync` (§8.4) + `ExpiresAt` predicate in `IdempotencyService.TryBeginAsync` | `src/Anvilboard.Agent/Automation/`, `src/Anvilboard.Application/Automation/IdempotencyService.cs` | T3, T6 | 5 h |
-| T8 | `BoardAgentService` — annotate all 13 ops, thread the real actor, drop `AutomationActorId` and the `create-backup` `workspaceId` parameter | `src/Anvilboard.Agent/BoardAgentService.cs` | T4 | 6 h |
-| T9 | `BoardAgentService` — required `idempotencyKey` on the 6 mutations, `AgentResponse<T>` on all 13, and correct the 4 invalid `Examples` strings to `--name value` syntax | same | T7, T8 | 5 h |
-| T10 | MCP `CallToolHandler` scope decoration + CLI scope ownership (`AgentInvocationHost`) | `src/Anvilboard.Agent/Hosting/`, `Program.cs` | T2, T4 | 4 h |
-| T11 | Agent unit tests — catalog invariants, policy, guards/hashing, idempotency, scope | `src/Anvilboard.Agent.Tests/` | T9, T10 | 10 h |
-| T12 | `AgentFactory` test harness + agent integration tests (AC-007/008 by row count, denial paths, audit attribution) + rewrite `Discover_DoesNotExposeRestore`'s rationale | `src/Anvilboard.Agent.Tests/` | T11 | 10 h |
-| T13 | REST `X-Correlation-Id` response-header echo (ingestion already exists) + `Anvilboard.Api.Tests` coverage (AC-103) | `src/Anvilboard.Api/`, `src/Anvilboard.Api.Tests/` | — | 2 h |
-| T14 | MCP stdout regression test (AC-104) | `src/Anvilboard.Agent.Tests/Hosting/` | T10 | 2 h |
-| T15 | Operator docs — token setup, `--idempotencyKey`, envelope shape, breaking-change note | `README.md`, `DEVELOPMENT.md` | T12 | 3 h |
-| T16 | Canonical doc updates (see §16.1) incl. correcting the stale MAJ-002 | `docs/**`, `CHANGELOG.md` | T15 | 3 h |
+| T1 ✅ | `AgentOptions` + `AgentCredentialSource` (bind `Agent:ApiToken`, produce `ChannelCredential`) | `src/Anvilboard.Agent/Hosting/` | — | 2 h |
+| T2 ✅ | `AgentInvocationScope` + rewritten `ScopedServiceProvider` (ambient scope, proper disposal) | `src/Anvilboard.Agent/Hosting/`, `src/Anvilboard.Agent/Program.cs` | — | 5 h |
+| T3 ✅ | `RequiresAgentPermissionAttribute`, `AgentActorAccessor`, `AgentActorId` | `src/Anvilboard.Agent/Authorization/` | — | 2 h |
+| T4 ✅ | `WorkspaceAuthorizationPolicy` (§8.3) + DI registration + `OperationInvoker` policy wiring | `src/Anvilboard.Agent/Authorization/`, `Program.cs` | T1, T2, T3 | 6 h |
+| T5 ✅ | `AgentContract`, `AgentResponse<T>`, `AgentOperationException` + failure-document translator | `src/Anvilboard.Agent/Contracts/` | — | 3 h |
+| T6 ✅ | `AgentRequestGuard` + `CanonicalRequestHash` | `src/Anvilboard.Agent/Automation/` | T5 | 3 h |
+| T7 ✅ | `AgentIdempotency.ExecuteAsync` (§8.4) + `ExpiresAt` predicate in `IdempotencyService.TryBeginAsync` | `src/Anvilboard.Agent/Automation/`, `src/Anvilboard.Application/Automation/IdempotencyService.cs` | T3, T6 | 5 h |
+| T8 ✅ | `BoardAgentService` — annotate all 13 ops, thread the real actor, drop `AutomationActorId` and the `create-backup` `workspaceId` parameter | `src/Anvilboard.Agent/BoardAgentService.cs` | T4 | 6 h |
+| T9 ✅ | `BoardAgentService` — required `idempotencyKey` on the 6 mutations, `AgentResponse<T>` on all 13, and correct the 4 invalid `Examples` strings to `--name value` syntax | same | T7, T8 | 5 h |
+| T10 ✅ | MCP `CallToolHandler` scope decoration + CLI scope ownership (`AgentInvocationHost`) | `src/Anvilboard.Agent/Hosting/`, `Program.cs` | T2, T4 | 4 h |
+| T11 ✅ | Agent unit tests — catalog invariants, policy, guards/hashing, idempotency, scope | `src/Anvilboard.Agent.Tests/` | T9, T10 | 10 h |
+| T12 ✅ | `AgentFactory` test harness + agent integration tests (AC-007/008 by row count, denial paths, audit attribution) + rewrite `Discover_DoesNotExposeRestore`'s rationale | `src/Anvilboard.Agent.Tests/` | T11 | 10 h |
+| T13 ✅ | REST `X-Correlation-Id` response-header echo (ingestion already exists) + `Anvilboard.Api.Tests` coverage (AC-103) | `src/Anvilboard.Api/`, `src/Anvilboard.Api.Tests/` | — | 2 h |
+| T14 ✅ | MCP stdout regression test (AC-104) | `src/Anvilboard.Agent.Tests/Hosting/` | T10 | 2 h |
+| T15 ✅ | Operator docs — token setup, `--idempotencyKey`, envelope shape, breaking-change note | `README.md`, `DEVELOPMENT.md` | T12 | 3 h |
+| T16 ✅ | Canonical doc updates (see §16.1) incl. correcting the stale MAJ-002 | `docs/**`, `CHANGELOG.md` | T15 | 3 h |
 
 **Critical path:** T2 → T4 → T8 → T9 → T11 → T12 → T15 → T16.
 

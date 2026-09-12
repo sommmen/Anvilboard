@@ -8,7 +8,7 @@
 |-------|-------|
 | Component | agent-and-automation-surface |
 | Priority | P0 |
-| Status | Partial — the CLI/MCP host and the requested agent operations are implemented and dual-mode wiring works; agent operations do **not** enforce workspace authorization/actor identity, the idempotency service exists but is not wired through the agent surface, and responses lack a versioned `apiVersion` contract field. See `docs/audit-report.md` for details (notable: auth bypass on this surface). |
+| Status | Partial — CLI/MCP authentication, workspace authorization, actor attribution, mutation idempotency, per-invocation correlation, response contract versioning, and stdio isolation are implemented. REST still lacks the common `{ apiVersion, correlationId, data }` body envelope and shared idempotency contract, and REST/application queries still require workspace-bound filtering (MAJ-021). |
 | SRS Refs | FR-AUT-001, FR-AUT-002, FR-AUT-003, NFR-MNT-001 |
 | Tech Design Ref | §8.1 Component Overview — Automation Surface (REST/CLI/MCP) row; §7.3 Parameter Validation; §7.6 Error Handling Strategy; §9 API Design; §10.1 `IdempotencyRecords` |
 | Depends On | workspace-authorization, workflow-engine, issue-board-service, integration-and-plugin-platform |
@@ -95,6 +95,28 @@ sequenceDiagram
 
 ## Key Behaviors
 
+### Agent Credential and Response Contract
+
+CLI and MCP read the automation credential token from `Agent:ApiToken`, normally configured as
+`ANVILBOARD_AGENT__APITOKEN`. A global invocation policy authenticates the token and intersects its
+granted permissions with the credential actor's current workspace role before resolving an
+operation target. Supplied team, issue, and member IDs are checked against that workspace; omitted
+filters are likewise constrained to it.
+
+Every operation returns this version-1 envelope:
+
+```json
+{
+  "apiVersion": "1",
+  "correlationId": "b826dd8987214aad93d5e459136f7e64",
+  "data": {}
+}
+```
+
+The six issue/link mutations require a non-blank `idempotencyKey` argument. Backup operations do not
+accept a workspace ID; they use the authenticated credential's workspace. These are breaking
+changes to the original CLI/MCP contract. REST contract normalization remains deferred.
+
 ### Idempotency Enforcement
 
 ```csharp
@@ -133,9 +155,9 @@ public sealed class CorrelationContext
 }
 ```
 
-- **REST**: reads `X-Correlation-Id` if present (recommended header, §9.2), otherwise generates a new GUID; the same value is echoed in the response body's `correlationId` field and in the matching `AuditEvents.CorrelationId` row.
-- **CLI**: generated once per invocation (no interactive header equivalent); included in the JSON result envelope written to stdout.
-- **MCP**: generated once per tool call; never written to stdout outside the JSON-RPC response payload — the stdio transport reserves stdout exclusively for protocol traffic (`Anvilboard.Agent/Program.cs` invariant, tech-design §13.1).
+- **REST**: reads `X-Correlation-Id` if present, otherwise generates a GUID, and echoes it in the `X-Correlation-Id` response header even on authentication/authorization denials. A REST body envelope remains deferred; audited mutations receive the same scoped correlation context.
+- **CLI**: generated once per invocation (no interactive header equivalent); included in the versioned JSON result envelope written to stdout.
+- **MCP**: generated once per tool call; never written to stdout outside the JSON-RPC response payload — the stdio transport reserves stdout exclusively for protocol traffic (`Anvilboard.Agent/Program.cs` invariant, tech-design §13.1), covered by a process-level regression test.
 
 ### Error Catalog Translation
 

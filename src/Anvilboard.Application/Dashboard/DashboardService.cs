@@ -12,10 +12,18 @@ namespace Anvilboard.Application.Dashboard;
 /// </summary>
 public sealed class DashboardService(AnvilboardDbContext db)
 {
-    public async Task<DashboardSummary> GetSummaryAsync(TeamId? teamId = null, CancellationToken ct = default)
+    public async Task<DashboardSummary> GetSummaryAsync(
+        TeamId? teamId = null,
+        WorkspaceId? workspaceId = null,
+        CancellationToken ct = default)
     {
         var query = db.Issues.AsNoTracking().AsQueryable();
         if (teamId is { } team) query = query.Where(i => i.TeamId == team);
+        if (workspaceId is { } workspace)
+        {
+            query = query.Where(issue => db.Teams.Any(
+                team => team.Id == issue.TeamId && team.WorkspaceId == workspace));
+        }
 
         // Materialized once and aggregated in memory: SQLite's EF provider cannot translate several
         // DateTimeOffset comparisons/orderings used below, and at this project's target scale (a

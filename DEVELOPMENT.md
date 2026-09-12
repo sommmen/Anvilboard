@@ -97,20 +97,34 @@ API host runs standalone and the Angular dev server handles the UI with live rel
 `ng serve` prints (typically `http://localhost:4200`), not the API's port, while doing frontend
 work this way.
 
-**Agent CLI**, one-shot:
+**Agent CLI**, one-shot. First create an automation credential with
+`POST /api/auth/credentials` as a workspace administrator; copy the returned token because only its
+hash is stored. Configure that token for every CLI or MCP process:
 
 ```powershell
+$env:ANVILBOARD_AGENT__APITOKEN = '<automation-credential-token>'
 cd src/Anvilboard.Agent
 dotnet run -- issues list-issues --full
-dotnet run -- issues create-issue --teamId <guid> --title "Fix the thing"
+dotnet run -- issues create-issue --teamId <guid> --title "Fix the thing" --idempotencyKey "dev-create-001"
 ```
+
+Every operation is authenticated and authorized within the credential's workspace. Each invocation
+gets an isolated dependency-injection scope and correlation ID, and returns
+`{"apiVersion":"1","correlationId":"...","data":...}`. The six workspace-data mutations require
+`--idempotencyKey value`; the key is scoped by workspace, actor, and operation and is retained for
+30 days. Use `--name value` syntax rather than `name=value`.
 
 **Agent MCP server**, long-running (also the only mode that runs the ingestion polling loop):
 
 ```powershell
+$env:ANVILBOARD_AGENT__APITOKEN = '<automation-credential-token>'
 cd src/Anvilboard.Agent
 dotnet run -- mcp
 ```
+
+MCP creates and disposes a scope and correlation ID per tool call. Standard output is reserved for
+JSON-RPC; diagnostics are written to standard error. This authenticated, versioned, idempotent
+contract is intentionally breaking relative to the earlier agent surface.
 
 ## Configuration
 

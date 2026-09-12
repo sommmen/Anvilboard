@@ -20,7 +20,7 @@ feature needs more granular coverage.
 | 2 | [`workflow-engine.md`](./workflow-engine.md) | P0 | Partial | — | `FR-WS-002`, `FR-WS-003` |
 | 3 | [`issue-board-service.md`](./issue-board-service.md) | P0 | Partial | Workspace Authorization, Workflow Engine | `FR-WRK-001`–`FR-WRK-014`, `NFR-PERF-001`, `NFR-PERF-002`, `NFR-USB-001` |
 | 4 | [`integration-and-plugin-platform.md`](./integration-and-plugin-platform.md) | P0 | Partial | Issue & Board Service, Workspace Authorization, Real-time Updates | `FR-INT-001`–`FR-INT-007`, `NFR-REL-002`, `NFR-SEC-001` |
-| 5 | [`agent-and-automation-surface.md`](./agent-and-automation-surface.md) | P0 | Partial | Workspace Authorization, Workflow Engine, Issue & Board Service, Integration & Plugin Platform | `FR-AUT-001`–`FR-AUT-003`, `NFR-MNT-001` |
+| 5 | [`agent-and-automation-surface.md`](./agent-and-automation-surface.md) | P0 | Partial — CLI/MCP auth, workspace scope, attribution, idempotency, correlation, and versioned envelopes implemented; REST contract normalization remains | Workspace Authorization, Workflow Engine, Issue & Board Service, Integration & Plugin Platform | `FR-AUT-001`–`FR-AUT-003`, `NFR-MNT-001` |
 | 6 | [`audit-and-recovery.md`](./audit-and-recovery.md) ([backup/restore plan](../plans/backup-and-restore.md)) | P0 | Partial — M7 backup/restore implemented (`FR-OPS-002`, `NFR-AVL-001`); `FR-OPS-001` audit **query** access is the residual gap | All other components | `FR-OPS-001`, `FR-OPS-002`, `NFR-AVL-001`, `NFR-REL-001` |
 | 7 | [`realtime-updates.md`](./realtime-updates.md) | P1 | Implemented | Workspace Authorization, Issue & Board Service | `FR-WRK-014`, `FR-INT-006`, `NFR-PERF-002` |
 | 8 | [`artifacts.md`](./artifacts.md) | P1 | Implemented | Issue & Board Service, Workspace Authorization | `FR-ART-001`, `FR-ART-002` |
@@ -48,9 +48,11 @@ The dependency order above is also the recommended build order:
    paths; its publisher/hub boundary should be in place before dashboard clients consume live
    changes, while the service remains able to make mutations if a real-time transport is degraded.
 5. **Agent & Automation Surface** and **Integration & Plugin Platform** can proceed in parallel
-   once the Issue & Board Service exists — the automation surface wraps existing application
-   services with idempotency/correlation/error-contract concerns, while the integration platform
-   is additive (new providers, ingestion, webhooks) and does not block the core board experience.
+   once the Issue & Board Service exists. The agent CLI/MCP surface now wraps application services
+   with authenticated workspace scoping, actor attribution, idempotency, per-call correlation, and
+   versioned response envelopes. REST envelope/idempotency normalization remains separate work, as
+   does closing MAJ-021's REST/application workspace-query gap. The integration platform is
+   additive (new providers, ingestion, webhooks) and does not block the core board experience.
    Both connect to Real-time Updates only through its non-blocking publisher contract.
 6. **Audit & Recovery** last in terms of full completion, but its `IAuditService` interface should
    be stubbed early (Workspace Authorization already emits authorization-decision events to it) so

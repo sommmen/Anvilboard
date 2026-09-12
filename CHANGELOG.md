@@ -7,6 +7,17 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking — agent CLI/MCP contract:** all operations now require an automation credential through
+  `ANVILBOARD_AGENT__APITOKEN`, enforce credential permissions and workspace ownership, and return
+  `{ apiVersion, correlationId, data }` envelopes. The six issue/link mutations now require an
+  `idempotencyKey`; backup operations derive the workspace from the credential instead of accepting
+  a caller-supplied workspace ID. Each CLI invocation and MCP tool call gets an isolated DI scope,
+  and MCP reserves stdout for JSON-RPC while routing diagnostics to stderr.
+- REST responses now echo or generate `X-Correlation-Id`, including authentication and
+  authorization failures.
+
 ### Added
 
 - Artifact application layer (`FR-ART-001`, `FR-ART-002`, closing audit finding `CRIT-003` and
