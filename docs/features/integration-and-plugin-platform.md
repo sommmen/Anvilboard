@@ -9,7 +9,7 @@
 | Component | integration-and-plugin-platform |
 | Priority | P0 |
 | Status | Partial — integration lifecycle, write-only secret handling, webhook signature verification, reflection-based plugin loading, and approval-gated outbound plugin events (FR-INT-006, via `IPluginEventPublisher`/`PluginEventRelay`) are implemented; paused integrations still accept webhooks, sync health/backoff tracking is not implemented, the core does not dispatch events *to* plugins (audit `MAJ-014`), and plugin manifest validation is weaker than spec'd. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
 | SRS Refs | FR-INT-001, FR-INT-002, FR-INT-003, FR-INT-004, FR-INT-005, FR-INT-006, FR-INT-007, FR-INT-009, NFR-REL-002, NFR-SEC-001 |
 | Tech Design Ref | §8.1 — Integration & Plugin Platform row; also §7.6 Retry & Circuit Breaker Configuration, §7.7 Error Catalog, §11.3 Data Encryption |
 | Depends On | issue-board-service, workspace-authorization, artifacts, realtime-updates |
@@ -427,3 +427,4 @@ src/
 **Test scope**:
 - **Integration**: a PR referencing a linked issue (via branch name/description/commit message) results in a `PullRequest`-kind `Artifact` attached to the issue; a subsequent status change (open → merged) updates the same artifact idempotently rather than creating a duplicate (FR-INT-007).
 - **Fixtures / Mocks**: seeded GitHub PR payloads (webhook and poll variants) referencing a known issue.
+

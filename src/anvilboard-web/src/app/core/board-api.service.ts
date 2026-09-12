@@ -10,6 +10,7 @@ import {
   IssueStatus,
   Member,
   Team,
+  WorkflowState,
 } from './models';
 
 /**
@@ -63,8 +64,12 @@ export class BoardApiService {
     return this.http.post<Issue>('/api/issues', request);
   }
 
-  changeStatus(issueId: string, status: IssueStatus): Observable<Issue> {
-    return this.http.patch<Issue>(`/api/issues/${issueId}/status`, { status });
+  listWorkflowStates(): Observable<WorkflowState[]> {
+    return this.http.get<WorkflowState[]>('/api/workflow/states');
+  }
+
+  changeStatus(issueId: string, workflowStateId: string): Observable<Issue> {
+    return this.http.patch<Issue>(`/api/issues/${issueId}/status`, { workflowStateId });
   }
 
   assign(issueId: string, assigneeId: string | null): Observable<Issue> {

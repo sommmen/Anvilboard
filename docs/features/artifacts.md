@@ -9,7 +9,7 @@
 | Component | artifacts |
 | Priority | P1 |
 | Status | Implemented — the `Artifact` domain model, `IArtifactStore`/SQLite BLOB storage abstraction, `ArtifactService` (attach/list/refresh/remove with dedup-key upsert), REST endpoints, and artifact audit-event emission are all in place. The lifecycle-hook artifact-expansion path is tracked separately under `integration-and-plugin-platform`. See `docs/plans/artifact-service.md` for the implementation plan. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
 | SRS Refs | FR-ART-001, FR-ART-002 |
 | Tech Design Ref | §8.1 — Issue Artifacts row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `Artifacts` table |
 | Depends On | issue-board-service, workspace-authorization |
@@ -237,3 +237,4 @@ See `integration-and-plugin-platform.md`'s File Structure for the owning `GitHub
 - **Unit**: refresh rejects non-refreshable `kind` values with `VALIDATION_FAILED`.
 - **Integration**: first PR event attaches a new `pull_request` artifact with `Metadata` populated and `ArtifactAttached` emitted; a second PR event with the same `dedupKey` updates the row in place and emits `ArtifactRefreshed` instead of creating a duplicate; idempotent no-op refresh (identical `contentReference`/`metadata`) still emits `ArtifactRefreshed` but changes no visible content.
 - **Fixtures / Mocks**: a fake `GitHubPullRequestArtifactSync` caller supplying `(issueId, dedupKey, metadata)` triples simulating PR lifecycle events (opened → checks completed → merged).
+

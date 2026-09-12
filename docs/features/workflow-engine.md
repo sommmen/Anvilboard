@@ -8,8 +8,9 @@
 |-------|-------|
 | Component | workflow-engine |
 | Priority | P0 |
-| Status | Partial — state-machine validation and the legacy `IssueStatus` migration path are implemented and unit-tested; there is no admin CRUD/config-management REST/CLI/MCP surface for workflow states/transitions, and workflow mutations do not emit audit events. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
+| Status | Implemented — state-machine validation, legacy `IssueStatus` migration, workspace-scoped workflow state/transition administration over REST and CLI/MCP, arbitrary workflow-state-ID issue transitions, and service-owned mutation/rejection audit events are covered by integration tests. |
+| Last verified | 2026-09-12 — 394 populated .NET tests pass, including application, REST, agent, authorization, idempotency, custom-state, and workspace-isolation coverage; the Angular production build succeeds. |
+| Implementation Plan | [`../plans/workflow-admin-surface.md`](../plans/workflow-admin-surface.md) — implemented; closes MAJ-003, MAJ-004, MAJ-005 and milestone M2. |
 | SRS Refs | FR-WS-002, FR-WS-003 |
 | Tech Design Ref | §8.1 Workflow Engine; §7.5 State Machine; §10.4 Migration Strategy |
 | Depends On | — |
@@ -33,6 +34,19 @@ The Workflow Engine defines and validates a workspace's configurable, ordered `W
 - Persisting the `Issue.WorkflowStateId`/`Issue.Version` change itself, or emitting the resulting activity/audit event — both are the Issue & Board Service's responsibility (`issue-board-service.md`); this component only returns Allowed/Denied.
 - Dashboard aggregation over workflow states (`issue-board-service.md`).
 - Dispatching `PrePhaseChange`/`PostPhaseChange` `ILifecycleHook<TEvent>` invocations — this component is a pure validation gate with no hook-registry dependency; the Issue & Board Service calls `ValidateTransitionAsync` and dispatches `PrePhaseChange` *before* that call (a `Deny` short-circuits before this component is even consulted) and `PostPhaseChange` only after both `ValidateTransitionAsync` returns `Allowed` and the `Issue` row is durably committed (`integration-and-plugin-platform.md` FR-INT-004).
+- An Angular workflow-settings screen. Administration is currently available through REST and CLI/MCP.
+
+## Administration Surface
+
+`IWorkflowService` owns listing, creation, sparse updates, archival/reassignment, transition creation/removal, and transition validation. The same service is used by both adapters so persistence rules and audit behavior cannot drift.
+
+REST exposes `GET /api/workflow/states`, `GET /api/workflow/transitions`, `POST /api/workflow/states`, `PATCH`/`DELETE /api/workflow/states/{stateId}`, `POST /api/workflow/transitions`, and `DELETE /api/workflow/transitions/{transitionId}`. Reads require `ReadBoard`; mutations require `ManageWorkflowStates`. Optional archived-state listing is controlled by `includeArchived`, and state archival accepts an optional `replacementStateId`.
+
+The CLI/MCP catalog mirrors these routes with seven `workflow` operations: `list-workflow-states`, `list-workflow-transitions`, `create-workflow-state`, `update-workflow-state`, `archive-workflow-state`, `create-workflow-transition`, and `remove-workflow-transition`. Mutation operations require idempotency keys.
+
+Issue transitions use the same configurable model: `IssueService.ChangeStatusAsync` accepts a `WorkflowStateId`; REST accepts `{ "workflowStateId": "<guid>" }`; and the agent `change-issue-status` operation accepts `workflowStateId`. Each adapter resolves the target within the authenticated workspace before mutation. The Angular issue-detail control lists configured states and submits their IDs. `Issue.WorkflowStateId` is authoritative; the deprecated `Issue.Status` field is updated only for the six seeded state keys and otherwise retains its prior value for compatibility with the current fixed-column board and dashboard.
+
+Successful mutations emit `workflow.state.created`, `workflow.state.updated`, `workflow.state.archived`, `workflow.transition.created`, and `workflow.transition.removed`. Validation, duplicate, and missing-reference failures emit `workflow.state.rejected` or `workflow.transition.rejected`. Audit emission is service-owned and therefore identical across REST and agent channels.
 
 ## Core Responsibilities
 
@@ -185,7 +199,8 @@ Archiving with open issues and no replacement is rejected (`VALIDATION_FAILED`) 
 
 ## Error Handling
 
-- **`VALIDATION_FAILED`** (400) — duplicate `WorkflowState.Key` within a workspace; malformed `key`/`displayName`/`order`; archiving a state with open dependents and no `replacementStateId`; attempting to bootstrap issue creation with no active initial workflow state configured (FR-WS-002 AC2).
+- **`VALIDATION_FAILED`** (400) — malformed `key`/`displayName`/`order`; archiving a state with open dependents and no `replacementStateId`; attempting to bootstrap issue creation with no active initial workflow state configured (FR-WS-002 AC2).
+- **`RESOURCE_ALREADY_EXISTS`** (409) — a `WorkflowState.Key` or directed workflow-transition edge already exists within the workspace.
 - **`REFERENCED_ENTITY_NOT_FOUND`** (404) — `currentStateId` or `targetStateId` does not exist within the workspace.
 - **`INVALID_WORKFLOW_TRANSITION`** (409) — either: (a) `currentStateId` or `targetStateId` exists but is archived within the workspace, naming the archived state id and "state is archived"; or (b) the requested `(currentStateId, targetStateId)` pair has no configured `WorkflowTransition` row, naming the current state key, requested state key, and the violated-rule text — so both a human UI and an agent can render a specific correction.
 - No anticipated failure above ever surfaces as `500`; any EF Core exception encountered while resolving states/transitions is caught and translated at the `Anvilboard.Application` boundary per §7.6 before reaching `issue-board-service.md` or any channel.
@@ -224,3 +239,4 @@ src/
 - **Unit**: `ValidateTransitionAsync()` (configured transition, unconfigured transition, same-state no-op, missing/archived state), `CreateWorkflowStateAsync()` (duplicate key, valid create), `ArchiveWorkflowStateAsync()` (blocked by open dependents, allowed with replacement).
 - **Integration**: `src/Anvilboard.Infrastructure.Tests/Migrations/LegacyStatusMigrationTests.cs` — seeds a legacy-shaped SQLite database (issues at every `IssueStatus` value, no `WorkflowStates` rows) and asserts the migration produces exactly the six seeded states and a correct `Issues.WorkflowStateId` backfill per the field-mapping table.
 - **Fixtures / Mocks**: `AnvilboardDbContext` backed by a fresh `Microsoft.Data.Sqlite` in-memory or file-based connection per test, seeded with one workspace, a default workflow (matching the field-mapping table), and issues referencing each seeded state for dependency-guard tests.
+

@@ -89,4 +89,38 @@ public sealed class AgentWorkspaceScope(AnvilboardDbContext db, AgentActorAccess
             : throw new AgentRequestException(
                 AccessDenied, $"Member {value} is not accessible from the authenticated workspace.");
     }
+
+    /// <summary>Verifies a workflow state belongs to the actor's workspace.</summary>
+    public async Task<WorkflowStateId> RequireWorkflowStateAsync(Guid stateId, CancellationToken ct = default)
+    {
+        var id = new WorkflowStateId(stateId);
+        var workspaceId = actors.Actor.WorkspaceId;
+
+        var belongs = await db.WorkflowStates
+            .AsNoTracking()
+            .AnyAsync(state => state.Id == id && state.WorkspaceId == workspaceId, ct);
+
+        return belongs
+            ? id
+            : throw new AgentRequestException(
+                AccessDenied, $"Workflow state {stateId} is not accessible from the authenticated workspace.");
+    }
+
+    /// <summary>Verifies a workflow transition belongs to the actor's workspace.</summary>
+    public async Task<WorkflowTransitionId> RequireWorkflowTransitionAsync(
+        Guid transitionId,
+        CancellationToken ct = default)
+    {
+        var id = new WorkflowTransitionId(transitionId);
+        var workspaceId = actors.Actor.WorkspaceId;
+
+        var belongs = await db.WorkflowTransitions
+            .AsNoTracking()
+            .AnyAsync(transition => transition.Id == id && transition.WorkspaceId == workspaceId, ct);
+
+        return belongs
+            ? id
+            : throw new AgentRequestException(
+                AccessDenied, $"Workflow transition {transitionId} is not accessible from the authenticated workspace.");
+    }
 }

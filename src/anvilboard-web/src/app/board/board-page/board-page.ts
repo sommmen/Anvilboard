@@ -11,6 +11,7 @@ import {
   REALTIME_ISSUE_CHANGED,
   RealtimeChangeEnvelope,
   Team,
+  WorkflowState,
 } from '../../core/models';
 import { RealtimeBoardSyncService } from '../../core/realtime-board-sync.service';
 import { IssueCard } from '../issue-card/issue-card';
@@ -32,6 +33,7 @@ export class BoardPage {
 
   readonly issues = signal<Issue[]>([]);
   readonly teams = signal<Team[]>([]);
+  readonly workflowStates = signal<WorkflowState[]>([]);
   readonly selectedIssue = signal<Issue | null>(null);
   readonly creatingForStatus = signal<IssueStatus | null>(null);
   readonly newIssueTitle = signal('');
@@ -48,6 +50,7 @@ export class BoardPage {
   constructor() {
     this.refresh();
     this.api.listTeams().subscribe((teams) => this.teams.set(teams));
+    this.api.listWorkflowStates().subscribe((states) => this.workflowStates.set(states));
 
     this.realtime.changes
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -146,12 +149,23 @@ export class BoardPage {
       .createIssue({ teamId: team.id, title, priority: IssuePriority.None })
       .subscribe((issue) => {
         if (status !== IssueStatus.Backlog) {
-          this.api.changeStatus(issue.id, status).subscribe(() => this.refresh());
+          const target = this.workflowStates().find(
+            (state) => state.key === this.statusKey(status),
+          );
+          if (target) {
+            this.api.changeStatus(issue.id, target.id).subscribe(() => this.refresh());
+          } else {
+            this.refresh();
+          }
         } else {
           this.refresh();
         }
         this.creatingForStatus.set(null);
       });
+  }
+
+  private statusKey(status: IssueStatus): string {
+    return ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled'][status];
   }
 
   onStatusChanged(): void {

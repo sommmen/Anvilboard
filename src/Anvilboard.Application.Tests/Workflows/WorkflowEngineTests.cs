@@ -1,3 +1,4 @@
+using Anvilboard.Application.Auditing;
 using Anvilboard.Application.Automation;
 using Anvilboard.Application.Issues;
 using Anvilboard.Application.Realtime;
@@ -126,14 +127,17 @@ public sealed class WorkflowEngineTests
     }
 
     [Fact]
-    public async Task CreateWorkflowStateAsync_DuplicateKey_ThrowsValidationFailed()
+    public async Task CreateWorkflowStateAsync_DuplicateKey_ThrowsResourceAlreadyExists()
     {
         await using var fixture = await WorkflowFixture.CreateAsync();
 
         var exception = await Assert.ThrowsAsync<WorkflowValidationException>(() =>
-            fixture.Engine.CreateWorkflowStateAsync(fixture.WorkspaceId, "current", "Current", 1, false));
+            fixture.Engine.CreateWorkflowStateAsync(
+                fixture.WorkspaceId, "current", "Current", 1, false, fixture.Operation));
 
-        Assert.Equal("VALIDATION_FAILED", WorkflowValidationException.ErrorCode);
+        // A key collision is a conflict with existing state, not malformed input, so it carries the
+        // 409 catalog code rather than the 400 every other create rejection uses (DR-WFA-007).
+        Assert.Equal("RESOURCE_ALREADY_EXISTS", exception.ErrorCode);
         Assert.Contains("current", exception.Message, StringComparison.Ordinal);
         Assert.Equal(1, await fixture.Db.WorkflowStates.CountAsync());
     }
@@ -145,10 +149,14 @@ public sealed class WorkflowEngineTests
         fixture.Db.Issues.Add(fixture.CreateIssue(fixture.Current.Id));
         await fixture.Db.SaveChangesAsync();
 
-        await Assert.ThrowsAsync<WorkflowValidationException>(() =>
-            fixture.Engine.ArchiveWorkflowStateAsync(fixture.WorkspaceId, fixture.Current.Id, null));
+        fixture.CreateState("todo", "Todo");
+        await fixture.Db.SaveChangesAsync();
 
-        Assert.False((await fixture.Db.WorkflowStates.SingleAsync()).IsArchived);
+        await Assert.ThrowsAsync<WorkflowValidationException>(() =>
+            fixture.Engine.ArchiveWorkflowStateAsync(
+                fixture.WorkspaceId, fixture.Current.Id, null, fixture.Operation));
+
+        Assert.False((await fixture.Db.WorkflowStates.SingleAsync(s => s.Id == fixture.Current.Id)).IsArchived);
     }
 
     [Fact]
@@ -160,7 +168,8 @@ public sealed class WorkflowEngineTests
         fixture.Db.Issues.Add(issue);
         await fixture.Db.SaveChangesAsync();
 
-        await fixture.Engine.ArchiveWorkflowStateAsync(fixture.WorkspaceId, fixture.Current.Id, replacement.Id);
+        await fixture.Engine.ArchiveWorkflowStateAsync(
+            fixture.WorkspaceId, fixture.Current.Id, replacement.Id, fixture.Operation);
 
         Assert.True((await fixture.Db.WorkflowStates.SingleAsync(state => state.Id == fixture.Current.Id)).IsArchived);
         Assert.Equal(replacement.Id, (await fixture.Db.Issues.SingleAsync()).WorkflowStateId);
@@ -185,12 +194,40 @@ public sealed class WorkflowEngineTests
         await fixture.Db.SaveChangesAsync();
 
         var service = CreateIssueService(fixture);
-        var updated = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Todo);
+        var updated = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, todo.Id);
 
         Assert.Equal(IssueStatus.Todo, updated.Status);
         Assert.Equal(todo.Id, updated.WorkflowStateId);
         Assert.Equal(1, updated.Version);
         Assert.Null(updated.CompletedAt);
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_CustomState_UpdatesAuthoritativeStateAndKeepsLegacyProjection()
+    {
+        await using var fixture = await WorkflowFixture.CreateAsync();
+        var backlog = fixture.CreateState("backlog", "Backlog", order: 0);
+        var qaReview = fixture.CreateState("qa_review", "QA review", order: 1);
+        fixture.Db.WorkflowTransitions.Add(new WorkflowTransition
+        {
+            Id = WorkflowTransitionId.New(),
+            WorkspaceId = fixture.WorkspaceId,
+            FromStateId = backlog.Id,
+            ToStateId = qaReview.Id,
+        });
+        var issue = fixture.CreateIssue(backlog.Id);
+        issue.Status = IssueStatus.Backlog;
+        fixture.Db.Issues.Add(issue);
+        await fixture.Db.SaveChangesAsync();
+
+        var service = CreateIssueService(fixture);
+        var updated = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, qaReview.Id);
+
+        Assert.Equal(qaReview.Id, updated.WorkflowStateId);
+        Assert.Equal(IssueStatus.Backlog, updated.Status);
+        Assert.Equal(1, updated.Version);
+        var activity = await fixture.Db.ActivityEvents.SingleAsync(e => e.IssueId == issue.Id);
+        Assert.Contains("qa_review", activity.DataJson!);
     }
 
     [Fact]
@@ -207,7 +244,7 @@ public sealed class WorkflowEngineTests
         var service = CreateIssueService(fixture);
 
         var exception = await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
-            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Done));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, done.Id));
 
         Assert.Equal("INVALID_WORKFLOW_TRANSITION", exception.ErrorCode);
         var unchanged = await fixture.Db.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id);
@@ -227,7 +264,7 @@ public sealed class WorkflowEngineTests
         await fixture.Db.SaveChangesAsync();
 
         var service = CreateIssueService(fixture);
-        var result = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Backlog);
+        var result = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, backlog.Id);
 
         Assert.Equal(0, result.Version);
         Assert.Equal(backlog.Id, result.WorkflowStateId);
@@ -246,7 +283,7 @@ public sealed class WorkflowEngineTests
         var service = CreateIssueService(fixture);
 
         var exception = await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
-            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Todo));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, WorkflowStateId.New()));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", exception.ErrorCode);
         var unchanged = await fixture.Db.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id);
@@ -271,100 +308,4 @@ public sealed class WorkflowEngineTests
         public IReadOnlyList<IIssueHook> IssueHooks { get; } = [];
     }
 
-    private sealed class WorkflowFixture : IAsyncDisposable
-    {
-        private readonly SqliteConnection connection;
-
-        private WorkflowFixture(
-            SqliteConnection connection,
-            AnvilboardDbContext db,
-            WorkspaceId workspaceId,
-            TeamId teamId,
-            WorkflowState current)
-        {
-            this.connection = connection;
-            Db = db;
-            WorkspaceId = workspaceId;
-            TeamId = teamId;
-            Current = current;
-            Engine = new WorkflowEngine(db);
-        }
-
-        public AnvilboardDbContext Db { get; }
-        public WorkspaceId WorkspaceId { get; }
-        public TeamId TeamId { get; }
-        public WorkflowState Current { get; }
-        public WorkflowEngine Engine { get; }
-
-        public static async Task<WorkflowFixture> CreateAsync()
-        {
-            var connection = new SqliteConnection("Data Source=:memory:");
-            await connection.OpenAsync();
-            var options = new DbContextOptionsBuilder<AnvilboardDbContext>().UseSqlite(connection).Options;
-            var db = new AnvilboardDbContext(options);
-            await db.Database.EnsureCreatedAsync();
-
-            var workspaceId = WorkspaceId.New();
-            var current = new WorkflowState
-            {
-                Id = WorkflowStateId.New(),
-                WorkspaceId = workspaceId,
-                Key = "current",
-                DisplayName = "Current",
-                Order = 0,
-            };
-            db.Workspaces.Add(new Workspace
-            {
-                Id = workspaceId,
-                Name = "Test workspace",
-                Slug = "test-workspace",
-                CreatedAt = DateTimeOffset.UtcNow,
-            });
-            var teamId = TeamId.New();
-            db.Teams.Add(new Team
-            {
-                Id = teamId,
-                WorkspaceId = workspaceId,
-                Name = "Test team",
-                Key = "TST",
-                CreatedAt = DateTimeOffset.UtcNow,
-            });
-            db.WorkflowStates.Add(current);
-            await db.SaveChangesAsync();
-            return new WorkflowFixture(connection, db, workspaceId, teamId, current);
-        }
-
-        public WorkflowState CreateState(string key, string displayName, int order = 1, bool isTerminal = false)
-        {
-            var state = new WorkflowState
-            {
-                Id = WorkflowStateId.New(),
-                WorkspaceId = WorkspaceId,
-                Key = key,
-                DisplayName = displayName,
-                Order = order,
-                IsTerminal = isTerminal,
-            };
-            Db.WorkflowStates.Add(state);
-            return state;
-        }
-
-        public Issue CreateIssue(WorkflowStateId workflowStateId) => new()
-        {
-            Id = IssueId.New(),
-            TeamId = TeamId,
-            Key = "TST-1",
-            Title = "Test issue",
-            Status = IssueStatus.Backlog,
-            WorkflowStateId = workflowStateId,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        };
-
-        public async ValueTask DisposeAsync()
-        {
-            await Db.DisposeAsync();
-            await connection.DisposeAsync();
-        }
-    }
 }

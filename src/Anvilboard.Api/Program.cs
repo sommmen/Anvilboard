@@ -95,6 +95,7 @@ app.MapTeamEndpoints();
 app.MapDashboardEndpoints();
 app.MapWebhookEndpoints();
 app.MapBackupEndpoints();
+app.MapWorkflowEndpoints();
 
 // Authorized by the same middleware as every REST route, so an unauthenticated client is refused
 // during the negotiate/connect request itself and never observes an established connection. The hub

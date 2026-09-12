@@ -3,8 +3,8 @@
 > Project: Anvilboard
 > Audited: initial full pass, then re-verified against the code after the backup/restore, realtime, artifact, and agent-authorization work landed
 > Scope: Full — `docs/anvilboard/*`, `docs/features/*`, `docs/plans/*`, `docs/project-anvilboard.md`, `ideas/anvilboard/draft.md`, root-level docs (`README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CHANGELOG.md`, `SPEC.md`, `FUNCTIONAL_SPEC.md`, `PLUGINS.md`)
-> Documents reviewed: 30 Markdown documents
-> Code alignment: Yes — cross-referenced against `src/` (.NET 10 solution, `Anvilboard.slnx`) and `src/anvilboard-web` (Angular), plus a full `dotnet test Anvilboard.slnx` run: **320 passing, 0 failing** (Application 192, Agent 40, Infrastructure 41, Api 30, GitHub 12, Linear 5)
+> Documents reviewed: 29 Markdown documents in the declared scope
+> Code alignment: Yes — cross-referenced against `src/` (.NET 10 solution, `Anvilboard.slnx`) and `src/anvilboard-web` (Angular). Latest verification: **394 populated .NET tests passing, 0 failing** (Application 221, Agent 52, Infrastructure 41, API 63, GitHub 12, Linear 5), plus a successful Angular production build.
 
 ## Executive Summary
 
@@ -16,7 +16,7 @@ not structure but **currency**: several of the most-read documents (`docs/anvilb
 target-state / pre-implementation documents and were never updated as real code landed. Before this
 audit, `tech-design.md` §16 marked **every** milestone "Not Started" even though M1–M4.5 and parts of
 M5–M6.7 are substantially implemented and covered by passing automated tests across 6 populated
-xUnit test projects (114 at the time of the first pass, **320** as of the latest re-verification);
+xUnit test projects (114 at the time of the first pass, **394** as of the latest re-verification);
 `test-cases.md` claimed there were **zero** automated test projects at all.
 
 The audit updated the doc/implementation-status claims across all 9 feature docs, the
@@ -154,26 +154,39 @@ fixed**.
 > triggered revocation path and persist the revocation state used by subsequent authentication.
 > No implementation change was required; this status corrects stale audit evidence.
 
-### MAJ-003: No admin transition CRUD surface for the workflow engine
+### MAJ-003: No admin transition CRUD surface for the workflow engine — **RESOLVED**
+
+> **Resolved.** Workspace-scoped REST and CLI/MCP operations now list, create, and remove directed workflow transitions. The application service rejects self-loops, duplicates, missing endpoints, and archived endpoints; integration tests cover adapter authorization and persistence behavior.
+
 - **Location**: `docs/features/workflow-engine.md`
 - **Issue**: The spec describes admin-manageable workflow transitions (create/update/delete valid state transitions). No REST/CLI/MCP surface for managing transitions was found; transitions appear to be seeded via migration only.
 - **Evidence**: `WorkflowState.cs` domain model is configurable, but no controller/command exposes transition management; only the seed migration (`20260908093300_AddWorkflowStates.cs`) populates data.
 - **Impact**: Workflow customization described as a core capability is not actually usable by administrators today.
 - **Fix**: Implement transition CRUD endpoints, or mark this as a target-state capability in the spec until built.
+- **Correction**: transitions are also seeded per workspace at bootstrap by `WorkspaceAuthorizationService.CreateDefaultWorkflowTransitions`, not by the migration alone. The finding stands — no *runtime* path creates or removes a transition.
+- **Plan**: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md) — covers MAJ-003, MAJ-004, and MAJ-005 together, since all three are the same missing seam around an already-implemented validation core.
 
-### MAJ-004: No workflow config-management surface (REST/CLI/MCP)
+### MAJ-004: No workflow config-management surface (REST/CLI/MCP) — **RESOLVED**
+
+> **Resolved.** Administrators can list, create, update, and archive workflow states through `/api/workflow` and the matching `workflow` agent operations. Keys are immutable, archived states are hidden by default, dependent issues require a valid replacement, and every identifier is resolved inside the authenticated workspace.
+
 - **Location**: `docs/features/workflow-engine.md`
 - **Issue**: Related to MAJ-003 — beyond transitions, there is no general workflow configuration management surface across any adapter.
-- **Evidence**: Same code search as MAJ-003; no controller/command/tool found.
+- **Evidence**: Same code search as MAJ-003; no controller/command/tool found. Re-verified at commit `4de5442`: `IWorkflowService` declares only `ValidateTransitionAsync`, `CreateWorkflowStateAsync`, and `ArchiveWorkflowStateAsync`, and `Permission.ManageWorkflowStates` is referenced by zero handlers.
 - **Impact**: Same as MAJ-003.
 - **Fix**: Same as MAJ-003.
+- **Plan**: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md).
 
-### MAJ-005: Workflow mutations do not emit audit events
+### MAJ-005: Workflow mutations do not emit audit events — **RESOLVED**
+
+> **Resolved.** `WorkflowEngine` emits service-owned state/transition success and rejection events with actor, channel, correlation, workspace, target, and mutation-specific detail. Service ownership keeps REST and agent audit semantics identical and records issue reassignment counts during archival.
+
 - **Location**: `docs/features/workflow-engine.md`; cross-reference `docs/features/audit-and-recovery.md`
 - **Issue**: Spec requires every workflow-affecting mutation to produce an audit trail entry. Workflow state/transition mutations were not found to emit `ActivityEvent`/audit records.
-- **Evidence**: Symbolic search for audit-event emission calls near workflow mutation code paths found none, in contrast to issue mutations which do emit audit events.
+- **Evidence**: Symbolic search for audit-event emission calls near workflow mutation code paths found none, in contrast to issue mutations which do emit audit events. Re-verified at commit `4de5442`: `WorkflowEngine(AnvilboardDbContext db)` takes no `IAuditService`, so no emission is structurally possible.
 - **Impact**: Workflow configuration changes are not traceable, undermining the audit/recovery story for compliance-sensitive changes.
 - **Fix**: Emit an audit/activity event on every workflow configuration mutation, consistent with issue mutation behavior.
+- **Plan**: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md).
 
 ### MAJ-006: Threaded comments are specified but implementation is flat
 - **Location**: `docs/features/issue-board-service.md`, `docs/features/issue-linking.md`
@@ -373,12 +386,12 @@ fixed**.
 - **Impact**: Low — document is already marked "Superseded," so readers are warned, but the specific stale details could still confuse a reader skimming for historical context.
 - **Fix**: No action required given its self-declared historical status; optionally add a pointer to `docs/features/integration-and-plugin-platform.md` for current behavior.
 
-### MIN-003: Workflow API surface is still legacy enum-based rather than the documented configurable model
+### MIN-003: Workflow API surface is still legacy enum-based rather than the documented configurable model — Resolved
 - **Location**: `docs/features/workflow-engine.md`
-- **Issue**: While the domain model supports configurable workflow states, parts of the public API still appear to operate against a legacy fixed enum rather than the dynamic `WorkflowState` model.
-- **Evidence**: API DTO/controller inspection during the earlier agent pass found enum-typed fields alongside the newer configurable model.
-- **Impact**: Low-to-moderate — functions correctly today but represents an API/domain-model mismatch that will need reconciling before transition CRUD (MAJ-003) can be built cleanly.
-- **Fix**: Consider documenting this explicitly as an intentional compatibility bridge, or plan to migrate the API surface to the configurable model.
+- **Issue**: Public issue-transition entry points previously accepted only the six-value legacy `IssueStatus` enum, making configured custom workflow states unreachable.
+- **Evidence**: `IssueService.ChangeStatusAsync`, `PATCH /api/issues/{id}/status`, and `change-issue-status` now accept workspace-scoped workflow-state IDs. Application, REST, and agent tests exercise a transition to a custom `qa_review` state, and the Angular issue-detail selector loads configured workflow states.
+- **Impact**: Resolved — `Issue.WorkflowStateId` is authoritative. The deprecated `Issue.Status` projection remains for compatibility with existing board/dashboard views.
+- **Fix**: Applied in place with workspace-bound target resolution so unknown and foreign state IDs remain indistinguishable at transport boundaries.
 
 ### MIN-004: Plugin manifest validation is weak
 - **Location**: `docs/features/integration-and-plugin-platform.md`
@@ -389,12 +402,11 @@ fixed**.
 
 ### MIN-005: Undocumented extra agent tools exist beyond the documented set — **RESOLVED**
 
-> **Resolved.** [`DEVELOPMENT.md`](../DEVELOPMENT.md) now documents the complete 13-operation
-> catalog (`list-issues`, `get-issue`, `create-issue`, `change-issue-status`, `assign-issue`,
-> `comment-on-issue`, `list-issue-links`, `create-issue-link`, `remove-issue-link`,
-> `dashboard-summary`, `create-backup`, `list-backups`, `verify-backup`) with each operation's
-> category and idempotency-key requirement, and records that restore is deliberately not exposed
-> (`DR-AGT-004`). Verified against the `[AgentOperation(...)]` attributes in
+> **Resolved.** [`DEVELOPMENT.md`](../DEVELOPMENT.md) now documents the complete 20-operation
+> catalog across issue, issue-link, dashboard, backup, and workflow categories. This includes the
+> two workflow reads and five idempotent workflow mutations, records each operation's category and
+> idempotency-key requirement, and notes that restore is deliberately not exposed (`DR-AGT-004`).
+> Verified against the `[AgentOperation(...)]` attributes in
 > `src/Anvilboard.Agent/BoardAgentService.cs`.
 
 - **Location**: `docs/features/agent-and-automation-surface.md`
@@ -423,10 +435,10 @@ fixed**.
 - **Issue**: Five classes of drift accumulated after the backup/restore, artifact, realtime, and agent-authorization work landed:
   1. **Stale status claims** — `workspace-authorization.md` and tech-design §16's M1 row still said CLI/MCP enforcement was outstanding after MAJ-001/MAJ-015 shipped; `docs/plans/backup-and-restore.md` still read `Status | Plan — not yet implemented` after CRIT-001/MAJ-019 were resolved.
   2. **Wrong finding IDs** — three documents cited **MAJ-021** (the resolved bootstrap-seeding finding) where they meant **MAJ-022** (the open REST/application workspace-query scoping gap), making a resolved finding look open and an open finding look absent.
-  3. **Stale test counts** — docs cited a 114- or 189-test suite; the real figure is **320 .NET + 21 Angular = 341**, across 38 test files.
+  3. **Stale test counts** — docs cited a 114- or 189-test suite; the latest figure is **394 populated .NET tests**, across 43 source test files, plus a successful Angular production build.
   4. **Understated coverage** — `DEVELOPMENT.md` described `Api.Tests` and `Agent.Tests` far more narrowly than their actual contents, and claimed "the agent surface … still has no automated coverage"; `CONTRIBUTING.md` told contributors "there's no automated test suite yet".
   5. **Stale gap lists** — `test-cases.md` §1.3/§6 still listed backup/restore as untestable "because no backup/restore service exists".
-- **Evidence**: `dotnet test Anvilboard.slnx` → 320 passing / 0 failing (Application 192, Infrastructure 41, Agent 40, Api 30, GitHub 12, Linear 5); `npm test` in `src/anvilboard-web` → 21 passing across 3 spec files; direct inspection of `src/Anvilboard.Application/Backup/` (12 files including `BackupService.cs`, `RestoreCoordinator.cs`) and the 13 `[RequiresAgentPermission]` operations on `BoardAgentService`.
+- **Evidence**: Individual runs of the six populated .NET test projects → 394 passing / 0 failing (Application 221, Infrastructure 41, Agent 52, API 63, GitHub 12, Linear 5); `npm test -- --watch=false` in `src/anvilboard-web` → 21 passing across 3 spec files; `npm run build` → successful production bundle; direct inspection of `src/Anvilboard.Application/Backup/` (12 files including `BackupService.cs`, `RestoreCoordinator.cs`) and the 20 `[RequiresAgentPermission]` operations on `BoardAgentService`.
 - **Impact**: Medium-low but corrosive — a contributor reading `CONTRIBUTING.md` would skip running tests, and the MAJ-021/MAJ-022 confusion could cause an already-fixed bug to be "re-fixed" while the real open gap stayed unaddressed.
 - **Fix**: Applied. All affected documents were corrected in place; see INFO-005 for the drift-prevention suggestion.
 
@@ -438,7 +450,7 @@ fixed**.
 
 ### INFO-002: `test-cases.md` forward-looking sections (§2 Test Strategy/Pyramid, §3–5 planned `TC-*` test case tables, §7 Statistics) were left as target-state content
 - **Location**: `docs/anvilboard/test-cases.md` §2 onward
-- **Note**: These sections describe a target test-coverage strategy and a catalog of planned test cases (`TC-AUTH-*`, `TC-WF-*`, etc.) rather than claims about current-state coverage, so they were left in place. Only the current-state claims (header callout, §1.1–1.3 tables, §6 Gap Analysis's "no test projects" line) were corrected to reflect the real passing test suite (114 at the time of the first pass, 320 as of the latest re-verification).
+- **Note**: These sections describe a target test-coverage strategy and a catalog of planned test cases (`TC-AUTH-*`, `TC-WF-*`, etc.) rather than claims about current-state coverage, so they were left in place. Only the current-state claims (header callout, §1.1–1.3 tables, §6 Gap Analysis's "no test projects" line) were corrected to reflect the real passing test suite (114 at the time of the first pass, 394 as of the latest re-verification).
 
 ### INFO-003: `IssueLinkService` directional/zero-cascade design is a positive finding, not a gap
 - **Location**: `docs/features/issue-linking.md`
@@ -500,7 +512,7 @@ graph TD
 2. ~~**Build the realtime-updates push layer (SignalR/WebSocket) and outbound plugin event relay**~~ — CRIT-002 done; MAJ-014 (core → plugin dispatch) still open — medium
 3. ~~**Implement `ArtifactService` with upsert/refresh semantics and lifecycle-hook artifact expansion**~~ — CRIT-003 and MIN-006 done, MAJ-020 audit emission done; MAJ-020's `IIssueHook` artifact-expansion path still open — medium
 4. ~~**Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation**~~ — MAJ-001 closed; MAJ-002 was already implemented and is corrected above — done. ~~**Residual:** enforce authenticated-workspace predicates throughout REST/application reads and mutations (MAJ-022).~~ — MAJ-022 closed; REST and CLI/MCP now enforce the same workspace boundary.
-5. **Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations** — fixes MAJ-003, MAJ-004, MAJ-005 — medium
+5. ~~**Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations**~~ — MAJ-003, MAJ-004, and MAJ-005 closed with workspace-scoped REST and CLI/MCP operations, idempotent agent mutations, audit emission, and integration coverage — done: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md)
 6. ~~**Wire agent-surface authorization, idempotency, and an `apiVersion` contract field**~~ — MAJ-015, MAJ-016, and MAJ-017 closed with SQLite-backed integration coverage — done
 7. **Add sync-health/backoff tracking and enforce paused-integration webhook rejection** — fixes MAJ-012, MAJ-013 — medium
 8. **Close remaining UI/UX gaps (board filter parity, issue-detail activity feed, link-update endpoint)** — fixes MAJ-007, MAJ-008, MAJ-010, MAJ-011 — medium
