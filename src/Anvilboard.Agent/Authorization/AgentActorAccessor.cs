@@ -27,9 +27,6 @@ public sealed class AgentActorAccessor
             "No ActorContext was resolved for this invocation; "
             + $"{nameof(WorkspaceAuthorizationPolicy)} must run before the operation.");
 
-    /// <summary>Whether an actor has been resolved for this invocation.</summary>
-    public bool HasActor => _actor is not null;
-
     internal void Set(ActorContext actor) => _actor = actor;
 }
 

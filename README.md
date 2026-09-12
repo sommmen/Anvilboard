@@ -128,7 +128,7 @@ dotnet run -- mcp   # long-running MCP server over stdio, for an MCP-aware agent
 ```
 
 All CLI and MCP operations return a JSON envelope shaped as
-`{"apiVersion":"1","correlationId":"...","data":...}`. Mutating issue and link operations require
+`{"apiVersion":"1.0","correlationId":"...","data":...}`. Mutating issue and link operations require
 a non-empty `--idempotencyKey`; replaying the same key and payload returns the original result, while
 reusing it with a different payload is rejected. This is a breaking change from the previous
 unauthenticated, unenveloped CLI/MCP contract. Backup operations derive their workspace from the

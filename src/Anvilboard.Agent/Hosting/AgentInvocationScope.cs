@@ -50,13 +50,8 @@ public static class AgentInvocationScope
             "No agent invocation scope is active. The CLI/MCP host must call "
             + $"{nameof(AgentInvocationScope)}.{nameof(Begin)} before invoking an operation.");
 
-    /// <summary>Whether an invocation scope is currently active.</summary>
-    public static bool IsActive => Current.Value is not null;
-
     public readonly struct Handle(IServiceScope scope, IServiceScope? previous) : IDisposable
     {
-        public IServiceProvider Services => scope.ServiceProvider;
-
         public void Dispose()
         {
             Current.Value = previous;

@@ -110,7 +110,7 @@ dotnet run -- issues create-issue --teamId <guid> --title "Fix the thing" --idem
 
 Every operation is authenticated and authorized within the credential's workspace. Each invocation
 gets an isolated dependency-injection scope and correlation ID, and returns
-`{"apiVersion":"1","correlationId":"...","data":...}`. The six workspace-data mutations require
+`{"apiVersion":"1.0","correlationId":"...","data":...}`. The six workspace-data mutations require
 `--idempotencyKey value`; the key is scoped by workspace, actor, and operation and is retained for
 30 days. Use `--name value` syntax rather than `name=value`.
 

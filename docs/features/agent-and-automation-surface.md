@@ -108,7 +108,7 @@ Every operation returns this version-1 envelope:
 
 ```json
 {
-  "apiVersion": "1",
+  "apiVersion": "1.0",
   "correlationId": "b826dd8987214aad93d5e459136f7e64",
   "data": {}
 }
