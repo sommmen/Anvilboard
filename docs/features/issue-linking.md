@@ -9,7 +9,7 @@
 | Component | issue-linking |
 | Priority | P2 |
 | Status | Partial — `CreateLinkAsync`/`ListLinksAsync`/`RemoveLinkAsync` are implemented and directional exposure/zero-cascade behavior matches spec; a link-update endpoint is missing, and the web issue-detail view suggests link types but does not enforce them server-side. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `3eaacbb` — `dotnet test Anvilboard.slnx` 320 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
 | SRS Refs | FR-LNK-001 |
 | Tech Design Ref | §8.1 — Issue Linking row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `IssueLinks` table |
 | Depends On | issue-board-service, workspace-authorization |
@@ -138,7 +138,7 @@ Every anticipated failure resolves to a §7.7 catalog code; no raw EF Core excep
 
 | Condition | Code | HTTP status | Notes |
 |---|---:|---|---|
-| `sourceIssueId` or `targetIssueId` does not exist, or resolves outside the caller's workspace | `REFERENCED_ENTITY_NOT_FOUND` | 404 | Applies identically to a cross-workspace target, avoiding existence disclosure across workspace boundaries. |
+| `sourceIssueId` or `targetIssueId` does not exist, or resolves outside the caller's workspace | `WORKSPACE_ACCESS_DENIED` | 403 | Over REST, both ids go through `RestWorkspaceScope.RequireIssueAsync` before the service runs, so an unknown id and a foreign one are indistinguishable. The service still raises `REFERENCED_ENTITY_NOT_FOUND` for non-REST callers. Applies identically to a cross-workspace target, avoiding existence disclosure across workspace boundaries. |
 | `sourceIssueId == targetIssueId` | `VALIDATION_FAILED` | 400 | An issue cannot link to itself. |
 | `type` missing/empty | `VALIDATION_FAILED` | 400 | Names the missing field; any non-empty value is otherwise accepted. `description` has no missing/empty error case — it is optional and defaults to `""`. |
 | Duplicate `(SourceIssueId, TargetIssueId, Type)` | `RESOURCE_ALREADY_EXISTS` | 409 | Names the conflicting link (tech-design §7.7 UNIQUE-constraint translation pattern); a differing `description` on the new request does not avoid the conflict. |

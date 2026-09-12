@@ -19,44 +19,78 @@ public static class IssueEndpoints
     {
         var group = app.MapGroup("/api/issues").WithTags("Issues").RequirePermission(Permission.ReadBoard);
 
-        group.MapGet("/", async (IssueService service, Guid? teamId, IssueStatus? status, Guid? assigneeId, CancellationToken ct) =>
-        {
-            var issues = await service.ListAsync(
-                teamId is { } t ? new TeamId(t) : null,
-                status,
-                assigneeId is { } a ? new MemberId(a) : null,
-                ct: ct);
-            return Results.Ok(issues);
-        });
-
-        group.MapGet("/{id:guid}", async (Guid id, IssueService service, CancellationToken ct) =>
-        {
-            var issue = await service.GetAsync(new IssueId(id), ct);
-            return issue is not null ? Results.Ok(issue) : Results.NotFound();
-        });
-
-        group.MapPost("/", async (CreateIssueRequest request, IssueService service, CancellationToken ct) =>
-        {
-            var issue = await service.CreateAsync(
-                new TeamId(request.TeamId),
-                request.Title,
-                request.Description,
-                request.Priority ?? IssuePriority.None,
-                request.ProjectId is { } p ? new ProjectId(p) : null,
-                request.AssigneeId is { } a ? new MemberId(a) : null,
-                ct: ct);
-            return Results.Created($"/api/issues/{issue.Id.Value}", issue);
-        }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
-
-        group.MapPatch("/{id:guid}/status", async (Guid id, ChangeStatusRequest request, IssueService service, CancellationToken ct) =>
+        group.MapGet("/", async (IssueService service, RestWorkspaceScope scope, Guid? teamId, IssueStatus? status, Guid? assigneeId, CancellationToken ct) =>
         {
             try
             {
-                var issue = await service.ChangeStatusAsync(new IssueId(id), request.Status, ct: ct);
+                // The filters are scoped as well. The service would already exclude foreign rows, so
+                // an unscoped foreign id returns an empty list -- but "empty" versus "denied" still
+                // tells the caller whether that id exists, and it would make this route disagree
+                // with the dashboard summary about the very same teamId.
+                var team = teamId is { } t ? await scope.RequireTeamAsync(t, ct) : (TeamId?)null;
+                var assignee = await scope.RequireMemberAsync(assigneeId, ct);
+                var issues = await service.ListAsync(scope.WorkspaceId, team, status, assignee, ct: ct);
+                return Results.Ok(issues);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
+            }
+        });
+
+        group.MapGet("/{id:guid}", async (Guid id, IssueService service, RestWorkspaceScope scope, CancellationToken ct) =>
+        {
+            try
+            {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var issue = await service.GetAsync(scope.WorkspaceId, issueId, ct);
+                return issue is not null ? Results.Ok(issue) : WorkspaceScopeResults.Denied();
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
+            }
+        });
+
+        group.MapPost("/", async (CreateIssueRequest request, IssueService service, RestWorkspaceScope scope, CancellationToken ct) =>
+        {
+            try
+            {
+                var teamId = await scope.RequireTeamAsync(request.TeamId, ct);
+                var assigneeId = await scope.RequireMemberAsync(request.AssigneeId, ct);
+                var issue = await service.CreateAsync(
+                    scope.WorkspaceId,
+                    teamId,
+                    request.Title,
+                    request.Description,
+                    request.Priority ?? IssuePriority.None,
+                    request.ProjectId is { } p ? new ProjectId(p) : null,
+                    assigneeId,
+                    ct: ct);
+                return Results.Created($"/api/issues/{issue.Id.Value}", issue);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
+            }
+        }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
+
+        group.MapPatch("/{id:guid}/status", async (Guid id, ChangeStatusRequest request, IssueService service, RestWorkspaceScope scope, CancellationToken ct) =>
+        {
+            try
+            {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var issue = await service.ChangeStatusAsync(scope.WorkspaceId, issueId, request.Status, ct: ct);
                 return Results.Ok(issue);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
             }
             catch (WorkflowTransitionDeniedException ex)
             {
+                // REFERENCED_ENTITY_NOT_FOUND here is a *dependent* lookup failing after scoping
+                // already succeeded (a missing workflow state), so 404 is not an existence oracle.
                 var statusCode = ex.ErrorCode == "REFERENCED_ENTITY_NOT_FOUND"
                     ? StatusCodes.Status404NotFound
                     : StatusCodes.Status409Conflict;
@@ -64,37 +98,70 @@ public static class IssueEndpoints
             }
         }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
 
-        group.MapPatch("/{id:guid}/assignee", async (Guid id, AssignRequest request, IssueService service, CancellationToken ct) =>
-        {
-            var issue = await service.AssignAsync(new IssueId(id), request.AssigneeId is { } a ? new MemberId(a) : null, ct: ct);
-            return Results.Ok(issue);
-        }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
-
-        group.MapPost("/{id:guid}/comments", async (Guid id, AddCommentRequest request, IssueService service, CancellationToken ct) =>
-        {
-            var comment = await service.AddCommentAsync(
-                new IssueId(id), request.Body, request.AuthorId is { } a ? new MemberId(a) : null, ct);
-            return Results.Created($"/api/issues/{id}/comments/{comment.Id.Value}", comment);
-        }).RequirePermission(Permission.ReadWriteComments);
-
-        group.MapGet("/{id:guid}/links", async (Guid id, IssueLinkService service, CancellationToken ct) =>
-        {
-            var links = await service.ListLinksAsync(new IssueId(id), ct);
-            return Results.Ok(links);
-        });
-
-        group.MapPost("/{id:guid}/links", async (Guid id, CreateIssueLinkRequest request, IssueLinkService service, CancellationToken ct) =>
+        group.MapPatch("/{id:guid}/assignee", async (Guid id, AssignRequest request, IssueService service, RestWorkspaceScope scope, CancellationToken ct) =>
         {
             try
             {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var assigneeId = await scope.RequireMemberAsync(request.AssigneeId, ct);
+                var issue = await service.AssignAsync(scope.WorkspaceId, issueId, assigneeId, ct: ct);
+                return Results.Ok(issue);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
+            }
+        }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
+
+        group.MapPost("/{id:guid}/comments", async (Guid id, AddCommentRequest request, IssueService service, RestWorkspaceScope scope, CancellationToken ct) =>
+        {
+            try
+            {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var authorId = await scope.RequireMemberAsync(request.AuthorId, ct);
+                var comment = await service.AddCommentAsync(scope.WorkspaceId, issueId, request.Body, authorId, ct);
+                return Results.Created($"/api/issues/{id}/comments/{comment.Id.Value}", comment);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
+            }
+        }).RequirePermission(Permission.ReadWriteComments);
+
+        group.MapGet("/{id:guid}/links", async (Guid id, IssueLinkService service, RestWorkspaceScope scope, CancellationToken ct) =>
+        {
+            try
+            {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var links = await service.ListLinksAsync(scope.WorkspaceId, issueId, ct);
+                return Results.Ok(links);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
+            }
+        });
+
+        group.MapPost("/{id:guid}/links", async (Guid id, CreateIssueLinkRequest request, IssueLinkService service, RestWorkspaceScope scope, CancellationToken ct) =>
+        {
+            try
+            {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var targetIssueId = await scope.RequireIssueAsync(request.TargetIssueId, ct);
+                var actorId = await scope.RequireMemberAsync(request.ActorId, ct);
                 var link = await service.CreateLinkAsync(
-                    new IssueId(id),
-                    new IssueId(request.TargetIssueId),
+                    scope.WorkspaceId,
+                    issueId,
+                    targetIssueId,
                     request.Type,
                     request.Description,
-                    request.ActorId is { } a ? new MemberId(a) : null,
+                    actorId,
                     ct);
                 return Results.Created($"/api/issues/{id}/links/{link.Id}", link);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
             }
             catch (IssueLinkException ex)
             {
@@ -107,15 +174,23 @@ public static class IssueEndpoints
             }
         }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
 
-        group.MapDelete("/{id:guid}/links/{linkId:guid}", async (Guid id, Guid linkId, Guid? actorId, IssueLinkService service, CancellationToken ct) =>
+        group.MapDelete("/{id:guid}/links/{linkId:guid}", async (Guid id, Guid linkId, Guid? actorId, IssueLinkService service, RestWorkspaceScope scope, CancellationToken ct) =>
         {
             try
             {
-                await service.RemoveLinkAsync(new IssueId(id), new IssueLinkId(linkId), actorId is { } a ? new MemberId(a) : null, ct);
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var actor = await scope.RequireMemberAsync(actorId, ct);
+                await service.RemoveLinkAsync(scope.WorkspaceId, issueId, new IssueLinkId(linkId), actor, ct);
                 return Results.NoContent();
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
             }
             catch (IssueLinkException ex)
             {
+                // The issue itself already scoped cleanly; only the link id can still be missing,
+                // and a link id is not addressable across workspaces, so 404 discloses nothing.
                 return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: StatusCodes.Status404NotFound);
             }
         }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);

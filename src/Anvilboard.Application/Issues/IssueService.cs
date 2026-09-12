@@ -42,25 +42,29 @@ public sealed class IssueService(
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
     };
 
-    public async Task<Issue?> GetAsync(IssueId id, CancellationToken ct = default) =>
-        await db.Issues.AsNoTracking().FirstOrDefaultAsync(i => i.Id == id, ct);
+    /// <summary>
+    /// Reads a single issue, scoped to <paramref name="workspaceId"/>. An issue outside that
+    /// workspace is reported as absent rather than denied, so callers cannot use this method as an
+    /// existence oracle for other tenants' ids.
+    /// </summary>
+    public async Task<Issue?> GetAsync(WorkspaceId workspaceId, IssueId id, CancellationToken ct = default) =>
+        await db.Issues.AsNoTracking()
+            .InWorkspace(db, workspaceId)
+            .FirstOrDefaultAsync(i => i.Id == id, ct);
 
     public async Task<IReadOnlyList<Issue>> ListAsync(
+        WorkspaceId workspaceId,
         TeamId? teamId = null,
         IssueStatus? status = null,
         MemberId? assigneeId = null,
-        WorkspaceId? workspaceId = null,
         CancellationToken ct = default)
     {
-        var query = db.Issues.AsNoTracking().AsQueryable();
+        // Workspace scoping is applied before any caller-supplied filter so an omitted or
+        // attacker-chosen filter can only ever narrow an already-scoped set, never widen it.
+        var query = db.Issues.AsNoTracking().InWorkspace(db, workspaceId);
         if (teamId is { } team) query = query.Where(i => i.TeamId == team);
         if (status is { } s) query = query.Where(i => i.Status == s);
         if (assigneeId is { } assignee) query = query.Where(i => i.AssigneeId == assignee);
-        if (workspaceId is { } workspace)
-        {
-            query = query.Where(issue => db.Teams.Any(
-                team => team.Id == issue.TeamId && team.WorkspaceId == workspace));
-        }
 
         // Sorted client-side: SQLite's EF provider cannot translate ORDER BY over a DateTimeOffset
         // column, and at this project's target scale (a single team/workspace) materializing the
@@ -71,6 +75,7 @@ public sealed class IssueService(
 
     /// <summary>Creates an issue directly (source = Local), minting the next "TEAM-N" key.</summary>
     public async Task<Issue> CreateAsync(
+        WorkspaceId workspaceId,
         TeamId teamId,
         string title,
         string? description = null,
@@ -82,7 +87,11 @@ public sealed class IssueService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
 
-        var team = await db.Teams.FirstOrDefaultAsync(t => t.Id == teamId, ct)
+        // The workspace predicate is part of the lookup rather than a check afterwards: rejecting
+        // later would still have advanced `team.NextIssueNumber` below, burning an issue number on
+        // a create that never happened.
+        var team = await db.Teams
+            .FirstOrDefaultAsync(t => t.Id == teamId && t.WorkspaceId == workspaceId, ct)
             ?? throw new InvalidOperationException($"Team {teamId} does not exist.");
 
         var workflowStateId = await GetInitialWorkflowStateIdAsync(team.WorkspaceId, ct);
@@ -131,9 +140,10 @@ public sealed class IssueService(
     /// The requested transition was denied by <see cref="IWorkflowService"/> (e.g. no configured
     /// transition rule, or a referenced workflow state is archived/missing).
     /// </exception>
-    public async Task<Issue> ChangeStatusAsync(IssueId id, IssueStatus newStatus, MemberId? actorId = null, CancellationToken ct = default)
+    public async Task<Issue> ChangeStatusAsync(
+        WorkspaceId workspaceId, IssueId id, IssueStatus newStatus, MemberId? actorId = null, CancellationToken ct = default)
     {
-        var issue = await db.Issues.FirstOrDefaultAsync(i => i.Id == id, ct)
+        var issue = await db.Issues.InWorkspace(db, workspaceId).FirstOrDefaultAsync(i => i.Id == id, ct)
             ?? throw new InvalidOperationException($"Issue {id} does not exist.");
 
         if (issue.Status == newStatus)
@@ -180,9 +190,10 @@ public sealed class IssueService(
         return issue;
     }
 
-    public async Task<Issue> AssignAsync(IssueId id, MemberId? assigneeId, MemberId? actorId = null, CancellationToken ct = default)
+    public async Task<Issue> AssignAsync(
+        WorkspaceId workspaceId, IssueId id, MemberId? assigneeId, MemberId? actorId = null, CancellationToken ct = default)
     {
-        var issue = await db.Issues.FirstOrDefaultAsync(i => i.Id == id, ct)
+        var issue = await db.Issues.InWorkspace(db, workspaceId).FirstOrDefaultAsync(i => i.Id == id, ct)
             ?? throw new InvalidOperationException($"Issue {id} does not exist.");
 
         issue.AssigneeId = assigneeId;
@@ -190,15 +201,16 @@ public sealed class IssueService(
         issue.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
 
-        await RecordAndDispatchAsync(issue, ActivityEventType.AssigneeChanged, actorId, data: null, ct);
+        await RecordAndDispatchAsync(issue, ActivityEventType.AssigneeChanged, actorId, data: null, ct, workspaceId);
         return issue;
     }
 
-    public async Task<Comment> AddCommentAsync(IssueId id, string body, MemberId? authorId = null, CancellationToken ct = default)
+    public async Task<Comment> AddCommentAsync(
+        WorkspaceId workspaceId, IssueId id, string body, MemberId? authorId = null, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(body);
 
-        var issue = await db.Issues.FirstOrDefaultAsync(i => i.Id == id, ct)
+        var issue = await db.Issues.InWorkspace(db, workspaceId).FirstOrDefaultAsync(i => i.Id == id, ct)
             ?? throw new InvalidOperationException($"Issue {id} does not exist.");
 
         var comment = new Comment
@@ -212,7 +224,7 @@ public sealed class IssueService(
         db.Comments.Add(comment);
         await db.SaveChangesAsync(ct);
 
-        await RecordAndDispatchAsync(issue, ActivityEventType.CommentAdded, authorId, data: null, ct);
+        await RecordAndDispatchAsync(issue, ActivityEventType.CommentAdded, authorId, data: null, ct, workspaceId);
         return comment;
     }
 
@@ -221,14 +233,27 @@ public sealed class IssueService(
     /// (Provider, SourceKey) dedupe key from <see cref="NormalizedIssue"/>. Used by
     /// <see cref="SyncCoordinator"/> for both first-class (GitHub/Linear) and third-party plugins.
     /// </summary>
-    public Task<Issue> UpsertFromExternalAsync(NormalizedIssue normalized, CancellationToken ct = default) =>
-        UpsertFromExternalAsync(normalized, workspaceId: null, ct);
+    /// <remarks>
+    /// Deliberately unscoped, and named to say so. Polling ingestion runs on a background timer with
+    /// no authenticated actor, so there is no workspace to scope to; the team is resolved from
+    /// <see cref="NormalizedIssue.TeamKey"/> instead and the overload fails closed when that key is
+    /// ambiguous host-wide. Every caller that <em>does</em> have a workspace — trusted webhooks —
+    /// must use <see cref="UpsertFromExternalAsync(WorkspaceId, NormalizedIssue, CancellationToken)"/>.
+    /// </remarks>
+    public Task<Issue> UpsertFromExternalUnscopedAsync(NormalizedIssue normalized, CancellationToken ct = default) =>
+        UpsertFromExternalCoreAsync(normalized, workspaceId: null, ct);
 
     /// <summary>Upserts a trusted webhook issue into the specified workspace.</summary>
-    public async Task<Issue> UpsertFromExternalAsync(
+    public Task<Issue> UpsertFromExternalAsync(
+        WorkspaceId workspaceId,
+        NormalizedIssue normalized,
+        CancellationToken ct = default) =>
+        UpsertFromExternalCoreAsync(normalized, workspaceId, ct);
+
+    private async Task<Issue> UpsertFromExternalCoreAsync(
         NormalizedIssue normalized,
         WorkspaceId? workspaceId,
-        CancellationToken ct = default)
+        CancellationToken ct)
     {
         var teams = db.Teams.Where(t => t.Key == normalized.TeamKey);
         if (workspaceId is not null)

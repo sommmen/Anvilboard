@@ -17,7 +17,7 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
         var actorId = MemberId.New();
 
-        var artifact = await service.AttachArtifactAsync(
+        var artifact = await service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id,
             ArtifactKind.Deployment,
             "Staging deploy",
@@ -46,7 +46,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var artifact = await service.AttachArtifactAsync(
+        var artifact = await service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id,
             ArtifactKind.Link,
             "Slack thread",
@@ -70,7 +70,7 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
         var bytes = Encoding.UTF8.GetBytes("crash log contents");
 
-        var artifact = await service.AttachArtifactAsync(
+        var artifact = await service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id,
             ArtifactKind.File,
             "crash.log",
@@ -90,7 +90,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync(new ThrowingArtifactStore());
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id,
             ArtifactKind.File,
             "crash.log",
@@ -111,7 +111,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.Link, title, contentReference));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
@@ -124,7 +124,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, (ArtifactKind)42, "Title", "https://example.test"));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
@@ -136,7 +136,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id,
             ArtifactKind.PullRequest,
             "PR",
@@ -152,7 +152,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id,
             ArtifactKind.File,
             "crash.log",
@@ -168,7 +168,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
             IssueId.New(), ArtifactKind.Link, "Title", "https://example.test"));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
@@ -180,7 +180,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.OrphanedIssue.Id, ArtifactKind.Link, "Title", "https://example.test"));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
@@ -194,7 +194,7 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
 
         var ex = await Assert.ThrowsAsync<ArtifactException>(
-            () => service.ListArtifactsAsync(fixture.OrphanedIssue.Id));
+            () => service.ListArtifactsAsync(fixture.WorkspaceId, fixture.OrphanedIssue.Id));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -205,11 +205,11 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        await service.AttachArtifactAsync(fixture.Issue.Id, ArtifactKind.Link, "First", "https://a.test");
-        await service.AttachArtifactAsync(fixture.Issue.Id, ArtifactKind.Link, "Second", "https://b.test");
-        await service.AttachArtifactAsync(fixture.OtherIssue.Id, ArtifactKind.Link, "Elsewhere", "https://c.test");
+        await service.AttachArtifactAsync(fixture.WorkspaceId, fixture.Issue.Id, ArtifactKind.Link, "First", "https://a.test");
+        await service.AttachArtifactAsync(fixture.WorkspaceId, fixture.Issue.Id, ArtifactKind.Link, "Second", "https://b.test");
+        await service.AttachArtifactAsync(fixture.WorkspaceId, fixture.OtherIssue.Id, ArtifactKind.Link, "Elsewhere", "https://c.test");
 
-        var artifacts = await service.ListArtifactsAsync(fixture.Issue.Id);
+        var artifacts = await service.ListArtifactsAsync(fixture.WorkspaceId, fixture.Issue.Id);
 
         Assert.Equal(["First", "Second"], artifacts.Select(artifact => artifact.Title));
     }
@@ -220,7 +220,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.ListArtifactsAsync(IssueId.New()));
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.ListArtifactsAsync(fixture.WorkspaceId, IssueId.New()));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -231,7 +231,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var artifact = await service.RefreshArtifactAsync(
+        var artifact = await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id,
             ArtifactKind.PullRequest,
             "github:acme/app#7",
@@ -254,11 +254,11 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
         const string DedupKey = "github:acme/app#7";
 
-        var first = await service.RefreshArtifactAsync(
+        var first = await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, DedupKey, "Fix the thing",
             "https://github.test/acme/app/pull/7", """{"state":"open"}""");
 
-        var second = await service.RefreshArtifactAsync(
+        var second = await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, DedupKey, "Fix the thing (merged)",
             "https://github.test/acme/app/pull/7", """{"state":"merged"}""");
 
@@ -282,11 +282,11 @@ public sealed class ArtifactServiceTests
         var actorId = MemberId.New();
         const string DedupKey = "github:acme/app#9";
 
-        await service.AttachArtifactAsync(
+        await service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, "Manual PR link",
             "https://github.test/acme/app/pull/9", actorId: actorId, dedupKey: DedupKey);
 
-        var refreshed = await service.RefreshArtifactAsync(
+        var refreshed = await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, DedupKey, "Manual PR link",
             "https://github.test/acme/app/pull/9", """{"state":"merged"}""");
 
@@ -300,11 +300,11 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
         const string DedupKey = "github:acme/app#7";
 
-        await service.RefreshArtifactAsync(
+        await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, DedupKey, "PR",
             "https://github.test/acme/app/pull/7");
 
-        await service.RefreshArtifactAsync(
+        await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.OtherIssue.Id, ArtifactKind.PullRequest, DedupKey, "PR",
             "https://github.test/acme/app/pull/7");
 
@@ -321,7 +321,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RefreshArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, kind, "dedup", "Title", "https://example.test"));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
@@ -334,7 +334,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RefreshArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, "  ", "Title", "https://example.test"));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
@@ -347,13 +347,13 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
         var actorId = MemberId.New();
 
-        var artifact = await service.AttachArtifactAsync(
+        var artifact = await service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id,
             ArtifactKind.File,
             "crash.log",
             inlineContent: new ArtifactInlineContent(Encoding.UTF8.GetBytes("log")));
 
-        await service.RemoveArtifactAsync(fixture.Issue.Id, new ArtifactId(artifact.Id), actorId);
+        await service.RemoveArtifactAsync(fixture.WorkspaceId, fixture.Issue.Id, new ArtifactId(artifact.Id), actorId);
 
         Assert.Empty(await fixture.Db.Artifacts.ToListAsync());
         Assert.DoesNotContain(artifact.ContentReference, fixture.Store.Stored.Keys);
@@ -369,10 +369,10 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var artifact = await service.AttachArtifactAsync(
+        var artifact = await service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.Link, "Title", "https://example.test");
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RemoveArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RemoveArtifactAsync(fixture.WorkspaceId,
             fixture.OtherIssue.Id, new ArtifactId(artifact.Id)));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
@@ -385,7 +385,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RemoveArtifactAsync(
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RemoveArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactId.New()));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
@@ -438,6 +438,7 @@ public sealed class ArtifactServiceTests
             SqliteConnection connection,
             AnvilboardDbContext db,
             IArtifactStore store,
+            WorkspaceId workspaceId,
             Issue issue,
             Issue otherIssue,
             Issue orphanedIssue)
@@ -445,12 +446,17 @@ public sealed class ArtifactServiceTests
             this.connection = connection;
             this.store = store;
             Db = db;
+            WorkspaceId = workspaceId;
             Issue = issue;
             OtherIssue = otherIssue;
             OrphanedIssue = orphanedIssue;
         }
 
         public AnvilboardDbContext Db { get; }
+
+        /// <summary>The workspace that owns <see cref="Issue"/> and <see cref="OtherIssue"/>.</summary>
+        public WorkspaceId WorkspaceId { get; }
+
         public Issue Issue { get; }
         public Issue OtherIssue { get; }
 
@@ -500,7 +506,7 @@ public sealed class ArtifactServiceTests
             db.Issues.AddRange(issue, otherIssue, orphanedIssue);
             await db.SaveChangesAsync();
 
-            return new ArtifactFixture(connection, db, store ?? new RecordingArtifactStore(), issue, otherIssue, orphanedIssue);
+            return new ArtifactFixture(connection, db, store ?? new RecordingArtifactStore(), workspaceId, issue, otherIssue, orphanedIssue);
         }
 
         public async ValueTask DisposeAsync()

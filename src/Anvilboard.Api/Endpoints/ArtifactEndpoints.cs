@@ -24,12 +24,17 @@ public static class ArtifactEndpoints
             .WithTags("Artifacts")
             .RequirePermission(Permission.ReadBoard);
 
-        group.MapGet("/{id:guid}/artifacts", async (Guid id, IArtifactService service, CancellationToken ct) =>
+        group.MapGet("/{id:guid}/artifacts", async (Guid id, IArtifactService service, RestWorkspaceScope scope, CancellationToken ct) =>
         {
             try
             {
-                var artifacts = await service.ListArtifactsAsync(new IssueId(id), ct);
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var artifacts = await service.ListArtifactsAsync(scope.WorkspaceId, issueId, ct);
                 return Results.Ok(artifacts);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
             }
             catch (ArtifactException ex)
             {
@@ -41,6 +46,7 @@ public static class ArtifactEndpoints
             Guid id,
             AttachArtifactRequest request,
             IArtifactService service,
+            RestWorkspaceScope scope,
             CancellationToken ct) =>
         {
             if (!ArtifactKindConverter.TryParse(request.Kind, out var kind))
@@ -61,19 +67,26 @@ public static class ArtifactEndpoints
 
             try
             {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var actor = await scope.RequireMemberAsync(request.ActorId, ct);
                 var artifact = await service.AttachArtifactAsync(
-                    new IssueId(id),
+                    scope.WorkspaceId,
+                    issueId,
                     kind,
                     request.Title,
                     request.ContentReference,
                     inlineContent,
                     request.Source,
-                    request.ActorId is { } actorId ? new MemberId(actorId) : null,
+                    actor,
                     request.DedupKey,
                     request.Metadata,
                     ct);
 
                 return Results.Created($"/api/issues/{id}/artifacts/{artifact.Id}", artifact);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
             }
             catch (ArtifactException ex)
             {
@@ -86,16 +99,24 @@ public static class ArtifactEndpoints
             Guid artifactId,
             Guid? actorId,
             IArtifactService service,
+            RestWorkspaceScope scope,
             CancellationToken ct) =>
         {
             try
             {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var actor = await scope.RequireMemberAsync(actorId, ct);
                 await service.RemoveArtifactAsync(
-                    new IssueId(id),
+                    scope.WorkspaceId,
+                    issueId,
                     new ArtifactId(artifactId),
-                    actorId is { } a ? new MemberId(a) : null,
+                    actor,
                     ct);
                 return Results.NoContent();
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
             }
             catch (ArtifactException ex)
             {

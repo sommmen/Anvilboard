@@ -224,15 +224,15 @@ once a drill is confirmed good.
 
 ## Testing
 
-The xUnit projects cover the Workflow Engine, endpoint authorization, the agent surface, backup and
-restore, artifacts, real-time delivery, and webhook validation. A full `dotnet test Anvilboard.slnx`
-run is **320 passing, 0 failing**:
+The xUnit projects cover the Workflow Engine, endpoint authorization, cross-workspace isolation, the
+agent surface, backup and restore, artifacts, real-time delivery, and webhook validation. A full
+`dotnet test Anvilboard.slnx` run is **348 passing, 0 failing**:
 
 | Project | Tests | What it covers |
 |---|---:|---|
-| `src/Anvilboard.Application.Tests` | 192 | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior; also covers workspace authorization, issue linking, artifacts (`ArtifactService`), audit redaction, backup/restore round-trips and secret scanning, real-time dispatch/coalescing/plugin-event relay, and the automation surface foundations (`IdempotencyService` replay/reuse detection, `CorrelationContext`, `ErrorCatalogTranslator`). No database file — uses SQLite `DataSource=:memory:` per test. |
+| `src/Anvilboard.Application.Tests` | 195 | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior; also covers workspace authorization, issue linking, artifacts (`ArtifactService`), audit redaction, backup/restore round-trips and secret scanning, real-time dispatch/coalescing/plugin-event relay, and the automation surface foundations (`IdempotencyService` replay/reuse detection, `CorrelationContext`, `ErrorCatalogTranslator`). No database file — uses SQLite `DataSource=:memory:` per test. |
 | `src/Anvilboard.Infrastructure.Tests` | 41 | Migration integration test (seeds a legacy pre-workflow SQLite schema, runs the real EF Core migrations, asserts default workflow states/transitions were seeded and issues backfilled), plus plugin registry/config-state storage, the SQLite backup archiver and archive store, and the data-protection secret store. |
-| `src/Anvilboard.Api.Tests` | 30 | API-host integration tests for workspace authorization endpoints, artifact and backup endpoints, the `X-Correlation-Id` middleware, webhook endpoints, and the real-time SignalR hub (connection authorization, workspace isolation, and mutation isolation from a slow client). |
+| `src/Anvilboard.Api.Tests` | 55 | API-host integration tests for workspace authorization endpoints, cross-workspace isolation across every ID-addressed REST route (`CrossWorkspaceIsolationEndpointTests`) and the `RestWorkspaceScope` boundary guard, artifact and backup endpoints, the `X-Correlation-Id` middleware, webhook endpoints, and the real-time SignalR hub (connection authorization, workspace isolation, and mutation isolation from a slow client). |
 | `src/Anvilboard.Agent.Tests` | 40 | Agent operation-catalog invariants, request guards, SQLite-backed authorization integration tests (credential authentication, permission enforcement, workspace isolation, actor attribution), and MCP stdout isolation. Requires the sibling `dotnet-agent-surface` checkout. |
 | `src/Anvilboard.Integrations.GitHub.Tests` | 12 | GitHub webhook signature validation and issue-event mapping. |
 | `src/Anvilboard.Integrations.Linear.Tests` | 5 | Linear webhook signature validation and issue-event mapping. |

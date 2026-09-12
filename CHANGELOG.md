@@ -7,8 +7,39 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ## [Unreleased]
 
+### Security
+
+- **Workspace-bound REST/application queries** (closing audit finding `MAJ-022`), designed in
+  [`docs/plans/workspace-query-scoping.md`](docs/plans/workspace-query-scoping.md). Previously REST
+  authenticated a workspace but then resolved caller-supplied issue, team, and member IDs by primary
+  key alone, and an omitted team filter started from every issue in the database — so a caller could
+  read or mutate another workspace's data through 13 routes.
+  - `WorkspaceId` is now the first, required parameter of every affected method on `IssueService`,
+    `IssueLinkService`, `ArtifactService`, and `DashboardService`, all resolving through one shared
+    `WorkspaceScopedQueries.InWorkspace` predicate. Leading and non-optional is deliberate: the
+    original leak was written as a skipped trailing optional argument, which no longer compiles.
+  - New `RestWorkspaceScope` guard — the REST mirror of the existing `AgentWorkspaceScope` —
+    validates every caller-supplied ID at the endpoint boundary before a service runs.
+  - `IssueLinkService.CreateLinkAsync` compared the two issues' workspaces *to each other*, so a
+    pair drawn entirely from a foreign workspace passed the same-workspace check.
+    `ArtifactService.RemoveArtifactAsync` did not validate the issue at all. Both are fixed.
+  - Ingestion keeps an explicit unscoped entry point (`UpsertFromExternalUnscopedAsync`) because
+    polling sync has no authenticated workspace; it fails closed when a source key matches zero or
+    more than one team.
+  - `CrossWorkspaceIsolationEndpointTests` runs two workspaces on one host and pins every
+    ID-addressed route, asserting that denied writes also changed nothing — a single-tenant host
+    cannot tell an unscoped query from a correctly scoped one, which is why the original leak
+    survived a green suite.
+
 ### Changed
 
+- **Breaking — REST not-found responses on ID-addressed routes:** routes that take an entity ID now
+  answer `403 WORKSPACE_ACCESS_DENIED` for an ID that is *either* foreign *or* nonexistent — most
+  visibly `GET /api/issues/{id}` and `POST /api/issues/{id}/artifacts`, which previously returned
+  `404`. Answering differently for the two cases would turn each route into an existence oracle for
+  other workspaces' data. `404 REFERENCED_ENTITY_NOT_FOUND` now signals only a dependent lookup that
+  fails after workspace scoping has already succeeded (a missing workflow state on a status change,
+  or a link ID not attached to an already-scoped issue).
 - **Breaking — agent CLI/MCP contract:** all operations now require an automation credential through
   `ANVILBOARD_AGENT__APITOKEN`, enforce credential permissions and workspace ownership, and return
   `{ apiVersion, correlationId, data }` envelopes. The six issue/link mutations now require an

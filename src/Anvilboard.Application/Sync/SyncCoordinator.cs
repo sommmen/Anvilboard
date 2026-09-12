@@ -48,7 +48,9 @@ public sealed class SyncCoordinator(
 
                     await foreach (var normalized in source.SyncAsync(cursor, stoppingToken))
                     {
-                        await issueService.UpsertFromExternalAsync(normalized, stoppingToken);
+                        // Polling ingestion has no authenticated caller and therefore no workspace to
+                        // scope to; the unscoped overload fails closed when the payload is ambiguous.
+                        await issueService.UpsertFromExternalUnscopedAsync(normalized, stoppingToken);
                         cursor = new SyncCursor(normalized.SyncFingerprint ?? cursor.Token);
                     }
                 }

@@ -41,6 +41,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped(provider => CorrelationContext.FromHeaderOrNew(
     provider.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request.Headers["X-Correlation-Id"]));
 
+// Resolves route identifiers against the authenticated request's workspace. Scoped because it reads
+// the per-request ActorContext the authorization middleware attached.
+builder.Services.AddScoped<RestWorkspaceScope>();
+
 var app = builder.Build();
 
 // Apply any pending EF Core migrations on startup so a first-run `dotnet run` (or a single

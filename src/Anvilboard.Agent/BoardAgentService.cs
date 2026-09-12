@@ -67,10 +67,10 @@ public sealed class BoardAgentService(
         Guid? teamId = null, IssueStatus? status = null, Guid? assigneeId = null, CancellationToken cancellationToken = default)
     {
         var results = await issues.ListAsync(
+            scope.WorkspaceId,
             teamId is { } t ? await scope.RequireTeamAsync(t, cancellationToken) : null,
             status,
             await scope.RequireMemberAsync(assigneeId, cancellationToken),
-            scope.WorkspaceId,
             cancellationToken);
         return Ok<IReadOnlyList<IssueSummary>>([.. results.Select(IssueSummary.FromIssue)]);
     }
@@ -80,7 +80,7 @@ public sealed class BoardAgentService(
     public async Task<AgentResponse<IssueSummary?>> GetIssueAsync(Guid issueId, CancellationToken cancellationToken = default)
     {
         var id = await scope.RequireIssueAsync(issueId, cancellationToken);
-        var issue = await issues.GetAsync(id, cancellationToken);
+        var issue = await issues.GetAsync(scope.WorkspaceId, id, cancellationToken);
         return Ok(issue is null ? null : IssueSummary.FromIssue(issue));
     }
 
@@ -103,7 +103,7 @@ public sealed class BoardAgentService(
                 var team = await scope.RequireTeamAsync(teamId, ct);
                 var assignee = await scope.RequireMemberAsync(assigneeId, ct);
                 var issue = await issues.CreateAsync(
-                    team, title, description, priority, projectId: null, assignee, actor.MemberId, ct);
+                    scope.WorkspaceId, team, title, description, priority, projectId: null, assignee, actor.MemberId, ct);
                 return IssueSummary.FromIssue(issue);
             },
             cancellationToken);
@@ -121,7 +121,7 @@ public sealed class BoardAgentService(
             async (actor, ct) =>
             {
                 var id = await scope.RequireIssueAsync(issueId, ct);
-                var issue = await issues.ChangeStatusAsync(id, status, actor.MemberId, ct);
+                var issue = await issues.ChangeStatusAsync(scope.WorkspaceId, id, status, actor.MemberId, ct);
                 return IssueSummary.FromIssue(issue);
             },
             cancellationToken);
@@ -140,7 +140,7 @@ public sealed class BoardAgentService(
             {
                 var id = await scope.RequireIssueAsync(issueId, ct);
                 var assignee = await scope.RequireMemberAsync(assigneeId, ct);
-                var issue = await issues.AssignAsync(id, assignee, actor.MemberId, ct);
+                var issue = await issues.AssignAsync(scope.WorkspaceId, id, assignee, actor.MemberId, ct);
                 return IssueSummary.FromIssue(issue);
             },
             cancellationToken);
@@ -158,7 +158,7 @@ public sealed class BoardAgentService(
             async (actor, ct) =>
             {
                 var id = await scope.RequireIssueAsync(issueId, ct);
-                var comment = await issues.AddCommentAsync(id, body, actor.MemberId, ct);
+                var comment = await issues.AddCommentAsync(scope.WorkspaceId, id, body, actor.MemberId, ct);
                 return new CommentSummary(
                     comment.Id.Value, comment.IssueId.Value, comment.AuthorId?.Value, comment.Body, comment.CreatedAt);
             },
@@ -172,8 +172,8 @@ public sealed class BoardAgentService(
     public async Task<AgentResponse<DashboardSummary>> DashboardSummaryAsync(Guid? teamId = null, CancellationToken cancellationToken = default)
     {
         var summary = await dashboard.GetSummaryAsync(
-            teamId is { } t ? await scope.RequireTeamAsync(t, cancellationToken) : null,
             scope.WorkspaceId,
+            teamId is { } t ? await scope.RequireTeamAsync(t, cancellationToken) : null,
             cancellationToken);
         return Ok(summary);
     }
@@ -182,7 +182,7 @@ public sealed class BoardAgentService(
     [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues, Permission.ReadBoard)]
     public async Task<AgentResponse<IReadOnlyList<IssueLinkDto>>> ListIssueLinksAsync(Guid issueId, CancellationToken cancellationToken = default) =>
         Ok(await issueLinks.ListLinksAsync(
-            await scope.RequireIssueAsync(issueId, cancellationToken), cancellationToken));
+            scope.WorkspaceId, await scope.RequireIssueAsync(issueId, cancellationToken), cancellationToken));
 
     [AgentOperation("create-issue-link", "Creates a directional, typed link from one issue to another", Category = "issues",
         Examples = ["create-issue-link --issueId \"3f2a...\" --targetIssueId \"9b1c...\" --type \"blocks\" --idempotencyKey \"link-1\""])]
@@ -194,6 +194,7 @@ public sealed class BoardAgentService(
         var link = await idempotency.ExecuteAsync(
             "create-issue-link", idempotencyKey, [issueId, targetIssueId, type, description],
             async (actor, ct) => await issueLinks.CreateLinkAsync(
+                scope.WorkspaceId,
                 await scope.RequireIssueAsync(issueId, ct),
                 await scope.RequireIssueAsync(targetIssueId, ct),
                 type, description, actor.MemberId, ct),
@@ -214,7 +215,7 @@ public sealed class BoardAgentService(
             async (actor, ct) =>
             {
                 var id = await scope.RequireIssueAsync(issueId, ct);
-                await issueLinks.RemoveLinkAsync(id, new IssueLinkId(linkId), actor.MemberId, ct);
+                await issueLinks.RemoveLinkAsync(scope.WorkspaceId, id, new IssueLinkId(linkId), actor.MemberId, ct);
                 return new LinkRemoval(issueId, linkId);
             },
             cancellationToken);

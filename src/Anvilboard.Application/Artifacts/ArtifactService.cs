@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Anvilboard.Application.Issues;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Artifacts;
 using Anvilboard.Infrastructure.Persistence;
@@ -23,6 +24,7 @@ public sealed class ArtifactService(AnvilboardDbContext db, IArtifactStore store
     private const string DefaultSource = "local";
 
     public async Task<ArtifactDto> AttachArtifactAsync(
+        WorkspaceId workspaceId,
         IssueId issueId,
         ArtifactKind kind,
         string title,
@@ -34,7 +36,7 @@ public sealed class ArtifactService(AnvilboardDbContext db, IArtifactStore store
         string? metadata = null,
         CancellationToken ct = default)
     {
-        await EnsureIssueExistsAsync(issueId, ct);
+        await EnsureIssueExistsAsync(workspaceId, issueId, ct);
 
         var normalizedTitle = ValidateTitle(title);
         var normalizedSource = ValidateSource(source);
@@ -79,9 +81,10 @@ public sealed class ArtifactService(AnvilboardDbContext db, IArtifactStore store
         return ArtifactDto.FromArtifact(artifact);
     }
 
-    public async Task<IReadOnlyList<ArtifactDto>> ListArtifactsAsync(IssueId issueId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ArtifactDto>> ListArtifactsAsync(
+        WorkspaceId workspaceId, IssueId issueId, CancellationToken ct = default)
     {
-        await EnsureIssueExistsAsync(issueId, ct);
+        await EnsureIssueExistsAsync(workspaceId, issueId, ct);
 
         var artifacts = await db.Artifacts.AsNoTracking()
             .Where(artifact => artifact.IssueId == issueId)
@@ -95,6 +98,7 @@ public sealed class ArtifactService(AnvilboardDbContext db, IArtifactStore store
     }
 
     public async Task<ArtifactDto> RefreshArtifactAsync(
+        WorkspaceId workspaceId,
         IssueId issueId,
         ArtifactKind kind,
         string dedupKey,
@@ -104,7 +108,7 @@ public sealed class ArtifactService(AnvilboardDbContext db, IArtifactStore store
         string source = "github",
         CancellationToken ct = default)
     {
-        await EnsureIssueExistsAsync(issueId, ct);
+        await EnsureIssueExistsAsync(workspaceId, issueId, ct);
 
         if (!IsRefreshable(kind))
         {
@@ -130,6 +134,7 @@ public sealed class ArtifactService(AnvilboardDbContext db, IArtifactStore store
         if (existing is null)
         {
             return await AttachArtifactAsync(
+                workspaceId,
                 issueId,
                 kind,
                 normalizedTitle,
@@ -154,11 +159,14 @@ public sealed class ArtifactService(AnvilboardDbContext db, IArtifactStore store
     }
 
     public async Task RemoveArtifactAsync(
+        WorkspaceId workspaceId,
         IssueId issueId,
         ArtifactId artifactId,
         MemberId? actorId = null,
         CancellationToken ct = default)
     {
+        await EnsureIssueExistsAsync(workspaceId, issueId, ct);
+
         var artifact = await db.Artifacts.FirstOrDefaultAsync(candidate => candidate.Id == artifactId, ct);
         if (artifact is null || artifact.IssueId != issueId)
         {
@@ -176,18 +184,16 @@ public sealed class ArtifactService(AnvilboardDbContext db, IArtifactStore store
     }
 
     /// <summary>
-    /// Confirms the issue exists and is reachable through a team. Issues carry no workspace of
-    /// their own, so the team join is what makes an orphaned issue unreachable. It does not scope
-    /// the lookup to a caller's workspace: like <c>IssueService</c> and <c>IssueLinkService</c>,
-    /// this service takes no <c>WorkspaceId</c> and relies on the authorization middleware that
-    /// already ran. Direct CLI/MCP/hook callers are covered by audit findings MAJ-001/MAJ-015.
+    /// Confirms the issue exists inside <paramref name="workspaceId"/>. Issues carry no workspace of
+    /// their own, so the team join is both what makes an orphaned issue unreachable and what defines
+    /// workspace membership. A foreign issue and an absent one fail identically, so no artifact
+    /// route can be used to probe another tenant's issue ids.
     /// </summary>
-    private async Task EnsureIssueExistsAsync(IssueId issueId, CancellationToken ct)
+    private async Task EnsureIssueExistsAsync(WorkspaceId workspaceId, IssueId issueId, CancellationToken ct)
     {
-        var exists = await db.Issues
-            .Where(issue => issue.Id == issueId)
-            .Join(db.Teams, issue => issue.TeamId, team => team.Id, (issue, team) => team.WorkspaceId)
-            .AnyAsync(ct);
+        var exists = await db.Issues.AsNoTracking()
+            .InWorkspace(db, workspaceId)
+            .AnyAsync(issue => issue.Id == issueId, ct);
 
         if (!exists)
         {

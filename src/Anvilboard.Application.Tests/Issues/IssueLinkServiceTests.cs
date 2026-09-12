@@ -14,7 +14,7 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
 
-        var link = await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", "same parent");
+        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", "same parent");
 
         Assert.Equal(fixture.IssueA.Id.Value, link.SourceIssueId);
         Assert.Equal(fixture.IssueB.Id.Value, link.TargetIssueId);
@@ -37,7 +37,7 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
 
-        var link = await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "CUSTOM_TYPE");
+        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "CUSTOM_TYPE");
 
         Assert.Equal("CUSTOM_TYPE", link.Type);
     }
@@ -48,7 +48,7 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
 
-        var link = await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "PARENT");
+        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "PARENT");
 
         Assert.Equal(string.Empty, link.Description);
     }
@@ -60,7 +60,7 @@ public sealed class IssueLinkServiceTests
         var service = new IssueLinkService(fixture.Db);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueA.Id, "RELATED"));
+            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueA.Id, "RELATED"));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -72,7 +72,7 @@ public sealed class IssueLinkServiceTests
         var service = new IssueLinkService(fixture.Db);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "   "));
+            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "   "));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -84,7 +84,7 @@ public sealed class IssueLinkServiceTests
         var service = new IssueLinkService(fixture.Db);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.CreateLinkAsync(fixture.IssueA.Id, IssueId.New(), "RELATED"));
+            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, IssueId.New(), "RELATED"));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -96,9 +96,56 @@ public sealed class IssueLinkServiceTests
         var service = new IssueLinkService(fixture.Db);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueOtherWorkspace.Id, "RELATED"));
+            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueOtherWorkspace.Id, "RELATED"));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CreateLinkAsync_BothIssuesInAForeignWorkspace_ThrowsReferencedEntityNotFound()
+    {
+        // The previous implementation only checked that the two issues shared a workspace with each
+        // other, which a pair drawn entirely from a foreign workspace trivially satisfies. Scoping
+        // to the *caller's* workspace is what actually closes that hole.
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var foreignTarget = await fixture.AddIssueToOtherWorkspaceAsync("OTH-2");
+
+        var ex = await Assert.ThrowsAsync<IssueLinkException>(
+            () => service.CreateLinkAsync(
+                fixture.WorkspaceId, fixture.IssueOtherWorkspace.Id, foreignTarget.Id, "RELATED"));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
+        Assert.Empty(await fixture.Db.IssueLinks.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task ListLinksAsync_ForeignIssue_ThrowsReferencedEntityNotFound()
+    {
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+
+        var ex = await Assert.ThrowsAsync<IssueLinkException>(
+            () => service.ListLinksAsync(fixture.WorkspaceId, fixture.IssueOtherWorkspace.Id));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task RemoveLinkAsync_ForeignIssue_ThrowsAndLeavesTheLinkIntact()
+    {
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var foreignTarget = await fixture.AddIssueToOtherWorkspaceAsync("OTH-2");
+        var link = await service.CreateLinkAsync(
+            fixture.OtherWorkspaceId, fixture.IssueOtherWorkspace.Id, foreignTarget.Id, "RELATED");
+
+        var ex = await Assert.ThrowsAsync<IssueLinkException>(
+            () => service.RemoveLinkAsync(
+                fixture.WorkspaceId, fixture.IssueOtherWorkspace.Id, new IssueLinkId(link.Id)));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
+        Assert.Single(await fixture.Db.IssueLinks.AsNoTracking().ToListAsync());
     }
 
     [Fact]
@@ -106,10 +153,10 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "RELATED"));
+            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED"));
 
         Assert.Equal("RESOURCE_ALREADY_EXISTS", ex.ErrorCode);
     }
@@ -119,9 +166,9 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
 
-        var reverse = await service.CreateLinkAsync(fixture.IssueB.Id, fixture.IssueA.Id, "RELATED");
+        var reverse = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueB.Id, fixture.IssueA.Id, "RELATED");
 
         Assert.Equal(fixture.IssueB.Id.Value, reverse.SourceIssueId);
         Assert.Equal(2, await fixture.Db.IssueLinks.CountAsync());
@@ -132,10 +179,10 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
-        await service.CreateLinkAsync(fixture.IssueC.Id, fixture.IssueA.Id, "BLOCKS");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueC.Id, fixture.IssueA.Id, "BLOCKS");
 
-        var links = await service.ListLinksAsync(fixture.IssueA.Id);
+        var links = await service.ListLinksAsync(fixture.WorkspaceId, fixture.IssueA.Id);
 
         Assert.Equal(2, links.Count);
         var outgoing = Assert.Single(links, l => l.Type == "RELATED");
@@ -149,10 +196,10 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
-        await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueC.Id, "DUPLICATE");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueC.Id, "DUPLICATE");
 
-        var links = await service.ListLinksAsync(fixture.IssueA.Id);
+        var links = await service.ListLinksAsync(fixture.WorkspaceId, fixture.IssueA.Id);
 
         Assert.True(links[0].CreatedAt <= links[1].CreatedAt);
     }
@@ -162,9 +209,9 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        var link = await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
 
-        await service.RemoveLinkAsync(fixture.IssueA.Id, new IssueLinkId(link.Id));
+        await service.RemoveLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(link.Id));
 
         Assert.Empty(await fixture.Db.IssueLinks.ToListAsync());
         var removalEvent = await fixture.Db.ActivityEvents.SingleAsync(e => e.Type == ActivityEventType.IssueLinkRemoved);
@@ -176,10 +223,10 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        var link = await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.RemoveLinkAsync(fixture.IssueC.Id, new IssueLinkId(link.Id)));
+            () => service.RemoveLinkAsync(fixture.WorkspaceId, fixture.IssueC.Id, new IssueLinkId(link.Id)));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -195,7 +242,7 @@ public sealed class IssueLinkServiceTests
         var beforeState = fixture.IssueB.WorkflowStateId;
         var beforeVersion = fixture.IssueB.Version;
 
-        await service.CreateLinkAsync(fixture.IssueA.Id, fixture.IssueB.Id, "BLOCKS");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "BLOCKS");
 
         var unchanged = await fixture.Db.Issues.AsNoTracking().SingleAsync(i => i.Id == fixture.IssueB.Id);
         Assert.Equal(beforeStatus, unchanged.Status);
@@ -207,10 +254,24 @@ public sealed class IssueLinkServiceTests
     {
         private readonly SqliteConnection connection;
 
-        private IssueLinkFixture(SqliteConnection connection, AnvilboardDbContext db, Issue issueA, Issue issueB, Issue issueC, Issue issueOtherWorkspace)
+        private readonly TeamId otherTeamId;
+
+        private IssueLinkFixture(
+            SqliteConnection connection,
+            AnvilboardDbContext db,
+            WorkspaceId workspaceId,
+            WorkspaceId otherWorkspaceId,
+            TeamId otherTeamId,
+            Issue issueA,
+            Issue issueB,
+            Issue issueC,
+            Issue issueOtherWorkspace)
         {
             this.connection = connection;
+            this.otherTeamId = otherTeamId;
             Db = db;
+            WorkspaceId = workspaceId;
+            OtherWorkspaceId = otherWorkspaceId;
             IssueA = issueA;
             IssueB = issueB;
             IssueC = issueC;
@@ -218,6 +279,13 @@ public sealed class IssueLinkServiceTests
         }
 
         public AnvilboardDbContext Db { get; }
+
+        /// <summary>The workspace owning <see cref="IssueA"/>, <see cref="IssueB"/>, and <see cref="IssueC"/>.</summary>
+        public WorkspaceId WorkspaceId { get; }
+
+        /// <summary>The workspace owning <see cref="IssueOtherWorkspace"/>.</summary>
+        public WorkspaceId OtherWorkspaceId { get; }
+
         public Issue IssueA { get; }
         public Issue IssueB { get; }
         public Issue IssueC { get; }
@@ -259,7 +327,27 @@ public sealed class IssueLinkServiceTests
             db.Issues.AddRange(issueA, issueB, issueC, issueOtherWorkspace);
             await db.SaveChangesAsync();
 
-            return new IssueLinkFixture(connection, db, issueA, issueB, issueC, issueOtherWorkspace);
+            return new IssueLinkFixture(connection, db, workspaceId, otherWorkspaceId, otherTeamId, issueA, issueB, issueC, issueOtherWorkspace);
+        }
+
+        /// <summary>Adds a second issue to the foreign workspace, so a link can be formed entirely
+        /// outside the caller's workspace.</summary>
+        public async Task<Issue> AddIssueToOtherWorkspaceAsync(string key)
+        {
+            var issue = new Issue
+            {
+                Id = IssueId.New(),
+                TeamId = otherTeamId,
+                Key = key,
+                Title = $"Issue {key}",
+                Status = IssueStatus.Backlog,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+
+            Db.Issues.Add(issue);
+            await Db.SaveChangesAsync();
+            return issue;
         }
 
         public async ValueTask DisposeAsync()

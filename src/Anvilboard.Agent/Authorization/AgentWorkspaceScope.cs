@@ -11,14 +11,21 @@ namespace Anvilboard.Agent.Authorization;
 /// <remarks>
 /// <para>
 /// <see cref="WorkspaceAuthorizationPolicy"/> proves <em>who</em> the caller is and <em>what</em>
-/// they may do, but operations still take raw <see cref="Guid"/> identifiers. Without this check a
-/// caller authenticated against workspace A could pass an identifier belonging to workspace B: the
-/// application services resolve entities by primary key alone and would happily perform the write.
+/// they may do, but operations still take raw <see cref="Guid"/> identifiers. Rejecting foreign
+/// identifiers here keeps a caller authenticated against workspace A from naming an entity in
+/// workspace B, and reports the rejection in the agent's own error vocabulary rather than letting
+/// it surface as an opaque application-layer failure.
 /// </para>
 /// <para>
 /// Unknown and out-of-workspace identifiers deliberately produce the same
 /// <c>WORKSPACE_ACCESS_DENIED</c> error. Distinguishing them would turn every operation into an
 /// existence oracle for other workspaces' data.
+/// </para>
+/// <para>
+/// This is one of two boundary guards: <c>Anvilboard.Api.Authorization.RestWorkspaceScope</c> is
+/// the REST sibling. Both are defence in depth over the application services, which since MAJ-022
+/// take a required leading workspace identifier and filter through
+/// <c>WorkspaceScopedQueries.InWorkspace</c>.
 /// </para>
 /// </remarks>
 public sealed class AgentWorkspaceScope(AnvilboardDbContext db, AgentActorAccessor actors)
