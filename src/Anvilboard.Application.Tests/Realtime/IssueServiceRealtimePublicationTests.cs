@@ -1,3 +1,4 @@
+using Anvilboard.Application.Auditing;
 using Anvilboard.Application.Automation;
 using Anvilboard.Application.Issues;
 using Anvilboard.Application.Realtime;
@@ -61,7 +62,7 @@ public sealed class IssueServiceRealtimePublicationTests
         var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Move me");
         publisher.Changes.Clear();
 
-        var updated = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Done);
+        var updated = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, fixture.DoneStateId);
 
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
         Assert.Equal(RealtimeIssueChangeKind.Updated, change.ChangeKind);
@@ -195,7 +196,7 @@ public sealed class IssueServiceRealtimePublicationTests
         publisher.Changes.Clear();
 
         await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
-            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, IssueStatus.Done));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, fixture.DoneStateId));
 
         Assert.Empty(publisher.Changes);
     }
@@ -310,13 +311,14 @@ public sealed class IssueServiceRealtimePublicationTests
         public AnvilboardDbContext Db { get; }
         public WorkspaceId WorkspaceId { get; }
         public TeamId TeamId { get; }
+        public WorkflowStateId DoneStateId => done.Id;
 
         public IssueService CreateService(
             IRealtimeUpdatePublisher publisher,
             CorrelationContext? correlationContext = null) => new(
             Db,
             new FakePluginRegistry(),
-            new WorkflowEngine(Db),
+            new WorkflowEngine(Db, new AuditService(Db)),
             publisher,
             correlationContext ?? CorrelationContext.FromHeaderOrNew(null),
             NullLogger<IssueService>.Instance);

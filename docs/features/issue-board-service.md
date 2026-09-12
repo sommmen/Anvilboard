@@ -9,7 +9,7 @@
 | Component | issue-board-service |
 | Priority | P0 |
 | Status | Partial — backend CRUD, board/list querying/filtering/grouping, and dashboard aggregation are implemented; the web UI only groups by status (no filter stack), the issue-detail activity feed is not rendered, comments are flat (not threaded), and optimistic concurrency (`Issue.Version`) and the link-update endpoint are incomplete. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
 | SRS Refs | FR-WRK-001, FR-WRK-002, FR-WRK-003, FR-WRK-004, FR-WRK-005, FR-WRK-006, FR-WRK-007, FR-WRK-008, FR-WRK-009, FR-WRK-010, FR-WRK-011, FR-WRK-012, FR-WRK-013, FR-WRK-014, NFR-PERF-001, NFR-PERF-002, NFR-USB-001 |
 | Tech Design Ref | §8.1 — Issue & Board Service row; also §7.5 Computation Rules, §9 API Design, §12 Performance Design |
 | Depends On | workflow-engine, workspace-authorization |
@@ -138,14 +138,14 @@ Current implementation (`Anvilboard.Application/Issues/IssueService.cs`) validat
 
 ### `RequestTransitionAsync(IssueId, targetWorkflowStateId, expectedVersion, actorId, ct)` (planned; replaces `ChangeStatusAsync`)
 
-> **Current progress:** `ChangeStatusAsync` now delegates transition legality to
-> `IWorkflowService.ValidateTransitionAsync` and updates `WorkflowStateId`/`Version` on success
-> (closing the previous gap where it mutated the legacy `IssueStatus` enum directly). It still
-> accepts the legacy `IssueStatus` enum rather than a `WorkflowStateId`/`expectedVersion` pair and
-> does not yet implement the `PrePhaseChange`/`PostPhaseChange` hooks below — those remain planned
-> as described in this section. Post-commit real-time publication *is* implemented (see step 8).
+> **Current progress:** `ChangeStatusAsync` accepts a `WorkflowStateId`, delegates transition legality
+> to `IWorkflowService.ValidateTransitionAsync`, and updates the authoritative `WorkflowStateId` and
+> `Version` on success. REST, CLI/MCP, and the issue-detail UI submit configured state IDs. The legacy
+> `IssueStatus` field remains a compatibility projection for the six seeded states, and
+> `PrePhaseChange`/`PostPhaseChange` hooks plus caller-supplied `expectedVersion` remain planned as
+> described below. Post-commit real-time publication *is* implemented (see step 8).
 
-Replaces the current enum-based `ChangeStatusAsync(IssueId, IssueStatus, ...)` with a `WorkflowStateId`-based transition per tech-design §7.5/§8.3:
+The target transition contract uses `WorkflowStateId` per tech-design §7.5/§8.3:
 
 1. Load the issue; if not found, return `REFERENCED_ENTITY_NOT_FOUND`.
 2. If `issue.Version != expectedVersion`, return `CONCURRENCY_CONFLICT` with the current version.
@@ -338,3 +338,4 @@ src/
 - **Unit**: `GetSummaryAsync()` count computation per status/source/assignee bucket.
 - **Integration**: reconciliation test asserting dashboard summary counts equal the equivalent board query's row count for the same filter.
 - **Fixtures / Mocks**: same seeded `AnvilboardDbContext` as above, reused across both test files to keep fixture data consistent between board and dashboard assertions.
+

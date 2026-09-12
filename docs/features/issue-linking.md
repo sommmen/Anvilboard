@@ -9,7 +9,7 @@
 | Component | issue-linking |
 | Priority | P2 |
 | Status | Partial — `CreateLinkAsync`/`ListLinksAsync`/`RemoveLinkAsync` are implemented and directional exposure/zero-cascade behavior matches spec; a link-update endpoint is missing, and the web issue-detail view suggests link types but does not enforce them server-side. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
 | SRS Refs | FR-LNK-001 |
 | Tech Design Ref | §8.1 — Issue Linking row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `IssueLinks` table |
 | Depends On | issue-board-service, workspace-authorization |
@@ -170,3 +170,4 @@ src/
 - **Negative / zero-cascade**: a dedicated test seeding a `PARENT`/`DUPLICATE` link and asserting no workflow transition, owner reassignment, or notification occurs on either linked issue as a *side effect* of any operation on the other — this guards the product's explicit "no sub-issue hierarchy" boundary against accidental future coupling.
 - **Negative / no-enforcement (`BLOCKS`)**: a dedicated test seeding a `BLOCKS` link and asserting a phase change on the blocked issue succeeds unconditionally with no `Pre*PhaseChange` hook veto or gating check attributable to this component — guards the explicit "marker only, never a gate" boundary.
 - **Fixtures / Mocks**: seeded `Issue` rows across two workspaces (for cross-workspace negative tests); at least one pair of issues linked with each suggested vocabulary type (`RELATED`, `PARENT`, `DUPLICATE`, `MENTIONED_IN`, `BLOCKS`), each with a representative `description`, to exercise DTO/list rendering.
+

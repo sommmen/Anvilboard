@@ -102,8 +102,7 @@ public sealed class CrossWorkspaceIsolationEndpointTests
 
         var response = await client.PatchAsJsonAsync(
             $"/api/issues/{foreignIssueId}/status",
-            // IssueStatus keeps the default numeric wire format; only Role/Permission are symbolic.
-            new { status = (int)IssueStatus.Done },
+            new { workflowStateId = Guid.NewGuid() },
             CancellationToken.None);
 
         await AssertDeniedAsync(response);

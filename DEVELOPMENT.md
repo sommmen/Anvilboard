@@ -110,11 +110,11 @@ dotnet run -- issues create-issue --teamId <guid> --title "Fix the thing" --idem
 
 Every operation is authenticated and authorized within the credential's workspace. Each invocation
 gets an isolated dependency-injection scope and correlation ID, and returns
-`{"apiVersion":"1.0","correlationId":"...","data":...}`. The six workspace-data mutations require
+`{"apiVersion":"1.0","correlationId":"...","data":...}`. The eleven workspace-data mutations require
 `--idempotencyKey value`; the key is scoped by workspace, actor, and operation and is retained for
 30 days. Use `--name value` syntax rather than `name=value`.
 
-The surface exposes 13 operations, all of which are also registered as MCP tools:
+The surface exposes 20 operations, all of which are also registered as MCP tools:
 
 | Category | Operation | Idempotency key required |
 |---|---|---|
@@ -124,6 +124,8 @@ The surface exposes 13 operations, all of which are also registered as MCP tools
 | `issues` | `create-issue-link`, `remove-issue-link` | **Yes** |
 | `dashboard` | `dashboard-summary` | No (read) |
 | `backup` | `create-backup`, `list-backups`, `verify-backup` | No |
+| `workflow` | `list-workflow-states`, `list-workflow-transitions` | No (reads) |
+| `workflow` | `create-workflow-state`, `update-workflow-state`, `archive-workflow-state`, `create-workflow-transition`, `remove-workflow-transition` | **Yes** |
 
 Restore is deliberately **not** exposed to the agent surface — it is an administrator-only REST
 operation (`DR-AGT-004`). Effective permissions are the intersection of the credential's grants and
@@ -226,14 +228,14 @@ once a drill is confirmed good.
 
 The xUnit projects cover the Workflow Engine, endpoint authorization, cross-workspace isolation, the
 agent surface, backup and restore, artifacts, real-time delivery, and webhook validation. A full
-`dotnet test Anvilboard.slnx` run is **348 passing, 0 failing**:
+the six populated projects contain **394 passing, 0 failing** tests:
 
 | Project | Tests | What it covers |
 |---|---:|---|
-| `src/Anvilboard.Application.Tests` | 195 | `WorkflowEngine` unit tests: transition validation, state creation validation, archive/reassignment behavior; also covers workspace authorization, issue linking, artifacts (`ArtifactService`), audit redaction, backup/restore round-trips and secret scanning, real-time dispatch/coalescing/plugin-event relay, and the automation surface foundations (`IdempotencyService` replay/reuse detection, `CorrelationContext`, `ErrorCatalogTranslator`). No database file — uses SQLite `DataSource=:memory:` per test. |
+| `src/Anvilboard.Application.Tests` | 221 | `WorkflowEngine` SQLite-backed tests: transition validation plus state/transition administration, validation, success/rejection auditing, no-ops, and archive/reassignment behavior; also covers workspace authorization, issue linking, artifacts (`ArtifactService`), audit redaction, backup/restore round-trips and secret scanning, real-time dispatch/coalescing/plugin-event relay, and automation foundations (`IdempotencyService` replay/reuse detection, `CorrelationContext`, `ErrorCatalogTranslator`). |
 | `src/Anvilboard.Infrastructure.Tests` | 41 | Migration integration test (seeds a legacy pre-workflow SQLite schema, runs the real EF Core migrations, asserts default workflow states/transitions were seeded and issues backfilled), plus plugin registry/config-state storage, the SQLite backup archiver and archive store, and the data-protection secret store. |
-| `src/Anvilboard.Api.Tests` | 55 | API-host integration tests for workspace authorization endpoints, cross-workspace isolation across every ID-addressed REST route (`CrossWorkspaceIsolationEndpointTests`) and the `RestWorkspaceScope` boundary guard, artifact and backup endpoints, the `X-Correlation-Id` middleware, webhook endpoints, and the real-time SignalR hub (connection authorization, workspace isolation, and mutation isolation from a slow client). |
-| `src/Anvilboard.Agent.Tests` | 40 | Agent operation-catalog invariants, request guards, SQLite-backed authorization integration tests (credential authentication, permission enforcement, workspace isolation, actor attribution), and MCP stdout isolation. Requires the sibling `dotnet-agent-surface` checkout. |
+| `src/Anvilboard.Api.Tests` | 63 | API-host integration tests for workflow administration, authorization, validation, and foreign-resource non-mutation; workspace authorization endpoints and cross-workspace isolation across ID-addressed REST routes; artifact and backup endpoints; correlation middleware; webhooks; and the real-time SignalR hub. |
+| `src/Anvilboard.Agent.Tests` | 52 | Agent operation-catalog invariants, workflow lifecycle/idempotency/authorization and foreign-resource non-mutation, request guards, SQLite-backed authorization integration tests (credential authentication, permission enforcement, workspace isolation, actor attribution), and MCP stdout isolation. Requires the sibling `dotnet-agent-surface` checkout. |
 | `src/Anvilboard.Integrations.GitHub.Tests` | 12 | GitHub webhook signature validation and issue-event mapping. |
 | `src/Anvilboard.Integrations.Linear.Tests` | 5 | Linear webhook signature validation and issue-event mapping. |
 | `tests/Anvilboard.IntegrationTests` | 0 | Reserved for cross-cutting integration coverage; still an empty scaffold. |

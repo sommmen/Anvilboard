@@ -9,7 +9,7 @@
 | Component | agent-and-automation-surface |
 | Priority | P0 |
 | Status | Partial — CLI/MCP authentication, workspace authorization, actor attribution, mutation idempotency, per-invocation correlation, response contract versioning, and stdio isolation are implemented. REST/application queries are now workspace-bound on every surface (MAJ-022). REST still lacks the common `{ apiVersion, correlationId, data }` body envelope and shared idempotency contract. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
 | SRS Refs | FR-AUT-001, FR-AUT-002, FR-AUT-003, NFR-MNT-001 |
 | Tech Design Ref | §8.1 Component Overview — Automation Surface (REST/CLI/MCP) row; §7.3 Parameter Validation; §7.6 Error Handling Strategy; §9 API Design; §10.1 `IdempotencyRecords` |
 | Depends On | workspace-authorization, workflow-engine, issue-board-service, integration-and-plugin-platform |
@@ -262,3 +262,4 @@ src/
 - **Unit**: `IdempotencyService.TryBeginAsync()` (new key, replay-same-hash, reuse-different-hash outcomes), `ErrorCatalogTranslator.Translate()` (one case per exception type mapped to its §7.7 code), `CorrelationContext.FromHeaderOrNew()`.
 - **Integration**: `src/Anvilboard.Api.Tests/V1/AutomationSurfaceContractTests.cs` — REST `/api/v1/issues/{id}/transition` idempotency replay/reuse (AC-007, AC-008, AC-101), correlation ID round-trip (AC-103); `src/Anvilboard.Agent.Tests/ContractEquivalenceTests.cs` — CLI vs. MCP vs. REST symbolic-value equivalence for the same logical operation (AC-102) and MCP stdout protocol-purity (AC-104).
 - **Fixtures / Mocks**: seeded workspace with an active workflow and one issue; a fake clock for `IdempotencyRecords.ExpiresAt` assertions; an MCP stdio test harness that captures raw stdout bytes for AC-104.
+

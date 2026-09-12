@@ -80,7 +80,8 @@ public static class IssueEndpoints
             try
             {
                 var issueId = await scope.RequireIssueAsync(id, ct);
-                var issue = await service.ChangeStatusAsync(scope.WorkspaceId, issueId, request.Status, ct: ct);
+                var targetStateId = await scope.RequireWorkflowStateAsync(request.WorkflowStateId, ct);
+                var issue = await service.ChangeStatusAsync(scope.WorkspaceId, issueId, targetStateId, ct: ct);
                 return Results.Ok(issue);
             }
             catch (WorkspaceScopeDeniedException)
@@ -89,12 +90,10 @@ public static class IssueEndpoints
             }
             catch (WorkflowTransitionDeniedException ex)
             {
-                // REFERENCED_ENTITY_NOT_FOUND here is a *dependent* lookup failing after scoping
-                // already succeeded (a missing workflow state), so 404 is not an existence oracle.
-                var statusCode = ex.ErrorCode == "REFERENCED_ENTITY_NOT_FOUND"
-                    ? StatusCodes.Status404NotFound
-                    : StatusCodes.Status409Conflict;
-                return Results.Problem(title: ex.ErrorCode, detail: ex.Message, statusCode: statusCode);
+                return Results.Problem(
+                    title: ex.ErrorCode,
+                    detail: ex.Message,
+                    statusCode: StatusCodes.Status409Conflict);
             }
         }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
 
@@ -198,7 +197,7 @@ public static class IssueEndpoints
 }
 
 public sealed record CreateIssueRequest(Guid TeamId, string Title, string? Description, IssuePriority? Priority, Guid? ProjectId, Guid? AssigneeId);
-public sealed record ChangeStatusRequest(IssueStatus Status);
+public sealed record ChangeStatusRequest(Guid WorkflowStateId);
 public sealed record AssignRequest(Guid? AssigneeId);
 public sealed record AddCommentRequest(string Body, Guid? AuthorId = null);
 public sealed record CreateIssueLinkRequest(Guid TargetIssueId, string Type, string? Description = null, Guid? ActorId = null);

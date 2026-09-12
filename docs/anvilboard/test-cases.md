@@ -3,7 +3,7 @@
 > **Status:** This document originally described a target-state QA specification for a proof of
 > concept with no automated test projects. That is now **stale** — the solution has 6 populated
 > xUnit test projects (plus 1 empty `Anvilboard.IntegrationTests` scaffold) with real, passing
-> coverage: `dotnet test Anvilboard.slnx` reports **348 passing, 0 failing**. The tables below have
+> coverage: the six populated .NET test projects report **394 passing, 0 failing**. The tables below have
 > been updated to reflect actual existing tests; see [`docs/audit-report.md`](../audit-report.md)
 > for the audit that surfaced this and the remaining gaps (no dedicated
 > `DashboardService`/`IssueService`/`SyncCoordinator` test file, and no CLI/MCP
@@ -20,9 +20,9 @@
 | **Project** | Anvilboard |
 | **Project Type** | Multi-workspace issue-management web application with REST, CLI, MCP, provider integration, and plugin surfaces |
 | **Tech Stack** | .NET 10 / ASP.NET Core, Angular, EF Core, SQLite for supported single-host deployment |
-| **Test Framework** | xUnit across 6 populated test projects (`Application.Tests`, `Api.Tests`, `Infrastructure.Tests`, `Agent.Tests`, `Integrations.GitHub.Tests`, `Integrations.Linear.Tests`) plus an empty `IntegrationTests` scaffold, spanning 38 test files; Angular/Vitest (`ng test`) covers a handful of components and services (`app.spec.ts`, `board-page.spec.ts`, `realtime-board-sync.service.spec.ts`) but no dedicated CLI/MCP contract-equivalence test project exists yet |
+| **Test Framework** | xUnit across 6 populated test projects (`Application.Tests`, `Api.Tests`, `Infrastructure.Tests`, `Agent.Tests`, `Integrations.GitHub.Tests`, `Integrations.Linear.Tests`) plus an empty `IntegrationTests` scaffold, spanning 43 test files; Angular/Vitest (`ng test`) covers a handful of components and services (`app.spec.ts`, `board-page.spec.ts`, `realtime-board-sync.service.spec.ts`) but no dedicated CLI/MCP contract-equivalence test project exists yet |
 | **Scan Date** | Updated by doc/implementation audit — see `docs/audit-report.md` |
-| **Input Mode** | Code Mode — verified against the actual `dotnet test` run for `Anvilboard.slnx` (348 passing, 0 failing) |
+| **Input Mode** | Code Mode — verified against the individual runs of the six populated .NET test projects (394 passing, 0 failing) |
 
 ### 1.2 Testable Units
 
@@ -45,7 +45,7 @@
 |---|---:|
 | Test projects | 6 `*.Tests` unit/integration projects with tests + 1 empty `Anvilboard.IntegrationTests` scaffold (no `.cs` test files yet) |
 | Testable boundaries with an existing test file | 9 of 10 listed above have at least one test file |
-| Total automated tests (last run) | 369 total: 348 .NET (`dotnet test Anvilboard.slnx` — Application 195, Api 55, Infrastructure 41, Agent 40, GitHub 12, Linear 5) plus 21 Angular (`ng test`, 3 spec files), all passing |
+| Total automated tests (last run) | 415 total: 394 .NET (Application 221, API 63, Infrastructure 41, Agent 52, GitHub 12, Linear 5) plus 21 Angular (`npm test -- --watch=false`, 3 spec files), all passing |
 | Test result | All passing, 0 failures |
 | Known coverage gaps | No dedicated `DashboardService`, `IssueService`, or `SyncCoordinator` test file; no CLI/MCP contract-equivalence test project (though `Anvilboard.Agent.Tests` now covers authorization, the operation catalog, request guards, and MCP stdout isolation); `Anvilboard.IntegrationTests` project exists but is empty |
 

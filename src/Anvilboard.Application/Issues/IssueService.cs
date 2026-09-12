@@ -25,21 +25,15 @@ public sealed class IssueService(
     CorrelationContext correlationContext,
     ILogger<IssueService> logger)
 {
-    /// <summary>
-    /// Maps the legacy <see cref="IssueStatus"/> enum to the lower-snake <c>WorkflowState.Key</c>
-    /// seeded for every workspace by the <c>AddWorkflowStates</c> migration, so callers that still
-    /// speak the legacy enum (the current REST/CLI/MCP surfaces) can be routed through
-    /// <see cref="IWorkflowService.ValidateTransitionAsync"/> without a public API change.
-    /// </summary>
-    private static string ToWorkflowStateKey(IssueStatus status) => status switch
+    private static IssueStatus? ToLegacyIssueStatus(string workflowStateKey) => workflowStateKey switch
     {
-        IssueStatus.Backlog => "backlog",
-        IssueStatus.Todo => "todo",
-        IssueStatus.InProgress => "in_progress",
-        IssueStatus.InReview => "in_review",
-        IssueStatus.Done => "done",
-        IssueStatus.Cancelled => "cancelled",
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+        "backlog" => IssueStatus.Backlog,
+        "todo" => IssueStatus.Todo,
+        "in_progress" => IssueStatus.InProgress,
+        "in_review" => IssueStatus.InReview,
+        "done" => IssueStatus.Done,
+        "cancelled" => IssueStatus.Cancelled,
+        _ => null,
     };
 
     /// <summary>
@@ -129,47 +123,49 @@ public sealed class IssueService(
     }
 
     /// <summary>
-    /// Moves an issue to a new workflow status, delegating legality of the transition to
-    /// <see cref="IWorkflowService.ValidateTransitionAsync"/> before mutating anything, then
-    /// recording the transition and firing hooks. Updates both the deprecated <see cref="IssueStatus"/>
-    /// enum and the authoritative <see cref="Issue.WorkflowStateId"/>/<see cref="Issue.Version"/>
-    /// fields so the two remain in sync during the workflow-state migration window
-    /// (see <c>docs/features/workflow-engine.md</c> "Legacy status migration").
+    /// Moves an issue to a workspace-configured workflow state, delegating legality of the
+    /// transition to <see cref="IWorkflowService.ValidateTransitionAsync"/> before mutating
+    /// anything, then recording the transition and firing hooks. The deprecated
+    /// <see cref="IssueStatus"/> projection is updated only when the target is one of the six
+    /// seeded compatibility states.
     /// </summary>
     /// <exception cref="WorkflowTransitionDeniedException">
     /// The requested transition was denied by <see cref="IWorkflowService"/> (e.g. no configured
     /// transition rule, or a referenced workflow state is archived/missing).
     /// </exception>
     public async Task<Issue> ChangeStatusAsync(
-        WorkspaceId workspaceId, IssueId id, IssueStatus newStatus, MemberId? actorId = null, CancellationToken ct = default)
+        WorkspaceId workspaceId, IssueId id, WorkflowStateId targetStateId, MemberId? actorId = null, CancellationToken ct = default)
     {
         var issue = await db.Issues.InWorkspace(db, workspaceId).FirstOrDefaultAsync(i => i.Id == id, ct)
             ?? throw new InvalidOperationException($"Issue {id} does not exist.");
 
-        if (issue.Status == newStatus)
+        if (issue.WorkflowStateId == targetStateId)
         {
             return issue;
         }
 
-        var team = await db.Teams.AsNoTracking().FirstOrDefaultAsync(t => t.Id == issue.TeamId, ct)
-            ?? throw new InvalidOperationException($"Team {issue.TeamId} does not exist.");
-
-        var targetKey = ToWorkflowStateKey(newStatus);
         var targetState = await db.WorkflowStates.AsNoTracking().FirstOrDefaultAsync(
-            state => state.WorkspaceId == team.WorkspaceId && state.Key == targetKey, ct)
+            state => state.WorkspaceId == workspaceId && state.Id == targetStateId, ct)
             ?? throw new WorkflowTransitionDeniedException(
                 "REFERENCED_ENTITY_NOT_FOUND",
-                $"Workspace {team.WorkspaceId} has no workflow state with key '{targetKey}'.");
+                $"Workspace {workspaceId} has no workflow state with id '{targetStateId}'.");
 
         var validation = await workflowService.ValidateTransitionAsync(
-            team.WorkspaceId, issue.WorkflowStateId, targetState.Id, ct);
+            workspaceId, issue.WorkflowStateId, targetState.Id, ct);
         if (!validation.IsAllowed)
         {
             throw new WorkflowTransitionDeniedException(validation.ErrorCode!, validation.Message!);
         }
 
-        var oldStatus = issue.Status;
-        issue.Status = newStatus;
+        var currentState = await db.WorkflowStates.AsNoTracking().FirstOrDefaultAsync(
+            state => state.WorkspaceId == workspaceId && state.Id == issue.WorkflowStateId, ct);
+        var oldStateKey = currentState?.Key ?? issue.Status.ToString();
+
+        var legacyStatus = ToLegacyIssueStatus(targetState.Key);
+        if (legacyStatus is { } status)
+        {
+            issue.Status = status;
+        }
         issue.WorkflowStateId = targetState.Id;
         issue.Version++;
         issue.UpdatedAt = DateTimeOffset.UtcNow;
@@ -184,9 +180,9 @@ public sealed class IssueService(
 
         await db.SaveChangesAsync(ct);
 
-        var data = JsonSerializer.Serialize(new { from = oldStatus.ToString(), to = newStatus.ToString() });
+        var data = JsonSerializer.Serialize(new { from = oldStateKey, to = targetState.Key });
         await RecordAndDispatchAsync(
-            issue, ActivityEventType.StatusChanged, actorId, data, ct, team.WorkspaceId);
+            issue, ActivityEventType.StatusChanged, actorId, data, ct, workspaceId);
         return issue;
     }
 

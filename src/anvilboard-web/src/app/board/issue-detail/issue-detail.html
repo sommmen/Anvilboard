@@ -15,13 +15,13 @@
     <div class="panel-field">
       <span class="panel-label">Status</span>
       <div class="status-options">
-        @for (status of statuses; track status) {
+        @for (state of workflowStates(); track state.id) {
           <button
             class="status-chip"
-            [class.selected]="issue().status === status"
-            (click)="changeStatus(status)"
+            [class.selected]="issue().workflowStateId === state.id"
+            (click)="changeStatus(state.id)"
           >
-            {{ statusLabels[status] }}
+            {{ state.displayName }}
           </button>
         }
       </div>

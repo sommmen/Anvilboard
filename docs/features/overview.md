@@ -3,8 +3,8 @@
 > Index of implementation-facing feature specs for Anvilboard's target architecture.
 > Source: `docs/anvilboard/tech-design.md` §8.1 Component Overview.
 > Created: 2026-09-05
-> Last verified: 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing,
-> `npm test` 21 passing.
+> Last verified: 2026-09-12 against commit `e3e03a5` + MAJ-022 and workflow-admin change sets — six populated .NET test projects 394 passing,
+> `npm test -- --watch=false` 21 passing and `npm run build` successful.
 
 Each spec in this directory documents one architectural component from
 [`docs/anvilboard/tech-design.md`](../anvilboard/tech-design.md) at implementation-planning depth:
@@ -19,7 +19,7 @@ feature needs more granular coverage.
 | # | Feature Spec | Priority | Status | Depends On | SRS Refs |
 |---|---|---|---|---|---|
 | 1 | [`workspace-authorization.md`](./workspace-authorization.md) ([query-scoping plan](../plans/workspace-query-scoping.md)) | P0 | Implemented — model, middleware, REST and CLI/MCP enforcement, admin revocation, bootstrap seeding, and workspace-bound REST/application query filtering (MAJ-022) | — | `FR-WS-001`, `NFR-SEC-002` |
-| 2 | [`workflow-engine.md`](./workflow-engine.md) | P0 | Partial | — | `FR-WS-002`, `FR-WS-003` |
+| 2 | [`workflow-engine.md`](./workflow-engine.md) ([admin-surface plan](../plans/workflow-admin-surface.md)) | P0 | Implemented — validation, migration, REST and CLI/MCP administration, idempotency, workspace isolation, and audit events | — | `FR-WS-002`, `FR-WS-003` |
 | 3 | [`issue-board-service.md`](./issue-board-service.md) | P0 | Partial | Workspace Authorization, Workflow Engine | `FR-WRK-001`–`FR-WRK-014`, `NFR-PERF-001`, `NFR-PERF-002`, `NFR-USB-001` |
 | 4 | [`integration-and-plugin-platform.md`](./integration-and-plugin-platform.md) | P0 | Partial | Issue & Board Service, Workspace Authorization, Real-time Updates | `FR-INT-001`–`FR-INT-007`, `NFR-REL-002`, `NFR-SEC-001` |
 | 5 | [`agent-and-automation-surface.md`](./agent-and-automation-surface.md) | P0 | Partial — CLI/MCP auth, workspace scope, attribution, idempotency, correlation, and versioned envelopes implemented; REST contract normalization remains | Workspace Authorization, Workflow Engine, Issue & Board Service, Integration & Plugin Platform | `FR-AUT-001`–`FR-AUT-003`, `NFR-MNT-001` |
@@ -112,3 +112,5 @@ this line is updated. See each spec's own `Status` field for its individual stat
   interaction diagram (§8.2), API conventions, and the canonical error catalog (§7.7).
 - [`docs/anvilboard/test-cases.md`](../anvilboard/test-cases.md) — test strategy and coverage
   matrix spanning all six components.
+
+

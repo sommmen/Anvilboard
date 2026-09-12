@@ -7,6 +7,11 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ## [Unreleased]
 
+### Added
+
+- Added workspace-scoped workflow-state and workflow-transition administration through seven REST routes and seven CLI/MCP operations, including permissions, mutation idempotency, and success/rejection audit events.
+- Issue transitions now target configured workflow-state IDs across the application, REST, agent, and Angular issue-detail surfaces, enabling transitions into custom states while retaining the deprecated six-state status projection for compatibility.
+
 ### Security
 
 - **Workspace-bound REST/application queries** (closing audit finding `MAJ-022`), designed in

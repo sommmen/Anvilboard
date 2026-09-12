@@ -9,7 +9,7 @@
 | Component | audit-and-recovery |
 | Priority | P0 |
 | Status | Partial — append-only audit recording, secret/credential redaction at write time, and backup/restore (FR-OPS-002, NFR-AVL-001) are implemented and tested. Workspace-scoped audit **query** access (FR-OPS-001) remains the residual gap: audit events are written and are readable only via direct database access, with no REST or agent query surface. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
 | Implementation Plan | [`../plans/backup-and-restore.md`](../plans/backup-and-restore.md) — delivered; closed CRIT-001, the only unresolved Critical audit finding. |
 | SRS Refs | FR-OPS-001, FR-OPS-002, NFR-AVL-001, NFR-REL-001 |
 | Tech Design Ref | §8.1 Component Overview — Audit & Recovery row; §10.1 `AuditEvents`; §11.4 Audit Logging; §14.3 Rollback Strategy |
@@ -251,3 +251,4 @@ deliberately exposes create/list/verify but **no restore** operation.
 - **Unit**: `SecretRedactor.Scrub()` against a deny-list/heuristic fixture corpus (AC-204); `AuditService.RecordAsync()` field mapping and redaction call ordering; `BackupServiceTests.cs` / `RestoreCoordinatorTests.cs` cover the fail-closed validation order, admission control, and drain behavior against test doubles.
 - **Integration**: `Backup/BackupRoundTripTests.cs` — `CreateBackupAsync`/`RestoreAsync` round trip against a seeded SQLite database (AC-202); corrupt/truncated/incompatible-artifact injection asserting `BACKUP_INTEGRITY_INVALID` and unchanged target workspace data (AC-012); unauthorized/mismatched-confirmation restore rejection (AC-203). `Backup/BackupSecretScanTests.cs` scans a generated manifest and every backup/restore `ResultSummary` for secret-shaped values (AC-204), including a negative control proving the scan can fail. `src/Anvilboard.Api.Tests/Backup/BackupEndpointTests.cs` covers the REST surface and status-code mapping.
 - **Fixtures / Mocks**: seeded workspace with at least one issue, one integration, and one prior audit event; a deliberately corrupted backup artifact fixture (bad checksum); a schema-incompatible manifest fixture (future `schemaVersion` string); a non-Administrator actor fixture for AC-203; `Backup/BackupTestDoubles.cs` provides an archive-store fake with a call log used to prove no artifact I/O occurs before a fail-closed gate.
+

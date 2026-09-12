@@ -9,7 +9,7 @@
 | Component | workspace-authorization |
 | Priority | P0 |
 | Status | Implemented — `WorkspaceAuthorizationService`, `WorkspaceAuthorizationMiddleware`, `AuthEndpoints`, and `RequiresPermissionAttribute` are implemented and unit-tested. REST includes administrator credential listing and immediate revocation with audit emission, and bootstrap seeds the default workflow states transactionally (MAJ-021). CLI/MCP authenticate and authorize every operation through `WorkspaceAuthorizationPolicy`/`AgentWorkspaceScope` (MAJ-001, MAJ-015), and REST/application queries are now uniformly bound to the authenticated workspace via a required leading `WorkspaceId` parameter plus the `RestWorkspaceScope` boundary guard (MAJ-022). See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — `dotnet test Anvilboard.slnx` 348 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
 | Implementation Plan | [`../plans/agent-surface-authorization.md`](../plans/agent-surface-authorization.md) — delivered; closed MAJ-001/MAJ-015 (CLI/MCP half). [`../plans/workspace-query-scoping.md`](../plans/workspace-query-scoping.md) — delivered; closed MAJ-022 (REST/application query scoping). |
 | SRS Refs | FR-WS-001, NFR-SEC-002 |
 | Tech Design Ref | §8.1 Workspace & Authorization; §11.2 Authorization |
@@ -222,3 +222,4 @@ src/
 - **Unit**: `AuthenticateAsync()` (missing credential, unknown hash, expired, revoked, valid), `AuthorizeAsync()` (role × permission × workspace-match matrix), `BootstrapFirstAdministratorAsync()` (empty store, already-bootstrapped store), `RevokeCredentialAsync()` (immediate effect on next `AuthenticateAsync`).
 - **Integration**: `src/Anvilboard.Api.Tests/Authorization/WorkspaceAuthorizationEndpointTests.cs` using `WebApplicationFactory<Program>` — cross-workspace denial returns 403 with no resource fields, missing-credential returns 401, audit event recorded on every denial and mutation authorization.
 - **Fixtures / Mocks**: `AnvilboardDbContext` backed by a fresh SQLite file or `Microsoft.Data.Sqlite` in-memory connection per test, seeded with two workspaces and one `Member` per `Role` in each; a fake `IAuditService` capturing recorded decisions for assertion.
+
