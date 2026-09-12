@@ -149,7 +149,9 @@ export class BoardPage {
       .createIssue({ teamId: team.id, title, priority: IssuePriority.None })
       .subscribe((issue) => {
         if (status !== IssueStatus.Backlog) {
-          const target = this.workflowStates().find((state) => state.key === this.statusKey(status));
+          const target = this.workflowStates().find(
+            (state) => state.key === this.statusKey(status),
+          );
           if (target) {
             this.api.changeStatus(issue.id, target.id).subscribe(() => this.refresh());
           } else {
