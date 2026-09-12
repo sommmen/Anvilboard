@@ -132,7 +132,7 @@ no REST dependency), the expansion hook itself, and the GitHub correlation logic
 |---|---|---|
 | `AC-ART-001` | Attaching with a valid kind/title/contentReference persists a row and returns a DTO carrying kind, title, source, actor, and timestamps. | `AttachArtifactAsync_PersistsArtifactAndActivityEvent` |
 | `AC-ART-002` | An invalid kind, empty title, or empty contentReference yields `VALIDATION_FAILED` naming the offending field, and persists nothing. | `AttachArtifactAsync_RejectsInvalid*` |
-| `AC-ART-003` | An unknown or cross-workspace `issueId` yields `REFERENCED_ENTITY_NOT_FOUND`. | `AttachArtifactAsync_RejectsUnknownIssue` |
+| `AC-ART-003` | An `issueId` that is unknown, or that resolves to no team (and therefore to no workspace), yields `REFERENCED_ENTITY_NOT_FOUND` and persists nothing. | `AttachArtifactAsync_RejectsUnknownIssue`, `AttachArtifactAsync_RejectsIssueNotReachableThroughATeam` |
 | `AC-ART-004` | Inline content is stored through `IArtifactStore` and the row's `ContentReference` is the returned opaque reference — never the raw bytes. | `AttachArtifactAsync_StoresInlineContentThroughStore` |
 | `AC-ART-005` | A store failure surfaces `ARTIFACT_STORE_UNAVAILABLE` and leaves **zero** `Artifact` rows (fail-closed). | `AttachArtifactAsync_StoreFailurePersistsNothing` |
 | `AC-ART-006` | `ListArtifactsAsync` returns the issue's artifacts ordered by `CreatedAt` ascending. | `ListArtifactsAsync_ReturnsOldestFirst` |
@@ -290,7 +290,7 @@ never drift from §7.7. Store exceptions are caught and re-thrown as
 
 | Condition | Code | HTTP | Source |
 |---|---:|---|---|
-| Issue/artifact not found or cross-workspace | `REFERENCED_ENTITY_NOT_FOUND` | 404 | Catalog (exists) |
+| Issue/artifact not found, or issue resolves to no team | `REFERENCED_ENTITY_NOT_FOUND` | 404 | Catalog (exists) |
 | Invalid kind/title/contentReference/metadata | `VALIDATION_FAILED` | 400 | Catalog (exists) |
 | Refresh on non-refreshable kind | `VALIDATION_FAILED` | 400 | Catalog (exists) |
 | Store unreachable | `ARTIFACT_STORE_UNAVAILABLE` | 502 | Catalog (exists) |
@@ -435,8 +435,13 @@ concurrent PR events.
 - **Authorization** is enforced upstream by `WorkspaceAuthorizationMiddleware` via the route group's
   `RequirePermission`; the service never re-derives it, per the spec's "receives an already
   authorized request."
-- **Cross-workspace isolation** is enforced in-service by resolving the issue through its team's
-  workspace, so a direct (CLI/hook) caller cannot reach another workspace's issue.
+- **Cross-workspace isolation** over REST is enforced upstream, the same way it is for issues,
+  comments, and links: the middleware resolves the caller's workspace before the endpoint runs.
+  The service takes an `IssueId` and no `WorkspaceId`, matching `IssueService`/`IssueLinkService`,
+  so it verifies only that the issue exists and is reachable through a team. A **direct**
+  (CLI/MCP/hook) caller that already holds an arbitrary `IssueId` is therefore not workspace-checked
+  by this service — that is the pre-existing, repo-wide gap tracked as audit findings MAJ-001 and
+  MAJ-015, and closing it belongs to that work, not to this feature.
 - **No raw content in audit/activity payloads** — `DataJson` carries only
   `{ artifactId, kind, source, title }`, never bytes or the opaque reference's contents.
 - **`metadata` is opaque and bounded** (8 KiB) so a misbehaving plugin cannot use it as unbounded

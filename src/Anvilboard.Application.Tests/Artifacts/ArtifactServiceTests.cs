@@ -175,6 +175,31 @@ public sealed class ArtifactServiceTests
     }
 
     [Fact]
+    public async Task AttachArtifactAsync_RejectsIssueNotReachableThroughATeam()
+    {
+        await using var fixture = await ArtifactFixture.CreateAsync();
+        var service = fixture.CreateService();
+
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(
+            fixture.OrphanedIssue.Id, ArtifactKind.Link, "Title", "https://example.test"));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
+        Assert.Empty(await fixture.Db.Artifacts.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ListArtifactsAsync_RejectsIssueNotReachableThroughATeam()
+    {
+        await using var fixture = await ArtifactFixture.CreateAsync();
+        var service = fixture.CreateService();
+
+        var ex = await Assert.ThrowsAsync<ArtifactException>(
+            () => service.ListArtifactsAsync(fixture.OrphanedIssue.Id));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
+    }
+
+    [Fact]
     public async Task ListArtifactsAsync_ReturnsOnlyIssueArtifactsOldestFirst()
     {
         await using var fixture = await ArtifactFixture.CreateAsync();
@@ -414,18 +439,23 @@ public sealed class ArtifactServiceTests
             AnvilboardDbContext db,
             IArtifactStore store,
             Issue issue,
-            Issue otherIssue)
+            Issue otherIssue,
+            Issue orphanedIssue)
         {
             this.connection = connection;
             this.store = store;
             Db = db;
             Issue = issue;
             OtherIssue = otherIssue;
+            OrphanedIssue = orphanedIssue;
         }
 
         public AnvilboardDbContext Db { get; }
         public Issue Issue { get; }
         public Issue OtherIssue { get; }
+
+        /// <summary>An issue whose team row is absent, so it resolves to no workspace.</summary>
+        public Issue OrphanedIssue { get; }
 
         /// <summary>The recording store, for tests that assert on stored content.</summary>
         public RecordingArtifactStore Store => (RecordingArtifactStore)store;
@@ -461,10 +491,16 @@ public sealed class ArtifactServiceTests
 
             var issue = MakeIssue("TST-1");
             var otherIssue = MakeIssue("TST-2");
-            db.Issues.AddRange(issue, otherIssue);
+
+            // An issue whose team does not exist: nothing resolves it to a workspace, so every
+            // artifact operation must refuse it rather than treating it as reachable.
+            var orphanedIssue = MakeIssue("ORP-1");
+            orphanedIssue.TeamId = TeamId.New();
+
+            db.Issues.AddRange(issue, otherIssue, orphanedIssue);
             await db.SaveChangesAsync();
 
-            return new ArtifactFixture(connection, db, store ?? new RecordingArtifactStore(), issue, otherIssue);
+            return new ArtifactFixture(connection, db, store ?? new RecordingArtifactStore(), issue, otherIssue, orphanedIssue);
         }
 
         public async ValueTask DisposeAsync()

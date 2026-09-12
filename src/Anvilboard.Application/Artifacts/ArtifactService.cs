@@ -176,9 +176,11 @@ public sealed class ArtifactService(AnvilboardDbContext db, IArtifactStore store
     }
 
     /// <summary>
-    /// Confirms the issue exists and is reachable through its team's workspace. Issues carry no
-    /// workspace of their own, so reachability is resolved through the team join — this is what
-    /// stops a direct CLI or hook caller from addressing another workspace's issue.
+    /// Confirms the issue exists and is reachable through a team. Issues carry no workspace of
+    /// their own, so the team join is what makes an orphaned issue unreachable. It does not scope
+    /// the lookup to a caller's workspace: like <c>IssueService</c> and <c>IssueLinkService</c>,
+    /// this service takes no <c>WorkspaceId</c> and relies on the authorization middleware that
+    /// already ran. Direct CLI/MCP/hook callers are covered by audit findings MAJ-001/MAJ-015.
     /// </summary>
     private async Task EnsureIssueExistsAsync(IssueId issueId, CancellationToken ct)
     {

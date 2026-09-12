@@ -122,12 +122,13 @@ public static class ArtifactEndpoints
             return true;
         }
 
-        if (!Convert.TryFromBase64String(request.ContentBase64, new byte[request.ContentBase64.Length], out _))
+        var buffer = new byte[request.ContentBase64.Length];
+        if (!Convert.TryFromBase64String(request.ContentBase64, buffer, out var bytesWritten))
         {
             return false;
         }
 
-        content = new ArtifactInlineContent(Convert.FromBase64String(request.ContentBase64), request.ContentType);
+        content = new ArtifactInlineContent(buffer[..bytesWritten], request.ContentType);
         return true;
     }
 }
