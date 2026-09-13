@@ -41,6 +41,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped(provider => CorrelationContext.FromHeaderOrNew(
     provider.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request.Headers["X-Correlation-Id"]));
 
+// Resolves route identifiers against the authenticated request's workspace. Scoped because it reads
+// the per-request ActorContext the authorization middleware attached.
+builder.Services.AddScoped<RestWorkspaceScope>();
+
 var app = builder.Build();
 
 // Apply any pending EF Core migrations on startup so a first-run `dotnet run` (or a single
@@ -69,6 +73,10 @@ else
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// Echoes the resolved correlation id on every response, including authentication/authorization
+// denials, which is why it runs ahead of the enforcement point below.
+app.UseMiddleware<CorrelationIdMiddleware>();
+
 // Every route mapped after this point is authenticated by WorkspaceAuthorizationMiddleware (§11.2
 // single enforcement point) unless it explicitly opts out with `.AllowAnonymous()` (bootstrap,
 // login, webhooks, and the SPA fallback route below).
@@ -82,10 +90,12 @@ app.UseMiddleware<DatabaseOperationMiddleware>();
 
 app.MapAuthEndpoints();
 app.MapIssueEndpoints();
+app.MapArtifactEndpoints();
 app.MapTeamEndpoints();
 app.MapDashboardEndpoints();
 app.MapWebhookEndpoints();
 app.MapBackupEndpoints();
+app.MapWorkflowEndpoints();
 
 // Authorized by the same middleware as every REST route, so an unauthenticated client is refused
 // during the negotiate/connect request itself and never observes an established connection. The hub

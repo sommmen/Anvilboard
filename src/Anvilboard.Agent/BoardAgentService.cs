@@ -1,7 +1,11 @@
+using Anvilboard.Agent.Authorization;
+using Anvilboard.Agent.Automation;
+using Anvilboard.Agent.Contracts;
 using Anvilboard.Application.Automation;
 using Anvilboard.Application.Backup;
 using Anvilboard.Application.Dashboard;
 using Anvilboard.Application.Issues;
+using Anvilboard.Application.Workflows;
 using Anvilboard.Domain;
 using DotNetAgentSurface.Core;
 
@@ -16,22 +20,31 @@ namespace Anvilboard.Agent;
 /// scalars, no EF entities) the way <see cref="OperationCatalog.Discover"/>'s reflection-based
 /// binding expects.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Every operation carries a <see cref="RequiresAgentPermissionAttribute"/> and runs only after
+/// <see cref="WorkspaceAuthorizationPolicy"/> has authenticated the host credential and authorized
+/// that permission. Operations therefore never authenticate or authorize themselves — they read
+/// the already-resolved actor from <see cref="AgentActorAccessor"/> and attribute their writes to
+/// it, which is why no operation accepts a caller-supplied workspace or actor id.
+/// </para>
+/// <para>
+/// Mutating operations require an <c>idempotencyKey</c> so an agent retrying after a timeout does
+/// not duplicate work, and every operation returns <see cref="AgentResponse{T}"/> so callers can
+/// see the contract version and correlate the invocation with server-side records.
+/// </para>
+/// </remarks>
 public sealed class BoardAgentService(
     IssueService issues,
     IssueLinkService issueLinks,
     DashboardService dashboard,
     IBackupService backups,
+    IWorkflowService workflow,
+    AgentActorAccessor actors,
+    AgentWorkspaceScope scope,
+    AgentIdempotency idempotency,
     CorrelationContext correlation)
 {
-    /// <summary>
-    /// Actor id for backup/restore audit events raised through this unauthenticated CLI/MCP host
-    /// (`docs/plans/backup-and-restore.md` §11.4: "the current unauthenticated agent host[...]
-    /// non-destructive operations use its configured automation actor ID"). Follows the
-    /// <c>"agent:{name}"</c> actor-id convention already used for automation actors elsewhere (see
-    /// <c>Anvilboard.Application.Tests</c> audit fixtures), rather than inventing a new one.
-    /// </summary>
-    private const string AutomationActorId = "agent:automation";
-
     /// <summary>
     /// This process is both a CLI and an MCP server (see <c>Program.cs</c>), but never both at once
     /// for a single invocation — the transport is fixed for the process's whole lifetime by whether
@@ -46,103 +59,340 @@ public sealed class BoardAgentService(
         Environment.GetCommandLineArgs() is [_, "mcp", ..] ? AuditChannel.Mcp : AuditChannel.Cli;
 
     private BackupOperationContext NewBackupOperationContext() =>
-        new(AutomationActorId, AgentChannel, correlation.CorrelationId);
+        new(AgentActorId.For(actors.Actor), AgentChannel, correlation.CorrelationId);
 
+    private WorkflowOperationContext NewWorkflowOperationContext() =>
+        new(AgentActorId.For(actors.Actor), AgentChannel, correlation.CorrelationId);
+
+    private AgentResponse<T> Ok<T>(T data) => AgentResponse<T>.For(correlation.CorrelationId, data);
 
     [AgentOperation("list-issues", "Lists issues, optionally filtered by team, status, or assignee", Category = "issues", IsIdempotent = true)]
-    public async Task<IReadOnlyList<IssueSummary>> ListIssuesAsync(
+    [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues, Permission.ReadBoard)]
+    public async Task<AgentResponse<IReadOnlyList<IssueSummary>>> ListIssuesAsync(
         Guid? teamId = null, IssueStatus? status = null, Guid? assigneeId = null, CancellationToken cancellationToken = default)
     {
         var results = await issues.ListAsync(
-            teamId is { } t ? new TeamId(t) : null,
+            scope.WorkspaceId,
+            teamId is { } t ? await scope.RequireTeamAsync(t, cancellationToken) : null,
             status,
-            assigneeId is { } a ? new MemberId(a) : null,
+            await scope.RequireMemberAsync(assigneeId, cancellationToken),
             cancellationToken);
-        return [.. results.Select(IssueSummary.FromIssue)];
+        return Ok<IReadOnlyList<IssueSummary>>([.. results.Select(IssueSummary.FromIssue)]);
     }
 
     [AgentOperation("get-issue", "Gets a single issue by id", Category = "issues", IsIdempotent = true)]
-    public async Task<IssueSummary?> GetIssueAsync(Guid issueId, CancellationToken cancellationToken = default)
+    [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues, Permission.ReadBoard)]
+    public async Task<AgentResponse<IssueSummary?>> GetIssueAsync(Guid issueId, CancellationToken cancellationToken = default)
     {
-        var issue = await issues.GetAsync(new IssueId(issueId), cancellationToken);
-        return issue is null ? null : IssueSummary.FromIssue(issue);
+        var id = await scope.RequireIssueAsync(issueId, cancellationToken);
+        var issue = await issues.GetAsync(scope.WorkspaceId, id, cancellationToken);
+        return Ok(issue is null ? null : IssueSummary.FromIssue(issue));
     }
 
-    [AgentOperation("create-issue", "Creates a new issue under a team", Category = "issues", Examples = ["create-issue teamId=... title=\"Forge the anvil\""])]
-    public async Task<IssueSummary> CreateIssueAsync(
+    [AgentOperation("create-issue", "Creates a new issue under a team", Category = "issues",
+        Examples = ["create-issue --teamId \"3f2a...\" --title \"Forge the anvil\" --idempotencyKey \"create-anvil-1\""])]
+    [RequiresAgentPermission(Permission.ReadWriteIssues)]
+    public async Task<AgentResponse<IssueSummary>> CreateIssueAsync(
         Guid teamId,
         string title,
+        string idempotencyKey,
         string? description = null,
         IssuePriority priority = IssuePriority.None,
         Guid? assigneeId = null,
         CancellationToken cancellationToken = default)
     {
-        var issue = await issues.CreateAsync(
-            new TeamId(teamId), title, description, priority, projectId: null,
-            assigneeId is { } a ? new MemberId(a) : null, createdById: null, cancellationToken);
-        return IssueSummary.FromIssue(issue);
+        var summary = await idempotency.ExecuteAsync(
+            "create-issue", idempotencyKey, [teamId, title, description, priority, assigneeId],
+            async (actor, ct) =>
+            {
+                var team = await scope.RequireTeamAsync(teamId, ct);
+                var assignee = await scope.RequireMemberAsync(assigneeId, ct);
+                var issue = await issues.CreateAsync(
+                    scope.WorkspaceId, team, title, description, priority, projectId: null, assignee, actor.MemberId, ct);
+                return IssueSummary.FromIssue(issue);
+            },
+            cancellationToken);
+
+        return Ok(summary);
     }
 
-    [AgentOperation("change-issue-status", "Changes the status of an issue", Category = "issues")]
-    public async Task<IssueSummary> ChangeIssueStatusAsync(Guid issueId, IssueStatus status, CancellationToken cancellationToken = default)
+    [AgentOperation("change-issue-status", "Changes the workflow state of an issue", Category = "issues")]
+    [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues)]
+    public async Task<AgentResponse<IssueSummary>> ChangeIssueStatusAsync(
+        Guid issueId, Guid workflowStateId, string idempotencyKey, CancellationToken cancellationToken = default)
     {
-        var issue = await issues.ChangeStatusAsync(new IssueId(issueId), status, actorId: null, cancellationToken);
-        return IssueSummary.FromIssue(issue);
+        var summary = await idempotency.ExecuteAsync(
+            "change-issue-status", idempotencyKey, [issueId, workflowStateId],
+            async (actor, ct) =>
+            {
+                var id = await scope.RequireIssueAsync(issueId, ct);
+                var targetStateId = await scope.RequireWorkflowStateAsync(workflowStateId, ct);
+                var issue = await issues.ChangeStatusAsync(scope.WorkspaceId, id, targetStateId, actor.MemberId, ct);
+                return IssueSummary.FromIssue(issue);
+            },
+            cancellationToken);
+
+        return Ok(summary);
     }
 
     [AgentOperation("assign-issue", "Assigns (or unassigns, when assigneeId is omitted) an issue", Category = "issues")]
-    public async Task<IssueSummary> AssignIssueAsync(Guid issueId, Guid? assigneeId = null, CancellationToken cancellationToken = default)
+    [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues)]
+    public async Task<AgentResponse<IssueSummary>> AssignIssueAsync(
+        Guid issueId, string idempotencyKey, Guid? assigneeId = null, CancellationToken cancellationToken = default)
     {
-        var issue = await issues.AssignAsync(
-            new IssueId(issueId), assigneeId is { } a ? new MemberId(a) : null, actorId: null, cancellationToken);
-        return IssueSummary.FromIssue(issue);
+        var summary = await idempotency.ExecuteAsync(
+            "assign-issue", idempotencyKey, [issueId, assigneeId],
+            async (actor, ct) =>
+            {
+                var id = await scope.RequireIssueAsync(issueId, ct);
+                var assignee = await scope.RequireMemberAsync(assigneeId, ct);
+                var issue = await issues.AssignAsync(scope.WorkspaceId, id, assignee, actor.MemberId, ct);
+                return IssueSummary.FromIssue(issue);
+            },
+            cancellationToken);
+
+        return Ok(summary);
     }
 
     [AgentOperation("comment-on-issue", "Adds a comment to an issue", Category = "issues")]
-    public async Task<CommentSummary> CommentOnIssueAsync(Guid issueId, string body, CancellationToken cancellationToken = default)
+    [RequiresAgentPermission(Permission.ReadWriteComments)]
+    public async Task<AgentResponse<CommentSummary>> CommentOnIssueAsync(
+        Guid issueId, string body, string idempotencyKey, CancellationToken cancellationToken = default)
     {
-        var comment = await issues.AddCommentAsync(new IssueId(issueId), body, authorId: null, cancellationToken);
-        return new CommentSummary(comment.Id.Value, comment.IssueId.Value, comment.AuthorId?.Value, comment.Body, comment.CreatedAt);
+        var summary = await idempotency.ExecuteAsync(
+            "comment-on-issue", idempotencyKey, [issueId, body],
+            async (actor, ct) =>
+            {
+                var id = await scope.RequireIssueAsync(issueId, ct);
+                var comment = await issues.AddCommentAsync(scope.WorkspaceId, id, body, actor.MemberId, ct);
+                return new CommentSummary(
+                    comment.Id.Value, comment.IssueId.Value, comment.AuthorId?.Value, comment.Body, comment.CreatedAt);
+            },
+            cancellationToken);
+
+        return Ok(summary);
     }
 
     [AgentOperation("dashboard-summary", "Gets aggregate dashboard counts (by status, by source, velocity, workload)", Category = "dashboard", IsIdempotent = true)]
-    public async Task<DashboardSummary> DashboardSummaryAsync(Guid? teamId = null, CancellationToken cancellationToken = default)
+    [RequiresAgentPermission(Permission.ReadDashboard)]
+    public async Task<AgentResponse<DashboardSummary>> DashboardSummaryAsync(Guid? teamId = null, CancellationToken cancellationToken = default)
     {
-        return await dashboard.GetSummaryAsync(teamId is { } t ? new TeamId(t) : null, cancellationToken);
+        var summary = await dashboard.GetSummaryAsync(
+            scope.WorkspaceId,
+            teamId is { } t ? await scope.RequireTeamAsync(t, cancellationToken) : null,
+            cancellationToken);
+        return Ok(summary);
     }
 
     [AgentOperation("list-issue-links", "Lists links involving an issue, in either direction", Category = "issues", IsIdempotent = true)]
-    public async Task<IReadOnlyList<IssueLinkDto>> ListIssueLinksAsync(Guid issueId, CancellationToken cancellationToken = default) =>
-        await issueLinks.ListLinksAsync(new IssueId(issueId), cancellationToken);
+    [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues, Permission.ReadBoard)]
+    public async Task<AgentResponse<IReadOnlyList<IssueLinkDto>>> ListIssueLinksAsync(Guid issueId, CancellationToken cancellationToken = default) =>
+        Ok(await issueLinks.ListLinksAsync(
+            scope.WorkspaceId, await scope.RequireIssueAsync(issueId, cancellationToken), cancellationToken));
 
-    [AgentOperation("create-issue-link", "Creates a directional, typed link from one issue to another", Category = "issues", Examples = ["create-issue-link issueId=... targetIssueId=... type=RELATED"])]
-    public async Task<IssueLinkDto> CreateIssueLinkAsync(
-        Guid issueId, Guid targetIssueId, string type, string? description = null, CancellationToken cancellationToken = default) =>
-        await issueLinks.CreateLinkAsync(new IssueId(issueId), new IssueId(targetIssueId), type, description, actorId: null, cancellationToken);
+    [AgentOperation("create-issue-link", "Creates a directional, typed link from one issue to another", Category = "issues",
+        Examples = ["create-issue-link --issueId \"3f2a...\" --targetIssueId \"9b1c...\" --type \"blocks\" --idempotencyKey \"link-1\""])]
+    [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues)]
+    public async Task<AgentResponse<IssueLinkDto>> CreateIssueLinkAsync(
+        Guid issueId, Guid targetIssueId, string type, string idempotencyKey,
+        string? description = null, CancellationToken cancellationToken = default)
+    {
+        var link = await idempotency.ExecuteAsync(
+            "create-issue-link", idempotencyKey, [issueId, targetIssueId, type, description],
+            async (actor, ct) => await issueLinks.CreateLinkAsync(
+                scope.WorkspaceId,
+                await scope.RequireIssueAsync(issueId, ct),
+                await scope.RequireIssueAsync(targetIssueId, ct),
+                type, description, actor.MemberId, ct),
+            cancellationToken);
+
+        return Ok(link);
+    }
 
     [AgentOperation("remove-issue-link", "Removes a link from an issue", Category = "issues")]
-    public async Task RemoveIssueLinkAsync(Guid issueId, Guid linkId, CancellationToken cancellationToken = default) =>
-        await issueLinks.RemoveLinkAsync(new IssueId(issueId), new IssueLinkId(linkId), actorId: null, cancellationToken);
+    [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues)]
+    public async Task<AgentResponse<LinkRemoval>> RemoveIssueLinkAsync(
+        Guid issueId, Guid linkId, string idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        // Returns a value rather than void so a replay has something to return: the idempotency
+        // protocol stores and replays a serialized result, which a void operation cannot provide.
+        var removal = await idempotency.ExecuteAsync(
+            "remove-issue-link", idempotencyKey, [issueId, linkId],
+            async (actor, ct) =>
+            {
+                var id = await scope.RequireIssueAsync(issueId, ct);
+                await issueLinks.RemoveLinkAsync(scope.WorkspaceId, id, new IssueLinkId(linkId), actor.MemberId, ct);
+                return new LinkRemoval(issueId, linkId);
+            },
+            cancellationToken);
 
-    // `restore` is deliberately not exposed here (`docs/plans/backup-and-restore.md` §9.3): MAJ-015
-    // records that agent/automation operations currently lack workspace-scoped authorization and
-    // actor identity, so exposing an instance-wide destructive operation on this surface would be a
-    // privilege escalation. Revisit once MAJ-015 closes (plan §17 OQ-P3).
+        return Ok(removal);
+    }
+
+    // `restore` is deliberately not exposed here (`docs/plans/agent-surface-authorization.md`
+    // DR-AGT-004). Authorization now exists, so the blocker is no longer identity: restore is an
+    // instance-wide destructive operation that would need `AgentSafetyLevel.Dangerous` plus an
+    // `IConfirmationEnforcingPolicy`, and MCP has no trustworthy interactive confirmation channel —
+    // a client can set the confirmed flag itself, so "confirmation" would be self-attested.
+    // Restore stays a REST-only operation behind an interactive human confirmation.
 
     [AgentOperation("create-backup", "Creates a verified snapshot of the instance database",
-        Category = "backup", Examples = ["create-backup workspaceId=..."])]
-    public async Task<BackupManifest> CreateBackupAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
-        await backups.CreateBackupAsync(new WorkspaceId(workspaceId), NewBackupOperationContext(), cancellationToken);
+        Category = "backup", Examples = ["create-backup"])]
+    [RequiresAgentPermission(Permission.ManageBackupRestore)]
+    public async Task<AgentResponse<BackupManifest>> CreateBackupAsync(CancellationToken cancellationToken = default) =>
+        // The workspace comes from the authenticated actor, never from the caller: accepting a
+        // workspace id here would let any credential operate on any workspace.
+        Ok(await backups.CreateBackupAsync(actors.Actor.WorkspaceId, NewBackupOperationContext(), cancellationToken));
 
     [AgentOperation("list-backups", "Lists available verified backups, newest first",
         Category = "backup", IsIdempotent = true)]
-    public async Task<IReadOnlyList<BackupManifest>> ListBackupsAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
-        await backups.ListBackupsAsync(new WorkspaceId(workspaceId), cancellationToken);
+    [RequiresAgentPermission(Permission.ManageBackupRestore)]
+    public async Task<AgentResponse<IReadOnlyList<BackupManifest>>> ListBackupsAsync(CancellationToken cancellationToken = default) =>
+        Ok(await backups.ListBackupsAsync(actors.Actor.WorkspaceId, cancellationToken));
 
     [AgentOperation("verify-backup", "Verifies a backup's integrity without restoring it",
-        Category = "backup", IsIdempotent = true, Examples = ["verify-backup workspaceId=... backupId=7f3c..."])]
-    public async Task<BackupVerification> VerifyBackupAsync(Guid workspaceId, Guid backupId, CancellationToken cancellationToken = default) =>
-        await backups.VerifyBackupAsync(new WorkspaceId(workspaceId), new BackupArtifactRef(backupId), cancellationToken);
+        Category = "backup", IsIdempotent = true, Examples = ["verify-backup --backupId \"7f3c0c4e-0000-4000-8000-000000000000\""])]
+    [RequiresAgentPermission(Permission.ManageBackupRestore)]
+    public async Task<AgentResponse<BackupVerification>> VerifyBackupAsync(Guid backupId, CancellationToken cancellationToken = default) =>
+        Ok(await backups.VerifyBackupAsync(actors.Actor.WorkspaceId, new BackupArtifactRef(backupId), cancellationToken));
+
+    // Workflow configuration (`docs/plans/workflow-admin-surface.md` §9.3). Unlike restore, these
+    // are exposed to CLI/MCP: they are workspace-scoped, reversible, and validated the same way for
+    // every adapter, so withholding them would only push an agent into direct SQL (DR-WFA-002).
+    [AgentOperation("list-workflow-states", "Lists the workspace's workflow states in board order",
+        Category = "workflow", IsIdempotent = true, Examples = ["list-workflow-states --includeArchived true"])]
+    [RequiresAgentPermission(Permission.ManageWorkflowStates, Permission.ReadBoard)]
+    public async Task<AgentResponse<IReadOnlyList<WorkflowStateDto>>> ListWorkflowStatesAsync(
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default) =>
+        Ok(await workflow.ListWorkflowStatesAsync(actors.Actor.WorkspaceId, includeArchived, cancellationToken));
+
+    [AgentOperation("list-workflow-transitions", "Lists the workspace's allowed workflow transitions",
+        Category = "workflow", IsIdempotent = true)]
+    [RequiresAgentPermission(Permission.ManageWorkflowStates, Permission.ReadBoard)]
+    public async Task<AgentResponse<IReadOnlyList<WorkflowTransitionDto>>> ListWorkflowTransitionsAsync(
+        CancellationToken cancellationToken = default) =>
+        Ok(await workflow.ListWorkflowTransitionsAsync(actors.Actor.WorkspaceId, cancellationToken));
+
+    [AgentOperation("create-workflow-state", "Creates a workflow state", Category = "workflow",
+        Examples = ["create-workflow-state --key \"qa_review\" --displayName \"QA review\" --order 3 --idempotencyKey \"add-qa-1\""])]
+    [RequiresAgentPermission(Permission.ManageWorkflowStates)]
+    public async Task<AgentResponse<WorkflowStateDto>> CreateWorkflowStateAsync(
+        string key,
+        string displayName,
+        string idempotencyKey,
+        int order = 0,
+        bool isTerminal = false,
+        CancellationToken cancellationToken = default)
+    {
+        var state = await idempotency.ExecuteAsync(
+            "create-workflow-state", idempotencyKey, [key, displayName, order, isTerminal],
+            (_, ct) => workflow.CreateWorkflowStateAsync(
+                scope.WorkspaceId, key, displayName, order, isTerminal, NewWorkflowOperationContext(), ct),
+            cancellationToken);
+
+        return Ok(state);
+    }
+
+    [AgentOperation("update-workflow-state", "Updates a workflow state's display name, order, or terminal flag",
+        Category = "workflow",
+        Examples = ["update-workflow-state --stateId \"7f3c0c4e-0000-4000-8000-000000000000\" --order 4 --idempotencyKey \"reorder-qa-1\""])]
+    [RequiresAgentPermission(Permission.ManageWorkflowStates)]
+    public async Task<AgentResponse<WorkflowStateDto>> UpdateWorkflowStateAsync(
+        Guid stateId,
+        string idempotencyKey,
+        string? displayName = null,
+        int? order = null,
+        bool? isTerminal = null,
+        CancellationToken cancellationToken = default)
+    {
+        var state = await idempotency.ExecuteAsync(
+            "update-workflow-state", idempotencyKey, [stateId, displayName, order, isTerminal],
+            async (_, ct) =>
+            {
+                var id = await scope.RequireWorkflowStateAsync(stateId, ct);
+                return await workflow.UpdateWorkflowStateAsync(
+                    scope.WorkspaceId, id, displayName, order, isTerminal, NewWorkflowOperationContext(), ct: ct);
+            },
+            cancellationToken);
+
+        return Ok(state);
+    }
+
+    [AgentOperation("archive-workflow-state", "Archives a workflow state, optionally reassigning its issues",
+        Category = "workflow",
+        Examples = ["archive-workflow-state --stateId \"7f3c...\" --replacementStateId \"8a1d...\" --idempotencyKey \"retire-hold-1\""])]
+    [RequiresAgentPermission(Permission.ManageWorkflowStates)]
+    public async Task<AgentResponse<WorkflowStateArchival>> ArchiveWorkflowStateAsync(
+        Guid stateId,
+        string idempotencyKey,
+        Guid? replacementStateId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var archival = await idempotency.ExecuteAsync(
+            "archive-workflow-state", idempotencyKey, [stateId, replacementStateId],
+            async (_, ct) =>
+            {
+                var id = await scope.RequireWorkflowStateAsync(stateId, ct);
+                var replacement = replacementStateId is { } value
+                    ? await scope.RequireWorkflowStateAsync(value, ct)
+                    : (WorkflowStateId?)null;
+
+                await workflow.ArchiveWorkflowStateAsync(
+                    scope.WorkspaceId, id, replacement, NewWorkflowOperationContext(), ct);
+                return new WorkflowStateArchival(stateId, replacementStateId);
+            },
+            cancellationToken);
+
+        return Ok(archival);
+    }
+
+    [AgentOperation("create-workflow-transition", "Allows issues to move between two workflow states",
+        Category = "workflow",
+        Examples = ["create-workflow-transition --fromStateId \"7f3c...\" --toStateId \"8a1d...\" --idempotencyKey \"allow-qa-1\""])]
+    [RequiresAgentPermission(Permission.ManageWorkflowStates)]
+    public async Task<AgentResponse<WorkflowTransitionDto>> CreateWorkflowTransitionAsync(
+        Guid fromStateId,
+        Guid toStateId,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default)
+    {
+        var transition = await idempotency.ExecuteAsync(
+            "create-workflow-transition", idempotencyKey, [fromStateId, toStateId],
+            async (_, ct) =>
+            {
+                var from = await scope.RequireWorkflowStateAsync(fromStateId, ct);
+                var to = await scope.RequireWorkflowStateAsync(toStateId, ct);
+                return await workflow.CreateWorkflowTransitionAsync(
+                    scope.WorkspaceId, from, to, NewWorkflowOperationContext(), ct);
+            },
+            cancellationToken);
+
+        return Ok(transition);
+    }
+
+    [AgentOperation("remove-workflow-transition", "Removes an allowed workflow transition",
+        Category = "workflow",
+        Examples = ["remove-workflow-transition --transitionId \"7f3c...\" --idempotencyKey \"deny-qa-1\""])]
+    [RequiresAgentPermission(Permission.ManageWorkflowStates)]
+    public async Task<AgentResponse<WorkflowTransitionRemoval>> RemoveWorkflowTransitionAsync(
+        Guid transitionId,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default)
+    {
+        var removal = await idempotency.ExecuteAsync(
+            "remove-workflow-transition", idempotencyKey, [transitionId],
+            async (_, ct) =>
+            {
+                var id = await scope.RequireWorkflowTransitionAsync(transitionId, ct);
+                await workflow.RemoveWorkflowTransitionAsync(
+                    scope.WorkspaceId, id, NewWorkflowOperationContext(), ct);
+                return new WorkflowTransitionRemoval(transitionId);
+            },
+            cancellationToken);
+
+        return Ok(removal);
+    }
 }
 
 public sealed record IssueSummary(
@@ -152,6 +402,7 @@ public sealed record IssueSummary(
     string Title,
     string? Description,
     IssueStatus Status,
+    Guid WorkflowStateId,
     IssuePriority Priority,
     Guid? AssigneeId,
     IntegrationProvider Source,
@@ -161,8 +412,20 @@ public sealed record IssueSummary(
 {
     public static IssueSummary FromIssue(Issue issue) => new(
         issue.Id.Value, issue.TeamId.Value, issue.Key, issue.Title, issue.Description,
-        issue.Status, issue.Priority, issue.AssigneeId?.Value, issue.Source,
+        issue.Status, issue.WorkflowStateId.Value, issue.Priority, issue.AssigneeId?.Value, issue.Source,
         issue.CreatedAt, issue.UpdatedAt, issue.CompletedAt);
 }
 
 public sealed record CommentSummary(Guid Id, Guid IssueId, Guid? AuthorId, string Body, DateTimeOffset CreatedAt);
+
+/// <summary>Confirmation that a link was removed, so the removal has a replayable result.</summary>
+public sealed record LinkRemoval(Guid IssueId, Guid LinkId);
+
+/// <summary>
+/// Confirmation that a state was archived. The service returns nothing, but an agent operation must
+/// yield a replayable value so an idempotent retry can return the first attempt's result.
+/// </summary>
+public sealed record WorkflowStateArchival(Guid StateId, Guid? ReplacementStateId);
+
+/// <summary>Confirmation that a transition was removed, for the same replayability reason.</summary>
+public sealed record WorkflowTransitionRemoval(Guid TransitionId);

@@ -1,3 +1,4 @@
+using Anvilboard.Application.Issues;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -12,9 +13,14 @@ namespace Anvilboard.Application.Dashboard;
 /// </summary>
 public sealed class DashboardService(AnvilboardDbContext db)
 {
-    public async Task<DashboardSummary> GetSummaryAsync(TeamId? teamId = null, CancellationToken ct = default)
+    public async Task<DashboardSummary> GetSummaryAsync(
+        WorkspaceId workspaceId,
+        TeamId? teamId = null,
+        CancellationToken ct = default)
     {
-        var query = db.Issues.AsNoTracking().AsQueryable();
+        // Scoped before the optional team filter, so an omitted `teamId` narrows to the workspace
+        // rather than widening to every issue on the host.
+        var query = db.Issues.AsNoTracking().InWorkspace(db, workspaceId);
         if (teamId is { } team) query = query.Where(i => i.TeamId == team);
 
         // Materialized once and aggregated in memory: SQLite's EF provider cannot translate several

@@ -8,10 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="coverlet.collector" Version="10.0.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,6 +20,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Anvilboard.Agent\Anvilboard.Agent.csproj" />
+    <!-- The authorization tests exercise the real DI graph against a real SQLite file: a fake
+         authorization service could not prove that a denied invocation never reaches the database. -->
+    <ProjectReference Include="..\Anvilboard.Infrastructure\Anvilboard.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
