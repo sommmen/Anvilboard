@@ -22,7 +22,7 @@ public static class ErrorCatalogTranslator
         WorkspaceAuthorizationException e => Build(e.ErrorCode, correlationId, e.Message),
         IssueLinkException e => Build(e.ErrorCode, correlationId, e.Message),
         WorkflowTransitionDeniedException e => Build(e.ErrorCode, correlationId, e.Message),
-        WorkflowValidationException e => Build(WorkflowValidationException.ErrorCode, correlationId, e.Message),
+        WorkflowValidationException e => Build(e.ErrorCode, correlationId, e.Message),
         IdempotencyKeyReusedException e => Build(IdempotencyKeyReusedException.ErrorCode, correlationId, e.Message),
 
         // Never a documented contract value (§7.7); logged only, not part of the public catalog.

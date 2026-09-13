@@ -2,13 +2,11 @@ import { Component, effect, inject, input, output, signal } from '@angular/core'
 import { BoardApiService } from '../../core/board-api.service';
 import {
   Comment,
-  ISSUE_STATUSES,
-  ISSUE_STATUS_LABEL,
   Issue,
   IssueLink,
   IssueLinkDirection,
-  IssueStatus,
   PROVIDER_LABEL,
+  WorkflowState,
 } from '../../core/models';
 
 /** Suggested vocabulary only — Type is never server-validated beyond non-empty (FR-LNK-001 AC1). */
@@ -27,8 +25,7 @@ export class IssueDetail {
   readonly closed = output<void>();
   readonly changed = output<void>();
 
-  readonly statuses = ISSUE_STATUSES;
-  readonly statusLabels = ISSUE_STATUS_LABEL;
+  readonly workflowStates = signal<WorkflowState[]>([]);
   readonly providerLabels = PROVIDER_LABEL;
   readonly linkDirections = IssueLinkDirection;
   readonly suggestedLinkTypes = SUGGESTED_LINK_TYPES;
@@ -49,10 +46,11 @@ export class IssueDetail {
       this.refreshLinks(issueId);
     });
     this.api.listIssues().subscribe((issues) => this.linkableIssues.set(issues));
+    this.api.listWorkflowStates().subscribe((states) => this.workflowStates.set(states));
   }
 
-  changeStatus(status: IssueStatus): void {
-    this.api.changeStatus(this.issue().id, status).subscribe(() => this.changed.emit());
+  changeStatus(workflowStateId: string): void {
+    this.api.changeStatus(this.issue().id, workflowStateId).subscribe(() => this.changed.emit());
   }
 
   submitComment(): void {

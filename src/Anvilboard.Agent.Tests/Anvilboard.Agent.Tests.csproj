@@ -20,6 +20,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Anvilboard.Agent\Anvilboard.Agent.csproj" />
+    <!-- The authorization tests exercise the real DI graph against a real SQLite file: a fake
+         authorization service could not prove that a denied invocation never reaches the database. -->
+    <ProjectReference Include="..\Anvilboard.Infrastructure\Anvilboard.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

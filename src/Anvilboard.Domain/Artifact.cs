@@ -11,8 +11,8 @@ public sealed class Artifact
     public ArtifactId Id { get; init; }
     public required IssueId IssueId { get; init; }
     public required ArtifactKind Kind { get; init; }
-    public required string Title { get; init; }
-    public required string ContentReference { get; init; }
+    public required string Title { get; set; }
+    public required string ContentReference { get; set; }
 
     /// <summary>"local" for manually-attached artifacts, or the originating integration/hook key
     /// (e.g. "slack-thread-expansion", "github") for automation-attached ones.</summary>
@@ -29,10 +29,13 @@ public sealed class Artifact
     /// <summary>Opaque JSON key-value bag populated only for refreshable kinds (currently
     /// <see cref="ArtifactKind.PullRequest"/>: number/state/checksStatus); never inspected by
     /// <c>IArtifactStore</c>.</summary>
-    public string? Metadata { get; init; }
+    public string? Metadata { get; set; }
 
+    /// <summary>Set once when the artifact is attached; refreshing an existing artifact preserves
+    /// it, so the original attachment time is never lost to a provider update.</summary>
     public DateTimeOffset CreatedAt { get; init; }
-    public DateTimeOffset UpdatedAt { get; init; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 /// <summary>
