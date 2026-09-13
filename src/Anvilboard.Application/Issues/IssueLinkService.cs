@@ -12,6 +12,7 @@ namespace Anvilboard.Application.Issues;
 public sealed class IssueLinkService(AnvilboardDbContext db)
 {
     public async Task<IssueLinkDto> CreateLinkAsync(
+        WorkspaceId workspaceId,
         IssueId sourceIssueId,
         IssueId targetIssueId,
         string type,
@@ -29,14 +30,16 @@ public sealed class IssueLinkService(AnvilboardDbContext db)
             throw new IssueLinkException("VALIDATION_FAILED", "Link type must not be empty.");
         }
 
-        var issues = await db.Issues
+        // Scoping both endpoints to the *caller's* workspace, not merely to each other: comparing
+        // the two issues' workspaces alone would still let a caller link two issues that both
+        // belong to some third tenant.
+        var reachableIds = await db.Issues.AsNoTracking()
+            .InWorkspace(db, workspaceId)
             .Where(issue => issue.Id == sourceIssueId || issue.Id == targetIssueId)
-            .Join(db.Teams, issue => issue.TeamId, team => team.Id, (issue, team) => new { issue.Id, team.WorkspaceId })
+            .Select(issue => issue.Id)
             .ToListAsync(ct);
 
-        var sourceWorkspaceId = issues.SingleOrDefault(issue => issue.Id == sourceIssueId)?.WorkspaceId;
-        var targetWorkspaceId = issues.SingleOrDefault(issue => issue.Id == targetIssueId)?.WorkspaceId;
-        if (sourceWorkspaceId is null || targetWorkspaceId is null || sourceWorkspaceId != targetWorkspaceId)
+        if (!reachableIds.Contains(sourceIssueId) || !reachableIds.Contains(targetIssueId))
         {
             throw new IssueLinkException("REFERENCED_ENTITY_NOT_FOUND", "Both issues must exist in the same workspace.");
         }
@@ -65,8 +68,11 @@ public sealed class IssueLinkService(AnvilboardDbContext db)
         return IssueLinkDto.FromLink(link, IssueLinkDirection.Outgoing);
     }
 
-    public async Task<IReadOnlyList<IssueLinkDto>> ListLinksAsync(IssueId issueId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IssueLinkDto>> ListLinksAsync(
+        WorkspaceId workspaceId, IssueId issueId, CancellationToken ct = default)
     {
+        await RequireIssueInWorkspaceAsync(workspaceId, issueId, ct);
+
         var links = await db.IssueLinks.AsNoTracking()
             .Where(link => link.SourceIssueId == issueId || link.TargetIssueId == issueId)
             .ToListAsync(ct);
@@ -78,8 +84,11 @@ public sealed class IssueLinkService(AnvilboardDbContext db)
             .ToList();
     }
 
-    public async Task RemoveLinkAsync(IssueId issueId, IssueLinkId linkId, MemberId? actorId = null, CancellationToken ct = default)
+    public async Task RemoveLinkAsync(
+        WorkspaceId workspaceId, IssueId issueId, IssueLinkId linkId, MemberId? actorId = null, CancellationToken ct = default)
     {
+        await RequireIssueInWorkspaceAsync(workspaceId, issueId, ct);
+
         var link = await db.IssueLinks.FirstOrDefaultAsync(candidate => candidate.Id == linkId, ct);
         if (link is null || (link.SourceIssueId != issueId && link.TargetIssueId != issueId))
         {
@@ -89,6 +98,22 @@ public sealed class IssueLinkService(AnvilboardDbContext db)
         db.IssueLinks.Remove(link);
         await RecordActivityAsync(issueId, ActivityEventType.IssueLinkRemoved, actorId, link, ct);
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Fails with the same "not found" code whether the issue is foreign or absent, so link routes
+    /// cannot be used to probe for the existence of another workspace's issue ids.
+    /// </summary>
+    private async Task RequireIssueInWorkspaceAsync(WorkspaceId workspaceId, IssueId issueId, CancellationToken ct)
+    {
+        var exists = await db.Issues.AsNoTracking()
+            .InWorkspace(db, workspaceId)
+            .AnyAsync(issue => issue.Id == issueId, ct);
+
+        if (!exists)
+        {
+            throw new IssueLinkException("REFERENCED_ENTITY_NOT_FOUND", "The issue was not found in this workspace.");
+        }
     }
 
     private async Task RecordActivityAsync(

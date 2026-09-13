@@ -58,6 +58,15 @@ export const PROVIDER_LABEL: Record<number, string> = {
   [IntegrationProvider.Custom]: 'Custom',
 };
 
+export interface WorkflowState {
+  id: string;
+  key: string;
+  displayName: string;
+  order: number;
+  isTerminal: boolean;
+  isArchived: boolean;
+}
+
 export interface Team {
   id: string;
   workspaceId: string;
@@ -84,6 +93,7 @@ export interface Issue {
   title: string;
   description?: string | null;
   status: IssueStatus;
+  workflowStateId: string;
   /** Optimistic-concurrency version; realtime clients compare it to detect a missed change. */
   version: number;
   priority: IssuePriority;

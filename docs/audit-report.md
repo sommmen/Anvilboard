@@ -1,10 +1,10 @@
 # Documentation Audit Report
 
 > Project: Anvilboard
-> Audited: 2025 (this session)
-> Scope: Full — `docs/anvilboard/*`, `docs/features/*`, `docs/project-anvilboard.md`, root-level docs (`README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CHANGELOG.md`, `SPEC.md`, `FUNCTIONAL_SPEC.md`, `PLUGINS.md`)
-> Documents reviewed: 23
-> Code alignment: Yes — cross-referenced against `src/` (.NET 10 solution, `Anvilboard.slnx`) and `src/anvilboard-web` (Angular), plus a full `dotnet test Anvilboard.slnx --configuration Release` run
+> Audited: initial full pass, then re-verified against the code after the backup/restore, realtime, artifact, and agent-authorization work landed
+> Scope: Full — `docs/anvilboard/*`, `docs/features/*`, `docs/plans/*`, `docs/project-anvilboard.md`, `ideas/anvilboard/draft.md`, root-level docs (`README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CHANGELOG.md`, `SPEC.md`, `FUNCTIONAL_SPEC.md`, `PLUGINS.md`)
+> Documents reviewed: 29 Markdown documents in the declared scope
+> Code alignment: Yes — cross-referenced against `src/` (.NET 10 solution, `Anvilboard.slnx`) and `src/anvilboard-web` (Angular). Latest verification: **394 populated .NET tests passing, 0 failing** (Application 221, Agent 52, Infrastructure 41, API 63, GitHub 12, Linear 5), plus a successful Angular production build.
 
 ## Executive Summary
 
@@ -15,8 +15,9 @@ not structure but **currency**: several of the most-read documents (`docs/anvilb
 §16 milestone table, `docs/anvilboard/test-cases.md`, most of `docs/features/*.md`) were written as
 target-state / pre-implementation documents and were never updated as real code landed. Before this
 audit, `tech-design.md` §16 marked **every** milestone "Not Started" even though M1–M4.5 and parts of
-M5–M6.7 are substantially implemented and covered by 114 passing automated tests across 6 populated
-xUnit test projects; `test-cases.md` claimed there were **zero** automated test projects at all.
+M5–M6.7 are substantially implemented and covered by passing automated tests across 6 populated
+xUnit test projects (114 at the time of the first pass, **394** as of the latest re-verification);
+`test-cases.md` claimed there were **zero** automated test projects at all.
 
 The audit updated the doc/implementation-status claims across all 9 feature docs, the
 `docs/features/overview.md` index, the `tech-design.md` §16 milestone table, and the factual
@@ -27,9 +28,9 @@ The most significant *implementation* gaps this audit surfaced (not fixed, per t
 decision for this task) are: no backup/restore capability exists despite being specified as a
 Critical requirement (FR-OPS-002 / NFR-AVL-001), the entire realtime-updates feature (FR-WRK-014,
 SignalR/WebSocket push) is unimplemented, and there is no dedicated `ArtifactService` application
-layer even though artifacts are otherwise persisted and exposed. *(Of these three, realtime-updates
-and backup/restore have since been implemented — see CRIT-002 and CRIT-001 below. Only CRIT-003
-remains open.)* Workspace authorization,
+layer even though artifacts are otherwise persisted and exposed. *(All three have since been
+implemented — see CRIT-001, CRIT-002, and CRIT-003 below. No Critical finding remains open.)*
+Workspace authorization,
 workflow-engine administration, agent-surface identity/idempotency wiring, and sync health/backoff
 also have real, evidenced gaps relative to their specs. These are enumerated below as Critical/Major
 findings for a future implementation pass; per this task's instructions they were **flagged, not
@@ -40,8 +41,8 @@ fixed**.
 | Severity | Count | Categories |
 |----------|-------|------------|
 | Critical |   3   | audit-and-recovery (backup/restore missing — **since resolved**), realtime-updates (entire feature unimplemented — **since resolved**), artifacts (no ArtifactService) |
-| Major    |  21   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap |
-| Minor    |   6   | README Kanban-column wording, PLUGINS.md staleness, workflow-engine API versioning, manifest validation, extra undocumented agent tools, IArtifactStore sole-caller claim |
+| Major    |  22   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap (**resolved**: MAJ-001, MAJ-002 audit correction, MAJ-015–MAJ-017, MAJ-019, MAJ-021, MAJ-022 REST/application workspace scoping) |
+| Minor    |   7   | PLUGINS.md staleness, workflow-engine API versioning, manifest validation (**open**); README Kanban-column wording, extra undocumented agent tools, IArtifactStore sole-caller claim, post-implementation doc drift (**resolved**: MIN-001, MIN-005, MIN-006, MIN-007) |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
 
 ## Document Health Matrix
@@ -52,8 +53,10 @@ fixed**.
 | `docs/anvilboard/srs.md` | A | B | A | C | B |
 | `docs/anvilboard/tech-design.md` | A | B (body) / D (§16 table, now corrected) | A | C (now corrected to B) | B |
 | `docs/anvilboard/test-cases.md` | B | D — claimed zero test projects (now corrected) | B | D (now corrected to B) | C |
-| `docs/features/*.md` (9 files) | A | C — several overstated "Implemented" claims (now corrected) | A | C (now corrected to B) | B |
-| `README.md` / `DEVELOPMENT.md` / `CONTRIBUTING.md` / `AGENTS.md` | A | A (one Minor wording nuance) | A | A | A |
+| `docs/features/*.md` (9 component specs + `overview.md`) | A | C — several overstated "Implemented" claims (now corrected) | A | C (now corrected to B) | B |
+| `README.md` / `AGENTS.md` | A | A (one Minor wording nuance) | A | A | A |
+| `DEVELOPMENT.md` / `CONTRIBUTING.md` | A | B — test-project descriptions and "no automated test suite yet" claims went stale as coverage grew (now corrected) | A | C (now corrected to A) | A |
+| `docs/plans/*.md` | A | B — `backup-and-restore.md` still said "Plan — not yet implemented" after shipping (now corrected) | A | B (now corrected to A) | A |
 | `SPEC.md` / `FUNCTIONAL_SPEC.md` / `PLUGINS.md` | — | — (self-declared historical/superseded) | A | PLUGINS.md has stale PoC-era code references (Minor) | — |
 
 ## Critical Findings
@@ -111,7 +114,20 @@ fixed**.
 - **Impact**: Clients must poll or manually refresh; documented low-latency collaboration behavior does not exist. NFR-PERF-002 (push latency) is not evidenced because the feature doesn't exist to measure.
 - **Fix**: Either implement a SignalR-based push layer per the spec, or explicitly re-scope `docs/features/realtime-updates.md` and the SRS requirement as a future milestone (not "in progress").
 
-### CRIT-003: No dedicated `ArtifactService` application layer (FR-ART-001)
+### CRIT-003: No dedicated `ArtifactService` application layer (FR-ART-001) — **RESOLVED**
+
+> **Resolved.** `src/Anvilboard.Application/Artifacts/` now contains
+> `IArtifactService`/`ArtifactService` implementing attach, list, dedup-key
+> upsert/refresh, and remove, as designed in
+> [`docs/plans/artifact-service.md`](./plans/artifact-service.md). The service is the
+> sole writer of the `Artifacts` table and the sole caller of `IArtifactStore`
+> (which itself was previously never registered in DI — fixed here), emits
+> `ArtifactAttached`/`ArtifactRefreshed`/`ArtifactRemoved` activity events, and is
+> exposed over REST via `ArtifactEndpoints`. Covered by 21 service tests and 6 API
+> tests. The remaining `IIssueHook` artifact-*expansion* path is tracked separately
+> under MAJ-020 and `integration-and-plugin-platform`; `RefreshArtifactAsync` — the
+> seam that path consumes — exists and is tested.
+
 - **Location**: `docs/features/artifacts.md`; `docs/anvilboard/srs.md` FR-ART-001, FR-ART-002; `docs/anvilboard/tech-design.md` §16 row M6.7
 - **Issue**: The spec describes an `ArtifactService` responsible for artifact upsert/refresh semantics and lifecycle-hook-driven artifact expansion (e.g., turning a GitHub PR reference into a correlated, refreshable artifact). Only a lower-level `IArtifactStore`-style persistence path was found; no application service implementing upsert/refresh semantics or lifecycle-hook artifact expansion exists.
 - **Evidence**: Direct file search of `src/Anvilboard.Application` and `src/Anvilboard.Infrastructure` finds artifact persistence/DTO types but no `ArtifactService` class implementing the documented refresh/upsert contract; no lifecycle-hook (`IIssueHook`) implementation performs artifact expansion.
@@ -120,40 +136,57 @@ fixed**.
 
 ## Major Findings
 
-### MAJ-001: Workspace authorization only enforced at the REST boundary
-- **Location**: `docs/features/workspace-authorization.md`
-- **Issue**: The spec's "single enforcement point" framing implies all surfaces (REST, CLI, MCP) are protected identically. Only REST middleware was found enforcing workspace authorization; CLI and MCP adapters do not appear to route through the same enforcement path.
-- **Evidence**: `WorkspaceAuthorizationService` and its REST middleware integration are implemented and tested (`WorkspaceAuthorizationServiceTests.cs`), but no equivalent enforcement call was found in the CLI/MCP adapter code paths.
-- **Impact**: CLI/MCP callers may bypass workspace-scoped authorization checks that REST callers cannot.
-- **Fix**: Route CLI/MCP command execution through the same authorization service/middleware as REST, or clearly document the current REST-only enforcement scope as an interim limitation.
+### MAJ-001: Workspace authorization only enforced at the REST boundary — **RESOLVED**
 
-### MAJ-002: Credential/session revocation is not admin-triggerable
-- **Location**: `docs/features/workspace-authorization.md`
-- **Issue**: Spec describes an administrator-triggered revocation flow. No such admin-facing revocation endpoint/command was found.
-- **Evidence**: No revocation endpoint in the REST API surface; no matching CLI/MCP command.
-- **Impact**: Administrators cannot proactively revoke a compromised credential/session; they must wait for natural expiry.
-- **Fix**: Add an admin revocation endpoint (and audit-event emission on use) or scope the spec down to "expiry-based" revocation only until implemented.
+> **Resolved.** CLI and MCP now execute every operation through `WorkspaceAuthorizationPolicy`,
+> which authenticates the configured automation credential, intersects credential grants with the
+> actor's current workspace role, and establishes the authenticated workspace/actor context inside
+> a per-invocation dependency-injection scope. `AgentWorkspaceScope` additionally rejects supplied
+> team, issue, and member IDs outside that workspace and constrains unfiltered issue/dashboard
+> reads. Integration coverage exercises missing, invalid, expired, under-permissioned, and foreign-
+> workspace calls. MAJ-022 separately records the pre-existing REST/application query-scoping gap.
 
-### MAJ-003: No admin transition CRUD surface for the workflow engine
+### MAJ-002: Credential/session revocation is not admin-triggerable — **RESOLVED (AUDIT CORRECTION)**
+
+> **Resolved before this finding was written.** The original audit missed both
+> `WorkspaceAuthorizationService.RevokeCredentialAsync` and
+> `DELETE /api/auth/credentials/{id:guid}`. Together they provide the documented administrator-
+> triggered revocation path and persist the revocation state used by subsequent authentication.
+> No implementation change was required; this status corrects stale audit evidence.
+
+### MAJ-003: No admin transition CRUD surface for the workflow engine — **RESOLVED**
+
+> **Resolved.** Workspace-scoped REST and CLI/MCP operations now list, create, and remove directed workflow transitions. The application service rejects self-loops, duplicates, missing endpoints, and archived endpoints; integration tests cover adapter authorization and persistence behavior.
+
 - **Location**: `docs/features/workflow-engine.md`
 - **Issue**: The spec describes admin-manageable workflow transitions (create/update/delete valid state transitions). No REST/CLI/MCP surface for managing transitions was found; transitions appear to be seeded via migration only.
 - **Evidence**: `WorkflowState.cs` domain model is configurable, but no controller/command exposes transition management; only the seed migration (`20260908093300_AddWorkflowStates.cs`) populates data.
 - **Impact**: Workflow customization described as a core capability is not actually usable by administrators today.
 - **Fix**: Implement transition CRUD endpoints, or mark this as a target-state capability in the spec until built.
+- **Correction**: transitions are also seeded per workspace at bootstrap by `WorkspaceAuthorizationService.CreateDefaultWorkflowTransitions`, not by the migration alone. The finding stands — no *runtime* path creates or removes a transition.
+- **Plan**: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md) — covers MAJ-003, MAJ-004, and MAJ-005 together, since all three are the same missing seam around an already-implemented validation core.
 
-### MAJ-004: No workflow config-management surface (REST/CLI/MCP)
+### MAJ-004: No workflow config-management surface (REST/CLI/MCP) — **RESOLVED**
+
+> **Resolved.** Administrators can list, create, update, and archive workflow states through `/api/workflow` and the matching `workflow` agent operations. Keys are immutable, archived states are hidden by default, dependent issues require a valid replacement, and every identifier is resolved inside the authenticated workspace.
+
 - **Location**: `docs/features/workflow-engine.md`
 - **Issue**: Related to MAJ-003 — beyond transitions, there is no general workflow configuration management surface across any adapter.
-- **Evidence**: Same code search as MAJ-003; no controller/command/tool found.
+- **Evidence**: Same code search as MAJ-003; no controller/command/tool found. Re-verified at commit `4de5442`: `IWorkflowService` declares only `ValidateTransitionAsync`, `CreateWorkflowStateAsync`, and `ArchiveWorkflowStateAsync`, and `Permission.ManageWorkflowStates` is referenced by zero handlers.
 - **Impact**: Same as MAJ-003.
 - **Fix**: Same as MAJ-003.
+- **Plan**: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md).
 
-### MAJ-005: Workflow mutations do not emit audit events
+### MAJ-005: Workflow mutations do not emit audit events — **RESOLVED**
+
+> **Resolved.** `WorkflowEngine` emits service-owned state/transition success and rejection events with actor, channel, correlation, workspace, target, and mutation-specific detail. Service ownership keeps REST and agent audit semantics identical and records issue reassignment counts during archival.
+
 - **Location**: `docs/features/workflow-engine.md`; cross-reference `docs/features/audit-and-recovery.md`
 - **Issue**: Spec requires every workflow-affecting mutation to produce an audit trail entry. Workflow state/transition mutations were not found to emit `ActivityEvent`/audit records.
-- **Evidence**: Symbolic search for audit-event emission calls near workflow mutation code paths found none, in contrast to issue mutations which do emit audit events.
+- **Evidence**: Symbolic search for audit-event emission calls near workflow mutation code paths found none, in contrast to issue mutations which do emit audit events. Re-verified at commit `4de5442`: `WorkflowEngine(AnvilboardDbContext db)` takes no `IAuditService`, so no emission is structurally possible.
 - **Impact**: Workflow configuration changes are not traceable, undermining the audit/recovery story for compliance-sensitive changes.
 - **Fix**: Emit an audit/activity event on every workflow configuration mutation, consistent with issue mutation behavior.
+- **Plan**: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md).
 
 ### MAJ-006: Threaded comments are specified but implementation is flat
 - **Location**: `docs/features/issue-board-service.md`, `docs/features/issue-linking.md`
@@ -219,26 +252,30 @@ fixed**.
 - **Fix**: Implement an outbound plugin event-dispatch mechanism (may share infrastructure with the realtime-updates work in CRIT-002).
 - **Status**: Still open, but narrowed. CRIT-002's `IPluginEventPublisher`/`PluginEventRelay` carries events *from* a plugin *to* clients; this finding is the opposite direction — the core notifying plugins — and no such dispatch exists yet.
 
-### MAJ-015: Agent/automation operations lack workspace-scoped auth and actor identity
-- **Location**: `docs/features/agent-and-automation-surface.md`
-- **Issue**: Agent-surface operations (MCP tools, automation credentials) do not appear to route through `WorkspaceAuthorizationService`, and mutations performed via the agent surface do not carry a distinct actor identity separate from a generic "automation" actor.
-- **Evidence**: Agent tool implementations inspected show no authorization-service calls; audit events emitted from agent-triggered mutations do not appear to disambiguate which automation/credential performed the action.
-- **Impact**: The agent surface is effectively unauthenticated/unauthorized relative to workspace boundaries, and audit trails cannot attribute agent actions to a specific credential — both are security/compliance gaps.
-- **Fix**: Route agent tool execution through workspace authorization and stamp audit events with the specific automation credential identity.
+### MAJ-015: Agent/automation operations lack workspace-scoped auth and actor identity — **RESOLVED**
 
-### MAJ-016: Idempotency service not wired through the agent surface
-- **Location**: `docs/features/agent-and-automation-surface.md`
-- **Issue**: An idempotency mechanism (`IdempotencyRecord`/idempotency-key handling) is specified for agent/automation calls to make retries safe, but the agent-surface tool handlers do not appear to check/record idempotency keys.
-- **Evidence**: Idempotency types exist in the codebase, but agent tool call sites were not found to reference them.
-- **Impact**: Automation clients that retry a call (e.g., after a timeout) risk duplicate side effects.
-- **Fix**: Wire idempotency-key checking into the agent-surface command dispatch path.
+> **Resolved.** `WorkspaceAuthorizationPolicy` authenticates and authorizes each CLI invocation and
+> MCP tool call before target resolution. `AgentActorAccessor` supplies the credential actor to
+> mutations and audit events; spoofable actor/workspace parameters were removed. `AgentWorkspaceScope`
+> denies foreign IDs and scopes unfiltered reads. SQLite-backed integration tests verify denials,
+> zero writes after denial, authenticated actor attribution, and workspace isolation.
 
-### MAJ-017: No `apiVersion` contract field on the agent/automation surface
-- **Location**: `docs/features/agent-and-automation-surface.md`
-- **Issue**: Spec describes a versioned contract (`apiVersion` field) for forward compatibility of agent tool calls. No such field was found in the MCP tool schemas/responses.
-- **Evidence**: MCP tool definitions inspected show no version field in request/response shapes.
-- **Impact**: Future breaking changes to agent tool contracts have no built-in negotiation/compatibility signal.
-- **Fix**: Add an `apiVersion` field to agent tool schemas and response envelopes.
+### MAJ-016: Idempotency service not wired through the agent surface — **RESOLVED**
+
+> **Resolved.** All six workspace-data mutations require a non-blank `idempotencyKey` and execute
+> through `AgentIdempotency`. The persisted tuple is workspace + actor + operation + key; matching
+> retries replay the original response and conflicting payloads return
+> `IDEMPOTENCY_KEY_REUSED`. Integration tests also cover workspace-separated keys and expired-key
+> replacement. The implementation uses an indexed lookup plus an in-memory `DateTimeOffset`
+> expiration comparison because EF Core SQLite cannot translate that predicate.
+
+### MAJ-017: No `apiVersion` contract field on the agent/automation surface — **RESOLVED**
+
+> **Resolved for CLI/MCP.** Every agent operation now returns `AgentResponse<T>` containing
+> `apiVersion`, `correlationId`, and `data`; version 1 is serialized through the host's shared JSON
+> options. Catalog and integration tests verify the envelope. Request-side version negotiation is
+> intentionally deferred until a second contract version exists, and REST body-envelope migration
+> remains explicit M4 follow-up work.
 
 ### MAJ-018: FR-OPS-001 partial — no generic `QueryAsync` for audit history
 - **Location**: `docs/features/audit-and-recovery.md`; `docs/anvilboard/srs.md` FR-OPS-001
@@ -267,36 +304,94 @@ fixed**.
 - **Evidence**: See CRIT-003 for (1); no audit-event emission found at artifact persistence call sites for (2).
 - **Impact**: Artifacts are invisible to the audit trail and cannot be auto-populated from provider activity as specified.
 - **Fix**: Implement the lifecycle-hook artifact-expansion path (shared work with CRIT-003) and add audit-event emission on artifact mutation.
+- **Status**: **Partially resolved.** Gap (2) is closed — `ArtifactService` emits `ArtifactAttached`/`ArtifactRefreshed`/`ArtifactRemoved` activity events on every mutation (see CRIT-003). Gap (1) remains open: no `IIssueHook` implementation calls `RefreshArtifactAsync` yet, though that seam now exists for it to consume.
 
-### MAJ-021: Bootstrap seeds no workflow states, so issue creation fails on a fresh workspace
+### MAJ-021: Bootstrap seeds no workflow states, so issue creation fails on a fresh workspace — **RESOLVED**
+
+> **Resolved.** `BootstrapFirstAdministratorAsync` now seeds the same six default `WorkflowState`
+> rows and linear `WorkflowTransition` adjacency as migration `20260908093300_AddWorkflowStates.cs`
+> seeds for pre-existing workspaces, in the same transaction as the workspace/administrator rows.
+> `POST /api/issues` now succeeds immediately after bootstrap without any out-of-band seeding step.
+> The test-only `ApiFactory.SeedWorkflowStatesAsync()` workaround has been removed since it is no
+> longer needed (and would now violate the `(WorkspaceId, Key)` uniqueness constraint).
+
 - **Location**: `src/Anvilboard.Application/Authorization/WorkspaceAuthorizationService.cs` (`BootstrapFirstAdministratorAsync`); `src/Anvilboard.Application/Issues/IssueService.cs` (`GetInitialWorkflowStateIdAsync`)
 - **Issue**: Bootstrap creates a workspace and an administrator member but no workflow states. `IssueService.GetInitialWorkflowStateIdAsync` throws when a workspace has none, so `POST /api/issues` returns 500 on any freshly bootstrapped workspace until states are seeded by some other path.
 - **Evidence**: Found while implementing realtime updates — the API tests could not create an issue against a bootstrapped host and had to add `ApiFactory.SeedWorkflowStatesAsync()` as a workaround.
 - **Impact**: First-run issue creation fails for a self-hosted install that follows the documented bootstrap flow, and the failure surfaces as an opaque 500 rather than an actionable error.
 - **Fix**: Seed the default workflow states during bootstrap, or return a domain error that names the missing configuration. Unrelated to realtime; left unchanged there to keep that change set scoped.
+- **Status**: **Resolved.** See the resolution note above for the delivered change and its test coverage (`WorkspaceAuthorizationServiceTests.BootstrapFirstAdministratorAsync_NoExistingWorkspace_SeedsDefaultWorkflow`).
+
+### MAJ-022: REST/application issue and dashboard queries are not workspace-bound — **RESOLVED**
+
+> **Resolved.** `WorkspaceId` is now the first, required parameter of every affected application
+> method on `IssueService`, `IssueLinkService`, `ArtifactService`, and `DashboardService`, and each
+> resolves issues through the single shared `WorkspaceScopedQueries.InWorkspace` predicate. Making
+> the parameter leading and non-optional turns this leak class into a compile error: the original
+> bug was written as a skipped trailing optional argument (`ct: ct`), which is no longer
+> expressible. At the REST boundary `RestWorkspaceScope` — the mirror of `AgentWorkspaceScope` —
+> validates every caller-supplied team, issue, and member id against the authenticated workspace
+> before the route reaches a service. Two-workspace integration coverage
+> (`CrossWorkspaceIsolationEndpointTests`, 15 cases) exercises all 13 previously leaking routes and
+> asserts that denied writes also changed nothing; `RestWorkspaceScopeTests` covers the guard
+> itself. `Anvilboard.Agent.Tests` passes unmodified, confirming the change is a re-signature rather
+> than a behavior change on the already-correct agent surface.
+>
+> Two related defects were found and fixed while implementing: `IssueLinkService.CreateLinkAsync`
+> compared the two issues' workspaces *to each other*, so a pair drawn entirely from a foreign
+> workspace passed; and `ArtifactService.RemoveArtifactAsync` never validated the issue at all.
+>
+> **Breaking change:** ID-addressed REST routes now answer `403 WORKSPACE_ACCESS_DENIED` for
+> unknown ids as well as foreign ones — most visibly `GET /api/issues/{unknownId}`, previously
+> `404`. Replying differently to the two cases would make every such route an existence oracle for
+> other workspaces' data.
+
+- **Location**: `src/Anvilboard.Api/Endpoints/IssueEndpoints.cs`; `src/Anvilboard.Api/Endpoints/DashboardEndpoints.cs`; `src/Anvilboard.Application/Issues/IssueService.cs`; `src/Anvilboard.Application/Dashboard/DashboardService.cs`
+- **Issue**: REST authorization establishes an authenticated workspace but application queries resolve supplied issue/team/member IDs by primary key alone, and omitted team filters start from all issues. The REST issue-list and dashboard-summary paths do not pass the authenticated workspace into those queries.
+- **Evidence**: `IssueService.ListAsync(null, ...)` and `DashboardService.GetSummaryAsync(null)` begin from the complete issue set; entity lookups likewise lack a workspace predicate. The agent surface required explicit `AgentWorkspaceScope` guards and workspace-scoped unfiltered query overloads to prevent the same behavior.
+- **Impact**: A REST caller can potentially read or act on a foreign workspace entity by ID, and unfiltered issue/dashboard reads can disclose data or aggregate counts from other workspaces in the same SQLite database.
+- **Fix**: Make workspace identity an application-service query input (or an ambient, mandatory application authorization context), apply it before every entity lookup and aggregate, and add two-workspace REST integration tests covering explicit foreign IDs and omitted filters.
+- **Plan**: [`docs/plans/workspace-query-scoping.md`](./plans/workspace-query-scoping.md) — the evidence-backed technical design and dependency-ordered work breakdown. Adopts the required-`WorkspaceId`-input option and extends coverage to the artifact and issue-link read paths, which are the same leak reached through different routes. Delivered; see the resolution note above.
+- **Status**: **Resolved.** REST and CLI/MCP now enforce the same workspace boundary, so full workspace isolation holds across every authenticated surface.
 
 ## Minor Findings
 
-### MIN-001: README Kanban-column list implies fixed columns, but the model is configurable
+### MIN-001: README Kanban-column list implies fixed columns, but the model is configurable — **RESOLVED**
+
+> **Resolved.** The README bullet now reads "Ships with a default Backlog → Todo → In Progress →
+> In Review → Done/Cancelled workflow, fully configurable per workspace."
+
 - **Location**: `README.md:35`
 - **Issue**: README states a fixed sequence of Kanban columns. The actual `WorkflowState` domain model (`src/Anvilboard.Domain/WorkflowState.cs:10-31`) is fully configurable per workspace; the listed columns are only the *default* seed values from migration `20260908093300_AddWorkflowStates.cs`.
 - **Evidence**: Direct code inspection of `WorkflowState.cs` (no hardcoded column list) versus the migration's seed data (matches README's list exactly).
 - **Impact**: Low — the README isn't factually wrong about the out-of-the-box experience, but the wording could mislead a reader into thinking columns are fixed rather than configurable.
 - **Fix**: Reword to "ships with a default workflow of \[...\] columns, fully configurable per workspace" or similar.
 
-### MIN-002: `PLUGINS.md` contains outdated proof-of-concept-era implementation references
+### MIN-002: `PLUGINS.md` contains outdated proof-of-concept-era implementation references — **RESOLVED**
+
+> **Resolved.** `PLUGINS.md` now opens with an explicit **Superseded** banner naming
+> [`docs/features/integration-and-plugin-platform.md`](features/integration-and-plugin-platform.md)
+> as the canonical replacement, and closes with a "Where to look instead" routing table
+> (`PLUGINS.md` lines 36–43) mapping each question — platform requirements, architecture,
+> how to implement a provider today, and how it is verified — to its canonical document.
+> The body is scoped under "What this document was" / "Why it was retired as the source of
+> truth", so the PoC-era mechanics read as history rather than instruction. The final
+> paragraph clarifies that `src/Anvilboard.Plugins.Abstractions` remains the real extension
+> point at the code level, with the feature spec as the current contract description. This
+> was exactly the optional fix recorded below; no further action is required.
+
 - **Location**: `PLUGINS.md` (self-declared historical/superseded)
 - **Issue**: Contains references to plugin-loading mechanics that predate the current `IPluginConfigStore`/`IPluginStateStore` implementation (`src/Anvilboard.Infrastructure/Plugins/PluginConfigStateStore.cs`).
 - **Evidence**: Cross-reference of `PLUGINS.md`'s described mechanism against the current plugin config/state store implementation and its tests (`PluginConfigStateStoreTests.cs`).
 - **Impact**: Low — document is already marked "Superseded," so readers are warned, but the specific stale details could still confuse a reader skimming for historical context.
 - **Fix**: No action required given its self-declared historical status; optionally add a pointer to `docs/features/integration-and-plugin-platform.md` for current behavior.
 
-### MIN-003: Workflow API surface is still legacy enum-based rather than the documented configurable model
+### MIN-003: Workflow API surface is still legacy enum-based rather than the documented configurable model — Resolved
 - **Location**: `docs/features/workflow-engine.md`
-- **Issue**: While the domain model supports configurable workflow states, parts of the public API still appear to operate against a legacy fixed enum rather than the dynamic `WorkflowState` model.
-- **Evidence**: API DTO/controller inspection during the earlier agent pass found enum-typed fields alongside the newer configurable model.
-- **Impact**: Low-to-moderate — functions correctly today but represents an API/domain-model mismatch that will need reconciling before transition CRUD (MAJ-003) can be built cleanly.
-- **Fix**: Consider documenting this explicitly as an intentional compatibility bridge, or plan to migrate the API surface to the configurable model.
+- **Issue**: Public issue-transition entry points previously accepted only the six-value legacy `IssueStatus` enum, making configured custom workflow states unreachable.
+- **Evidence**: `IssueService.ChangeStatusAsync`, `PATCH /api/issues/{id}/status`, and `change-issue-status` now accept workspace-scoped workflow-state IDs. Application, REST, and agent tests exercise a transition to a custom `qa_review` state, and the Angular issue-detail selector loads configured workflow states.
+- **Impact**: Resolved — `Issue.WorkflowStateId` is authoritative. The deprecated `Issue.Status` projection remains for compatibility with existing board/dashboard views.
+- **Fix**: Applied in place with workspace-bound target resolution so unknown and foreign state IDs remain indistinguishable at transport boundaries.
 
 ### MIN-004: Plugin manifest validation is weak
 - **Location**: `docs/features/integration-and-plugin-platform.md`
@@ -305,19 +400,47 @@ fixed**.
 - **Impact**: Low-to-moderate — a malformed manifest could cause a less graceful failure than the spec implies.
 - **Fix**: Strengthen manifest validation (schema-based or explicit required-field checks) with corresponding tests.
 
-### MIN-005: Undocumented extra agent tools exist beyond the documented set
+### MIN-005: Undocumented extra agent tools exist beyond the documented set — **RESOLVED**
+
+> **Resolved.** [`DEVELOPMENT.md`](../DEVELOPMENT.md) now documents the complete 20-operation
+> catalog across issue, issue-link, dashboard, backup, and workflow categories. This includes the
+> two workflow reads and five idempotent workflow mutations, records each operation's category and
+> idempotency-key requirement, and notes that restore is deliberately not exposed (`DR-AGT-004`).
+> Verified against the `[AgentOperation(...)]` attributes in
+> `src/Anvilboard.Agent/BoardAgentService.cs`.
+
 - **Location**: `docs/features/agent-and-automation-surface.md`
 - **Issue**: The MCP/agent tool surface in code exposes additional tools not listed in the feature doc's documented tool catalog.
 - **Evidence**: Enumeration of registered MCP tools versus the doc's tool list during the earlier agent pass found extras.
 - **Impact**: Low — undocumented capability is more of a documentation-completeness gap than a functional risk.
 - **Fix**: Add the missing tools to the documented catalog in `docs/features/agent-and-automation-surface.md`.
 
-### MIN-006: `IArtifactStore` "sole caller" claim is ahead of the code (see CRIT-003)
+### MIN-006: `IArtifactStore` "sole caller" claim is ahead of the code (see CRIT-003) — **RESOLVED**
+
+> **Resolved.** `ArtifactService` is now the only type that calls `IArtifactStore`,
+> so the spec's "sole caller" claim describes the code accurately.
+
 - **Location**: `docs/features/artifacts.md`
 - **Issue**: Spec asserts a single documented call site owns all artifact persistence. Because no `ArtifactService` exists yet (CRIT-003), multiple call sites may reach `IArtifactStore` directly instead of through one seam.
 - **Evidence**: See CRIT-003 investigation.
 - **Impact**: Low on its own; becomes moot once CRIT-003 is resolved.
 - **Fix**: Verify/consolidate call sites once `ArtifactService` is introduced.
+
+### MIN-007: Post-implementation documentation drift across plans, contributor docs, and finding IDs — **RESOLVED**
+
+> **Resolved.** Every claim listed below was corrected in place during the documentation-currency
+> re-verification pass.
+
+- **Location**: `docs/features/workspace-authorization.md:11`; `docs/anvilboard/tech-design.md` §16 (M1, M4 rows); `docs/features/agent-and-automation-surface.md:11`; `docs/features/overview.md`; `docs/plans/backup-and-restore.md:19`; `DEVELOPMENT.md` (Testing section); `CONTRIBUTING.md:46`; `docs/anvilboard/test-cases.md` §1.1–§1.3, §6
+- **Issue**: Five classes of drift accumulated after the backup/restore, artifact, realtime, and agent-authorization work landed:
+  1. **Stale status claims** — `workspace-authorization.md` and tech-design §16's M1 row still said CLI/MCP enforcement was outstanding after MAJ-001/MAJ-015 shipped; `docs/plans/backup-and-restore.md` still read `Status | Plan — not yet implemented` after CRIT-001/MAJ-019 were resolved.
+  2. **Wrong finding IDs** — three documents cited **MAJ-021** (the resolved bootstrap-seeding finding) where they meant **MAJ-022** (the open REST/application workspace-query scoping gap), making a resolved finding look open and an open finding look absent.
+  3. **Stale test counts** — docs cited a 114- or 189-test suite; the latest figure is **394 populated .NET tests**, across 43 source test files, plus a successful Angular production build.
+  4. **Understated coverage** — `DEVELOPMENT.md` described `Api.Tests` and `Agent.Tests` far more narrowly than their actual contents, and claimed "the agent surface … still has no automated coverage"; `CONTRIBUTING.md` told contributors "there's no automated test suite yet".
+  5. **Stale gap lists** — `test-cases.md` §1.3/§6 still listed backup/restore as untestable "because no backup/restore service exists".
+- **Evidence**: Individual runs of the six populated .NET test projects → 394 passing / 0 failing (Application 221, Infrastructure 41, Agent 52, API 63, GitHub 12, Linear 5); `npm test -- --watch=false` in `src/anvilboard-web` → 21 passing across 3 spec files; `npm run build` → successful production bundle; direct inspection of `src/Anvilboard.Application/Backup/` (12 files including `BackupService.cs`, `RestoreCoordinator.cs`) and the 20 `[RequiresAgentPermission]` operations on `BoardAgentService`.
+- **Impact**: Medium-low but corrosive — a contributor reading `CONTRIBUTING.md` would skip running tests, and the MAJ-021/MAJ-022 confusion could cause an already-fixed bug to be "re-fixed" while the real open gap stayed unaddressed.
+- **Fix**: Applied. All affected documents were corrected in place; see INFO-005 for the drift-prevention suggestion.
 
 ## Observations & Suggestions
 
@@ -327,7 +450,7 @@ fixed**.
 
 ### INFO-002: `test-cases.md` forward-looking sections (§2 Test Strategy/Pyramid, §3–5 planned `TC-*` test case tables, §7 Statistics) were left as target-state content
 - **Location**: `docs/anvilboard/test-cases.md` §2 onward
-- **Note**: These sections describe a target test-coverage strategy and a catalog of planned test cases (`TC-AUTH-*`, `TC-WF-*`, etc.) rather than claims about current-state coverage, so they were left in place. Only the current-state claims (header callout, §1.1–1.3 tables, §6 Gap Analysis's "no test projects" line) were corrected to reflect the real 114-passing-test suite.
+- **Note**: These sections describe a target test-coverage strategy and a catalog of planned test cases (`TC-AUTH-*`, `TC-WF-*`, etc.) rather than claims about current-state coverage, so they were left in place. Only the current-state claims (header callout, §1.1–1.3 tables, §6 Gap Analysis's "no test projects" line) were corrected to reflect the real passing test suite (114 at the time of the first pass, 394 as of the latest re-verification).
 
 ### INFO-003: `IssueLinkService` directional/zero-cascade design is a positive finding, not a gap
 - **Location**: `docs/features/issue-linking.md`
@@ -339,13 +462,14 @@ fixed**.
 
 ### INFO-005: Consider a lightweight recurring-audit convention
 - **Note**: Given how quickly `tech-design.md` §16 and `test-cases.md` drifted from reality, consider adding a short "last verified against code" date stamp to each `docs/features/*.md` Status row and to `tech-design.md` §16, updated whenever a milestone's implementation state changes, to make the next audit faster and prevent similar drift.
+- **Status**: **Implemented.** Each `docs/features/*.md` now carries a `Last verified` row directly beneath its `Status` row, `docs/features/overview.md` carries one in its header block, and `tech-design.md` §16 carries a `**Last verified:**` line in its status callout. Each records the date, the commit audited, and the test totals observed. Re-stamp these whenever implementation state changes.
 
 ## Coverage Map
 
 ```mermaid
 graph TD
     subgraph "Well covered — implemented & tested"
-        A[Workspace model & REST auth]
+        A[Workspace model & boundary auth]
         B[Workflow engine — core state machine]
         C[Issue board — core CRUD & query]
         D[Issue linking — core create/delete]
@@ -353,21 +477,21 @@ graph TD
         F[Plugin config & state store]
         P[Realtime updates — CRIT-002 resolved]
         S[Backup / restore — CRIT-001 resolved]
+        T[Agent surface — auth, scopes, attribution, idempotency, v1 envelopes]
     end
 
     subgraph "Partial — some implementation, real gaps"
-        G[Workspace auth — CLI/MCP enforcement]
+        G[REST/application workspace query scoping — MAJ-022]
         H[Workflow engine — admin CRUD & audit events]
         I[Issue board — UI filter parity, concurrency]
         J[Issue linking — update endpoint]
         K[Integration platform — pause enforcement, sync health]
-        L[Agent surface — auth wiring, idempotency, apiVersion]
         M[Audit & recovery — query flexibility]
-        N[Artifacts — persistence exists]
+        N[Artifacts — service, endpoints, audit events done; lifecycle expansion open]
     end
 
     subgraph "Not started"
-        Q[Artifact service / lifecycle expansion — CRIT-003]
+        Q[Artifact lifecycle expansion hook — MAJ-020]
         R[Outbound plugin events — MAJ-014]
     end
 
@@ -386,11 +510,11 @@ graph TD
 
 1. ~~**Implement backup/restore (`IBackupService`) and verify NFR-AVL-001**~~ — CRIT-001 and MAJ-019 done; `FR-OPS-001` audit query access (MAJ-018) still open — large
 2. ~~**Build the realtime-updates push layer (SignalR/WebSocket) and outbound plugin event relay**~~ — CRIT-002 done; MAJ-014 (core → plugin dispatch) still open — medium
-3. **Implement `ArtifactService` with upsert/refresh semantics and lifecycle-hook artifact expansion** — fixes CRIT-003, MAJ-020, MIN-006 — medium
-4. **Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation** — fixes MAJ-001, MAJ-002 — medium
-5. **Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations** — fixes MAJ-003, MAJ-004, MAJ-005 — medium
-6. **Wire agent-surface authorization, idempotency, and an `apiVersion` contract field** — fixes MAJ-015, MAJ-016, MAJ-017 — medium
+3. ~~**Implement `ArtifactService` with upsert/refresh semantics and lifecycle-hook artifact expansion**~~ — CRIT-003 and MIN-006 done, MAJ-020 audit emission done; MAJ-020's `IIssueHook` artifact-expansion path still open — medium
+4. ~~**Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation**~~ — MAJ-001 closed; MAJ-002 was already implemented and is corrected above — done. ~~**Residual:** enforce authenticated-workspace predicates throughout REST/application reads and mutations (MAJ-022).~~ — MAJ-022 closed; REST and CLI/MCP now enforce the same workspace boundary.
+5. ~~**Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations**~~ — MAJ-003, MAJ-004, and MAJ-005 closed with workspace-scoped REST and CLI/MCP operations, idempotent agent mutations, audit emission, and integration coverage — done: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md)
+6. ~~**Wire agent-surface authorization, idempotency, and an `apiVersion` contract field**~~ — MAJ-015, MAJ-016, and MAJ-017 closed with SQLite-backed integration coverage — done
 7. **Add sync-health/backoff tracking and enforce paused-integration webhook rejection** — fixes MAJ-012, MAJ-013 — medium
 8. **Close remaining UI/UX gaps (board filter parity, issue-detail activity feed, link-update endpoint)** — fixes MAJ-007, MAJ-008, MAJ-010, MAJ-011 — medium
 9. **Add a generic filterable audit-query method (`QueryAsync`-equivalent)** — fixes MAJ-018 — small
-10. **Reword the README Kanban-column description and add missing agent tools to the documented catalog** — fixes MIN-001, MIN-005 — small
+10. ~~**Reword the README Kanban-column description and add missing agent tools to the documented catalog**~~ — MIN-001 and MIN-005 both closed during the documentation-currency pass (see MIN-007) — done

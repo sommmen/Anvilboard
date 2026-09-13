@@ -13,6 +13,7 @@ function issue(overrides: Partial<Issue> = {}): Issue {
     key: 'RT-1',
     title: 'Original title',
     status: IssueStatus.Backlog,
+    workflowStateId: 'workflow-state-backlog',
     version: 1,
     priority: IssuePriority.None,
     source: 0,
@@ -60,6 +61,10 @@ class FakeBoardApiService {
   }
 
   listTeams() {
+    return of([]);
+  }
+
+  listWorkflowStates() {
     return of([]);
   }
 

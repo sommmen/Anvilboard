@@ -131,12 +131,63 @@ public sealed class WorkspaceAuthorizationService(AnvilboardDbContext db, IAudit
         };
         db.Members.Add(administrator);
 
+        var workflowStates = CreateDefaultWorkflowStates(workspace.Id);
+        db.WorkflowStates.AddRange(workflowStates);
+        db.WorkflowTransitions.AddRange(CreateDefaultWorkflowTransitions(workspace.Id, workflowStates));
+
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
         var actor = new ActorContext(administrator.Id, workspace.Id, administrator.Role);
         await auditService.RecordAuthorizationDecisionAsync(actor, workspace.Id, "WORKSPACE_BOOTSTRAPPED", "AUTHORIZED", Guid.NewGuid().ToString(), ct);
         return actor;
+    }
+
+    /// <summary>
+    /// Mirrors the six-state default workflow that the <c>AddWorkflowStates</c> migration seeds for
+    /// workspaces that already existed at migration time. Without this, a freshly bootstrapped
+    /// workspace has no <see cref="WorkflowState"/> rows and every subsequent issue-creation request
+    /// fails because <c>IssueService.GetInitialWorkflowStateIdAsync</c> has no state to assign.
+    /// </summary>
+    private static List<WorkflowState> CreateDefaultWorkflowStates(WorkspaceId workspaceId) =>
+    [
+        new() { Id = WorkflowStateId.New(), WorkspaceId = workspaceId, Key = "backlog", DisplayName = "Backlog", Order = 0 },
+        new() { Id = WorkflowStateId.New(), WorkspaceId = workspaceId, Key = "todo", DisplayName = "Todo", Order = 1 },
+        new() { Id = WorkflowStateId.New(), WorkspaceId = workspaceId, Key = "in_progress", DisplayName = "In Progress", Order = 2 },
+        new() { Id = WorkflowStateId.New(), WorkspaceId = workspaceId, Key = "in_review", DisplayName = "In Review", Order = 3 },
+        new() { Id = WorkflowStateId.New(), WorkspaceId = workspaceId, Key = "done", DisplayName = "Done", Order = 4, IsTerminal = true },
+        new() { Id = WorkflowStateId.New(), WorkspaceId = workspaceId, Key = "cancelled", DisplayName = "Cancelled", Order = 5, IsTerminal = true },
+    ];
+
+    /// <summary>
+    /// Mirrors the linear adjacency the <c>AddWorkflowStates</c> migration seeds: a straight
+    /// progression through the non-terminal states, plus a "cancelled" escape hatch from any state.
+    /// </summary>
+    private static List<WorkflowTransition> CreateDefaultWorkflowTransitions(
+        WorkspaceId workspaceId, IReadOnlyList<WorkflowState> states)
+    {
+        WorkflowStateId StateId(string key) => states.Single(state => state.Key == key).Id;
+
+        var transitions = new List<WorkflowTransition>
+        {
+            Transition(StateId("backlog"), StateId("todo")),
+            Transition(StateId("todo"), StateId("in_progress")),
+            Transition(StateId("in_progress"), StateId("in_review")),
+            Transition(StateId("in_review"), StateId("done")),
+        };
+        transitions.AddRange(states
+            .Where(state => state.Key != "cancelled")
+            .Select(state => Transition(state.Id, StateId("cancelled"))));
+
+        return transitions;
+
+        WorkflowTransition Transition(WorkflowStateId from, WorkflowStateId to) => new()
+        {
+            Id = WorkflowTransitionId.New(),
+            WorkspaceId = workspaceId,
+            FromStateId = from,
+            ToStateId = to,
+        };
     }
 
     public async Task RevokeCredentialAsync(

@@ -78,7 +78,12 @@ public static class WebhookEndpoints
             var touchedTeamIds = new List<TeamId>();
             foreach (var normalized in result.Issues)
             {
-                var issue = await issueService.UpsertFromExternalAsync(normalized, trustedWorkspaceId, ct);
+                // A payload carrying a team key resolves to exactly one workspace above, so it can
+                // use the scoped overload. A payload without one has no workspace identity at all
+                // and falls back to the unscoped path, which fails closed on ambiguity.
+                var issue = trustedWorkspaceId is { } workspaceId
+                    ? await issueService.UpsertFromExternalAsync(workspaceId, normalized, ct)
+                    : await issueService.UpsertFromExternalUnscopedAsync(normalized, ct);
                 touchedTeamIds.Add(issue.TeamId);
             }
 
