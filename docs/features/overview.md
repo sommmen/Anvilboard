@@ -3,6 +3,8 @@
 > Index of implementation-facing feature specs for Anvilboard's target architecture.
 > Source: `docs/anvilboard/tech-design.md` §8.1 Component Overview.
 > Created: 2026-09-05
+> Last verified: 2026-09-12 against commit `e3e03a5` + MAJ-022 and workflow-admin change sets — six populated .NET test projects 394 passing,
+> `npm test -- --watch=false` 21 passing and `npm run build` successful.
 
 Each spec in this directory documents one architectural component from
 [`docs/anvilboard/tech-design.md`](../anvilboard/tech-design.md) at implementation-planning depth:
@@ -16,14 +18,14 @@ feature needs more granular coverage.
 
 | # | Feature Spec | Priority | Status | Depends On | SRS Refs |
 |---|---|---|---|---|---|
-| 1 | [`workspace-authorization.md`](./workspace-authorization.md) | P0 | Partial | — | `FR-WS-001`, `NFR-SEC-002` |
-| 2 | [`workflow-engine.md`](./workflow-engine.md) | P0 | Partial | — | `FR-WS-002`, `FR-WS-003` |
+| 1 | [`workspace-authorization.md`](./workspace-authorization.md) ([query-scoping plan](../plans/workspace-query-scoping.md)) | P0 | Implemented — model, middleware, REST and CLI/MCP enforcement, admin revocation, bootstrap seeding, and workspace-bound REST/application query filtering (MAJ-022) | — | `FR-WS-001`, `NFR-SEC-002` |
+| 2 | [`workflow-engine.md`](./workflow-engine.md) ([admin-surface plan](../plans/workflow-admin-surface.md)) | P0 | Implemented — validation, migration, REST and CLI/MCP administration, idempotency, workspace isolation, and audit events | — | `FR-WS-002`, `FR-WS-003` |
 | 3 | [`issue-board-service.md`](./issue-board-service.md) | P0 | Partial | Workspace Authorization, Workflow Engine | `FR-WRK-001`–`FR-WRK-014`, `NFR-PERF-001`, `NFR-PERF-002`, `NFR-USB-001` |
 | 4 | [`integration-and-plugin-platform.md`](./integration-and-plugin-platform.md) | P0 | Partial | Issue & Board Service, Workspace Authorization, Real-time Updates | `FR-INT-001`–`FR-INT-007`, `NFR-REL-002`, `NFR-SEC-001` |
-| 5 | [`agent-and-automation-surface.md`](./agent-and-automation-surface.md) | P0 | Partial | Workspace Authorization, Workflow Engine, Issue & Board Service, Integration & Plugin Platform | `FR-AUT-001`–`FR-AUT-003`, `NFR-MNT-001` |
+| 5 | [`agent-and-automation-surface.md`](./agent-and-automation-surface.md) | P0 | Partial — CLI/MCP auth, workspace scope, attribution, idempotency, correlation, and versioned envelopes implemented; REST contract normalization remains | Workspace Authorization, Workflow Engine, Issue & Board Service, Integration & Plugin Platform | `FR-AUT-001`–`FR-AUT-003`, `NFR-MNT-001` |
 | 6 | [`audit-and-recovery.md`](./audit-and-recovery.md) ([backup/restore plan](../plans/backup-and-restore.md)) | P0 | Partial — M7 backup/restore implemented (`FR-OPS-002`, `NFR-AVL-001`); `FR-OPS-001` audit **query** access is the residual gap | All other components | `FR-OPS-001`, `FR-OPS-002`, `NFR-AVL-001`, `NFR-REL-001` |
 | 7 | [`realtime-updates.md`](./realtime-updates.md) | P1 | Implemented | Workspace Authorization, Issue & Board Service | `FR-WRK-014`, `FR-INT-006`, `NFR-PERF-002` |
-| 8 | [`artifacts.md`](./artifacts.md) | P1 | Partial | Issue & Board Service, Workspace Authorization | `FR-ART-001`, `FR-ART-002` |
+| 8 | [`artifacts.md`](./artifacts.md) | P1 | Implemented | Issue & Board Service, Workspace Authorization | `FR-ART-001`, `FR-ART-002` |
 | 9 | [`issue-linking.md`](./issue-linking.md) | P2 | Partial | Issue & Board Service, Workspace Authorization | `FR-LNK-001` |
 
 > Status reflects implementation as of this audit; see [`docs/audit-report.md`](../audit-report.md)
@@ -48,9 +50,11 @@ The dependency order above is also the recommended build order:
    paths; its publisher/hub boundary should be in place before dashboard clients consume live
    changes, while the service remains able to make mutations if a real-time transport is degraded.
 5. **Agent & Automation Surface** and **Integration & Plugin Platform** can proceed in parallel
-   once the Issue & Board Service exists — the automation surface wraps existing application
-   services with idempotency/correlation/error-contract concerns, while the integration platform
-   is additive (new providers, ingestion, webhooks) and does not block the core board experience.
+   once the Issue & Board Service exists. The agent CLI/MCP surface now wraps application services
+   with authenticated workspace scoping, actor attribution, idempotency, per-call correlation, and
+   versioned response envelopes. REST envelope/idempotency normalization remains separate work;
+   MAJ-022's REST/application workspace-query gap is now closed. The integration platform is
+   additive (new providers, ingestion, webhooks) and does not block the core board experience.
    Both connect to Real-time Updates only through its non-blocking publisher contract.
 6. **Audit & Recovery** last in terms of full completion, but its `IAuditService` interface should
    be stubbed early (Workspace Authorization already emits authorization-decision events to it) so
@@ -89,12 +93,13 @@ Feature specs were authored against the current
 [`docs/anvilboard/srs.md`](../anvilboard/srs.md), grounded in the existing `src/` codebase where
 components already exist (e.g. `IssueService`, `DashboardService`, `SyncCoordinator`,
 `BoardAgentService`) and clearly marking planned additions that did not yet exist in code at the
-time of authoring. Three specs have since been implemented and merged: `issue-linking.md`
+time of authoring. Four specs have since been implemented and merged: `issue-linking.md`
 (`IIssueLinkService`), `workspace-authorization.md` (`IWorkspaceAuthorizationService`,
-`WorkspaceAuthorizationMiddleware`), and `realtime-updates.md` (`IRealtimeUpdatePublisher`,
-`WorkspaceRealtimeHub`, `RealtimeBoardSyncService`). The remaining specs (`workflow-engine.md`,
+`WorkspaceAuthorizationMiddleware`), `realtime-updates.md` (`IRealtimeUpdatePublisher`,
+`WorkspaceRealtimeHub`, `RealtimeBoardSyncService`), and `artifacts.md` (`IArtifactService`,
+`ArtifactService`, `ArtifactEndpoints`). The remaining specs (`workflow-engine.md`,
 `issue-board-service.md`, `integration-and-plugin-platform.md`, `agent-and-automation-surface.md`,
-`audit-and-recovery.md`, `artifacts.md`) are still in **draft** status —
+`audit-and-recovery.md`) are still in **draft** status —
 treat them as the target contract, not the current behavior, until an implementation PR lands and
 this line is updated. See each spec's own `Status` field for its individual state.
 
@@ -107,3 +112,5 @@ this line is updated. See each spec's own `Status` field for its individual stat
   interaction diagram (§8.2), API conventions, and the canonical error catalog (§7.7).
 - [`docs/anvilboard/test-cases.md`](../anvilboard/test-cases.md) — test strategy and coverage
   matrix spanning all six components.
+
+

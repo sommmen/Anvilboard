@@ -1,3 +1,4 @@
+using Anvilboard.Infrastructure.Artifacts;
 using Anvilboard.Infrastructure.Persistence;
 using Anvilboard.Infrastructure.Persistence.Backup;
 using Anvilboard.Infrastructure.Plugins;
@@ -46,6 +47,7 @@ public static class ServiceCollectionExtensions
             options.UseSqlite($"Data Source={dbOptions.DatabasePath}");
         }, lifetime: ServiceLifetime.Scoped);
 
+        services.AddScoped<IArtifactStore, SqliteArtifactStore>();
         services.AddScoped<IBackupArchiveStore, FileSystemBackupArchiveStore>();
         services.AddScoped<ISnapshotArchiver, SqliteBackupArchiver>();
 
