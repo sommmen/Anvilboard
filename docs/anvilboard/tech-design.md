@@ -254,7 +254,7 @@ Entity Framework Core with `Microsoft.EntityFrameworkCore.Sqlite` is the require
 
 | Element | Convention | Example |
 |---|---|---|
-| REST route segments | kebab-case, versioned prefix | `/api/v1/issues`, `/api/v1/workflow-states` |
+| REST route segments | kebab-case, unversioned `/api` prefix (see §9.1) | `/api/issues`, `/api/workflow/states` |
 | Query parameters | camelCase | `?workflowStateId=...&provider=GITHUB` |
 | JSON fields | camelCase | `"workflowStateId"`, `"syncCondition"` |
 | Enumerated values | UPPER_SNAKE_CASE symbolic strings | `"IN_PROGRESS"`, `"STALE"` |
@@ -450,7 +450,7 @@ sequenceDiagram
     participant Issue as Issue & Board Service
     participant Audit as Audit & Recovery
 
-    Agent->>API: POST /api/v1/issues/{id}/transition (Idempotency-Key, targetState)
+    Agent->>API: PATCH /api/issues/{id}/status (Idempotency-Key, workflowStateId)
     API->>Auth: Authenticate + authorize(workspace, actor, action)
     Auth-->>API: Authorized
     API->>Issue: RequestTransition(issueId, targetState, idempotencyKey)
@@ -470,98 +470,198 @@ Ingestion follows a parallel path: a provider adapter (`Anvilboard.Integrations.
 
 ### 9.1 API Overview
 
-REST is versioned under `/api/v1/...`. CLI commands and MCP tool calls map one-to-one onto the same underlying application use cases and DTOs, differing only in transport. Full endpoint-level detail is delivered in [`docs/features/agent-and-automation-surface.md`](../features/agent-and-automation-surface.md); this section defines the shared conventions. Every listed code resolves to the anticipated-failure catalog in §7.7; `500` is intentionally not a contract response.
+REST is served under an unversioned `/api/...` prefix. CLI commands and MCP tool calls map one-to-one onto the same underlying application use cases and DTOs, differing only in transport. Full endpoint-level detail is delivered in [`docs/features/agent-and-automation-surface.md`](../features/agent-and-automation-surface.md); this section defines the shared conventions. Every listed code resolves to the anticipated-failure catalog in §7.7; `500` is intentionally not a contract response.
+
+> **Versioning status (deferred).** Earlier revisions of this section documented a `/api/v1/...`
+> prefix. No version segment was ever implemented: [`Program.cs`](../../src/Anvilboard.Api/Program.cs)
+> maps every group at `/api/...` and the SPA in
+> [`board-api.service.ts`](../../src/anvilboard-web/src/app/core/board-api.service.ts) calls the
+> unversioned paths. Because Anvilboard is a local-first single-binary deployment where the API and
+> its only first-party client ship together, there is no independently versioned consumer to protect,
+> so the segment was never worth its cost. The rows below therefore document the routes as served.
+> Introducing `/api/v1` remains a legitimate future decision — it should be taken deliberately, with
+> the agent surface's `apiVersion` envelope field (§9.3, MAJ-017) as the precedent — but until then
+> this table, not the aspiration, is the contract.
+
+The table lists the routes that exist today. Rows marked **Planned** are specified here but have no
+implementation yet; they are retained because downstream feature specs and acceptance criteria
+reference them, and each names the finding or spec that still owns the gap.
 
 | Endpoint | Method | Description | Auth Required | Possible Error Codes |
 |---|---|---|---|---|
-| `/api/v1/board` | GET | Query workspace issues with the full filter, grouping, ordering, and pagination set; returns server-computed groups plus the applied query echo. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `RATE_LIMITED` |
-| `/api/v1/issues` | GET | List workspace issues unfiltered. Superseded by `GET /api/v1/board`; retained for compatibility. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `RATE_LIMITED` |
-| `/api/v1/issues` | POST | Create a local workspace issue. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `RESOURCE_ALREADY_EXISTS`, `RATE_LIMITED` |
-| `/api/v1/issues/{id}/archive` | POST | Idempotently archive an issue (sets `ArchivedAt`); excluded from default queries thereafter. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `CONCURRENCY_CONFLICT`, `RATE_LIMITED` |
-| `/api/v1/issues/{id}/unarchive` | POST | Idempotently unarchive an issue (clears `ArchivedAt`). | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `CONCURRENCY_CONFLICT`, `RATE_LIMITED` |
-| `/api/v1/issues/{id}/transition` | POST | Transition an issue state using an idempotent mutation. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `INVALID_WORKFLOW_TRANSITION`, `CONCURRENCY_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, `RATE_LIMITED` |
-| `/api/v1/integrations/{id}/sync` | POST | Start or resume provider synchronization. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `INTEGRATION_PAUSED`, `PROVIDER_UNAVAILABLE`, `SYNC_CONFLICT`, `RATE_LIMITED` |
-| `/api/v1/issues/{id}/sync-conflicts/{conflictId}/resolve` | POST | Resolve a flagged resync conflict by choosing keep-local, accept-remote, or a field-level merge. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `RATE_LIMITED` |
-| `/api/v1/issues/{id}/artifacts` | GET, POST | List or attach a file/link/deployment artifact on an issue. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `ARTIFACT_STORE_UNAVAILABLE`, `RATE_LIMITED` |
-| `/api/v1/issues/{id}/artifacts/{artifactId}` | DELETE | Remove an artifact from an issue. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `RATE_LIMITED` |
-| `/api/v1/issues/{id}/links` | GET, POST | List or create a typed relationship (e.g., `related`, `blocks`, `duplicate-of`) to another issue. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `RESOURCE_ALREADY_EXISTS`, `RATE_LIMITED` |
-| `/api/v1/issues/{id}/links/{linkId}` | PATCH, DELETE | Update an issue link's type or description in place, or remove it. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `RESOURCE_ALREADY_EXISTS`, `RATE_LIMITED` |
-| `/api/v1/issue-link-types` | GET | Read the canonical link-type suggestion vocabulary so clients need not hardcode it. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `RATE_LIMITED` |
-| `/api/v1/issues/{id}/activity` | GET | Read an issue's activity history, cursor-paged newest-first; a `null` `nextCursor` means the history is exhausted. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `RATE_LIMITED` |
-| `/api/v1/issues/{id}/comments` | GET, POST | Read an issue's persisted comment history, or add a comment. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND`, `RATE_LIMITED` |
-| `/api/v1/workspaces/{id}/restore` | POST | Validate and restore a workspace backup. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `BACKUP_INTEGRITY_INVALID`, `RATE_LIMITED` |
+| `/api/auth/bootstrap` | POST | Create the first workspace and its owner credential. Anonymous by design — it is the only way to obtain the first credential — and refuses once a workspace exists. | No | `VALIDATION_FAILED`, `RESOURCE_ALREADY_EXISTS` |
+| `/api/auth/login` | POST | Exchange a credential for a session token. | No | `VALIDATION_FAILED`, `CREDENTIAL_INVALID_OR_EXPIRED` |
+| `/api/auth/logout` | POST | Revoke the caller's own session. Requires authentication but no specific permission. | Yes | `VALIDATION_FAILED` |
+| `/api/auth/credentials` | GET | List the workspace's credentials and sessions for administration. | Yes (`ManageCredentials`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED` |
+| `/api/auth/credentials/{id}` | DELETE | Revoke a credential or session (MAJ-002). | Yes (`ManageCredentials`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND` |
+| `/api/board` | GET | Query workspace issues with the full filter, grouping, ordering, and pagination set; returns server-computed groups plus the applied query echo. | Yes (`ReadBoard`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED` |
+| `/api/issues` | GET | List workspace issues with the legacy `teamId`/`status`/`assigneeId` filters only. Superseded by `GET /api/board`; retained for compatibility (see `DR-BXP-002`). | Yes (`ReadBoard`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED` |
+| `/api/issues` | POST | Create a local workspace issue. | Yes (`ReadWriteIssues`/`ReadWriteAssignedIssues`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND` |
+| `/api/issues/{id}` | GET | Read a single issue. | Yes (`ReadBoard`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND` |
+| `/api/issues/{id}/status` | PATCH | Transition an issue to a target workflow state; validated against the configured workflow (MIN-003). | Yes (`ReadWriteIssues`/`ReadWriteAssignedIssues`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `INVALID_WORKFLOW_TRANSITION`, `CONCURRENCY_CONFLICT` |
+| `/api/issues/{id}/assignee` | PATCH | Reassign an issue to a workspace member, or unassign it. | Yes (`ReadWriteIssues`/`ReadWriteAssignedIssues`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `CONCURRENCY_CONFLICT` |
+| `/api/issues/{id}/comments` | GET, POST | Read an issue's persisted comment thread, or append a comment. | Yes (`ReadBoard` / `ReadWriteComments`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `VALIDATION_FAILED` |
+| `/api/issues/{id}/activity` | GET | Read an issue's activity history as a rendered, cursor-paginated feed (MAJ-008). | Yes (`ReadBoard`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `VALIDATION_FAILED` |
+| `/api/issues/{id}/links` | GET, POST | List or create a typed relationship (e.g., `blocks`, `relates_to`) between two workspace issues. | Yes (`ReadBoard` / `ReadWriteIssues`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `RESOURCE_ALREADY_EXISTS`, `VALIDATION_FAILED` |
+| `/api/issues/{id}/links/{linkId}` | PATCH, DELETE | Update an issue link's type or note, or remove the link (MAJ-010). | Yes (`ReadWriteIssues`/`ReadWriteAssignedIssues`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `RESOURCE_ALREADY_EXISTS`, `VALIDATION_FAILED` |
+| `/api/issues/{id}/artifacts` | GET, POST | List or attach a file/link/deployment artifact on an issue. | Yes (`ReadBoard` / `ReadWriteIssues`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `VALIDATION_FAILED` |
+| `/api/issues/{id}/artifacts/{artifactId}` | DELETE | Remove an artifact from an issue. | Yes (`ReadWriteIssues`/`ReadWriteAssignedIssues`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND` |
+| `/api/issue-link-types` | GET | Read the canonical link-type suggestion list so clients offer the same vocabulary the server accepts. | Yes (`ReadBoard`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED` |
+| `/api/projects` | GET | List workspace projects for board filter population. | Yes (`ReadBoard`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED` |
+| `/api/labels` | GET | List workspace labels for board filter population. | Yes (`ReadBoard`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED` |
+| `/api/teams` | GET, POST | List or create workspace teams. | Yes (`ReadBoard` / `ManageWorkspaceConfig`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED` |
+| `/api/members` | GET, POST | List or create workspace members (human or agent). | Yes (`ReadBoard` / `ManageWorkspaceConfig`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED` |
+| `/api/workflow/states` | GET, POST | List or create configured workflow states. | Yes (`ReadBoard` / `ManageWorkflowStates`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `RESOURCE_ALREADY_EXISTS` |
+| `/api/workflow/states/{stateId}` | PATCH, DELETE | Rename/reorder a workflow state, or archive it. | Yes (`ManageWorkflowStates`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `VALIDATION_FAILED` |
+| `/api/workflow/transitions` | GET, POST | List or create allowed workflow transitions. | Yes (`ReadBoard` / `ManageWorkflowStates`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `VALIDATION_FAILED`, `RESOURCE_ALREADY_EXISTS` |
+| `/api/workflow/transitions/{transitionId}` | DELETE | Remove an allowed transition. | Yes (`ManageWorkflowStates`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND` |
+| `/api/dashboard/summary` | GET | Read the aggregated workspace dashboard (counts, sync condition, staleness). | Yes (`ReadDashboard`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED` |
+| `/api/integrations/health` | GET | Read per-integration sync health, freshness, and backoff state (MAJ-013). | Yes (`ReadIntegrationHealth`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED` |
+| `/api/backups` | GET, POST | List existing backups, or create a new one. | Yes (`ManageBackupRestore`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED` |
+| `/api/backups/{backupId}/verify` | POST | Verify a backup's integrity without restoring it. | Yes (`ManageBackupRestore`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND` |
+| `/api/backups/{backupId}/restore` | POST | Validate and restore a workspace from a verified backup (CRIT-001). | Yes (`ManageBackupRestore`) | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `VALIDATION_FAILED` |
+| `/webhooks/{provider}` | POST | Receive an inbound provider webhook. Anonymous at the routing layer — authenticity is established by provider signature verification, not by a workspace credential — and rejected for paused integrations (MAJ-012). | No (signature-verified) | `VALIDATION_FAILED`, `REFERENCED_ENTITY_NOT_FOUND` |
+| `/hubs/workspace` | WS | SignalR hub carrying workspace-scoped post-commit issue/activity notifications to connected clients. Not a REST route; the connection is authorized once at handshake and the caller is joined to a workspace-scoped group, so a client never receives another workspace's events. | Yes (`ReadBoard`) | 401, 403 |
+| `/api/issues/{id}/archive` | POST | **Planned.** Idempotently archive an issue (sets `ArchivedAt`); excluded from default queries thereafter. `Issue.ArchivedAt` and the board's `includeArchived` filter exist, but no route or service method sets the field. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `CONCURRENCY_CONFLICT` |
+| `/api/issues/{id}/unarchive` | POST | **Planned.** Idempotently unarchive an issue (clears `ArchivedAt`). | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `CONCURRENCY_CONFLICT` |
+| `/api/integrations/{id}/sync` | POST | **Planned.** Start or resume provider synchronization on demand. Sync runs today via the coordinator and inbound webhooks; only the manual trigger is missing. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `PROVIDER_UNAVAILABLE` |
+| `/api/issues/{id}/sync-conflicts/{conflictId}/resolve` | POST | **Planned.** Resolve a flagged resync conflict by choosing a winning revision. No conflict entity is persisted yet; see `integration-and-plugin-platform.md` AC-IPP-111. | Yes | `AUTHENTICATION_REQUIRED`, `CREDENTIAL_INVALID_OR_EXPIRED`, `WORKSPACE_ACCESS_DENIED`, `REFERENCED_ENTITY_NOT_FOUND`, `CONCURRENCY_CONFLICT` |
 
 ### 9.2 Detailed API Specifications
 
-#### `GET /api/v1/issues`
+#### `GET /api/board`
 
-**Description:** Returns a page of workspace issues matching the supplied board filters.
+**Description:** Returns the workspace board: issues matching the supplied filters, arranged into
+server-computed groups, plus an echo of the query that was actually applied. This is the primary
+read path for the SPA and for the `query-board` agent operation.
 
 **Headers:**
 
 | Header | Value | Required |
 |---|---|---|
-| Authorization | Bearer token or configured credential | Yes |
+| Authorization | ****** or configured credential | Yes |
 | X-Correlation-Id | Client-supplied or server-generated UUID | Recommended |
+
+There is no `workspaceId` parameter. The workspace is derived from the caller's credential by
+`WorkspaceAuthorizationMiddleware` and injected as `RestWorkspaceScope`, so a caller cannot name a
+workspace it does not hold — that is what makes cross-workspace access denial and "not found"
+indistinguishable at the transport boundary (§11.2, MAJ-022).
 
 **Query Parameters:**
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| workspaceId | string (UUID) | Yes | — | Target workspace. |
-| workflowStateId | string | No | — | Filter by workflow state. |
-| assigneeId | string (UUID) | No | — | Filter by assignee. |
-| provider | string | No | — | Filter by source provider (`LOCAL`, `GITHUB`, `LINEAR`). |
-| syncCondition | string | No | — | Filter by sync health (`FRESH`, `STALE`, `PAUSED`, `FAILED`, `SYNC_CONFLICT`). |
+| workflowStateId | string (UUID) | No | — | Filter by workflow state. Must belong to the caller's workspace. |
+| assigneeId | string (UUID) | No | — | Filter by assignee. Must belong to the caller's workspace. |
+| projectId | string (UUID) | No | — | Filter by project. Must belong to the caller's workspace. |
+| labelId | string (UUID) | No | — | Filter by label. Must belong to the caller's workspace. |
+| provider | string | No | — | Filter by source provider (`local`, `github`, `linear`). Closed vocabulary. |
+| syncCondition | string | No | — | Filter by sync health (`fresh`, `stale`, `paused`, `failed`). Closed vocabulary. |
+| priority | string | No | — | Filter by priority. Free text: an unrecognized value matches nothing rather than failing. |
+| type | string | No | — | Filter by issue type. Free text, same tolerance as `priority`. |
+| groupBy | string | No | `workflow_state` | One of `workflow_state`, `assignee`, `priority`, `project`, `label`. Closed vocabulary. |
+| orderBy | string | No | `created_at` | One of `created_at`, `updated_at`, `priority`, `title`. Closed vocabulary. |
 | includeArchived | boolean | No | `false` | Include archived issues; default board/list/dashboard queries exclude them. |
 | page | integer | No | 1 | Page number. |
 | limit | integer | No | 25 | Items per page (max 100). |
+| cursor | string | No | — | Opaque continuation token; takes precedence over `page` when supplied. |
+
+Closed-vocabulary parameters (`provider`, `syncCondition`, `groupBy`, `orderBy`) reject an
+unrecognized token with `400 VALIDATION_FAILED` and an error message enumerating the accepted
+values. They accept both snake_case and PascalCase spellings of the same member, because these
+tokens appear verbatim in a shareable board URL and a user editing that URL by hand should not have
+to guess the casing. The free-text filters deliberately do not validate: a `priority` the workspace
+has never used is a legitimate empty result, not a client error.
 
 **Response Body (200 OK):**
 
 ```json
 {
-  "data": [
+  "groups": [
     {
-      "id": "b3b2...",
-      "key": "ANV-142",
-      "title": "Fix stale sync indicator",
-      "workflowStateId": "wf-state-in-progress",
-      "workflowState": "IN_PROGRESS",
-      "priority": "HIGH",
-      "provider": "GITHUB",
-      "syncCondition": "FRESH",
-      "version": 4,
-      "updatedAt": "2026-03-24T10:15:00Z"
+      "key": "3f2a...",
+      "displayName": "In Progress",
+      "issues": [
+        {
+          "id": "b3b2...",
+          "key": "ANV-142",
+          "title": "Fix stale sync indicator",
+          "workflowStateId": "3f2a...",
+          "type": "bug",
+          "priority": "High",
+          "assigneeId": "9c41...",
+          "projectId": null,
+          "provider": "Github",
+          "labelIds": ["7d10..."],
+          "createdAt": "2026-03-20T09:00:00+00:00",
+          "updatedAt": "2026-03-24T10:15:00+00:00",
+          "archivedAt": null
+        }
+      ]
     }
   ],
-  "pagination": { "page": 1, "limit": 25, "totalItems": 118, "totalPages": 5 },
-  "correlationId": "b0c1..."
+  "totalCount": 118,
+  "page": 1,
+  "limit": 25,
+  "nextCursor": "eyJvZmZzZXQiOjI1fQ==",
+  "appliedQuery": {
+    "workflowStateId": null,
+    "assigneeId": null,
+    "provider": null,
+    "projectId": null,
+    "priority": null,
+    "type": null,
+    "labelId": null,
+    "syncCondition": null,
+    "groupBy": "WorkflowState",
+    "orderBy": "CreatedAt",
+    "page": 1,
+    "limit": 25,
+    "includeArchived": false
+  }
 }
 ```
 
-#### `POST /api/v1/issues/{id}/transition`
+The response is the bare object — there is no `data`/`correlationId` envelope on REST. The shared
+`{ apiVersion, correlationId, data }` envelope exists only on the agent/automation surface (§9.3);
+extending it to REST is tracked as an open gap in
+[`agent-and-automation-surface.md`](../features/agent-and-automation-surface.md).
 
-**Description:** Requests a workflow-state transition for an issue; requires an idempotency key.
+`appliedQuery` echoes enum members in their PascalCase .NET form (`"WorkflowState"`), which is not
+the snake_case spelling accepted on input. This asymmetry is intentional and asserted by
+`BoardEndpointTests`: the request vocabulary is a human-editable URL surface, while the echo is a
+machine-readable statement of what the server resolved.
+
+A `null` `nextCursor` means the result set is exhausted. `totalCount` is the count across all
+groups, not the count of the current page.
+
+#### `PATCH /api/issues/{id}/status`
+
+**Description:** Transitions an issue to a target workflow state. The target is a workspace-scoped
+workflow-state ID, not a legacy `IssueStatus` enum member, so configured custom states are reachable
+(MIN-003).
 
 **Headers:**
 
 | Header | Value | Required |
 |---|---|---|
-| Authorization | Bearer token or configured credential | Yes |
-| Idempotency-Key | Client-generated opaque string | Yes |
+| Authorization | ****** or configured credential | Yes |
+
+The REST route does not currently require an `Idempotency-Key`. Idempotency is enforced on the
+agent/automation surface (MAJ-016), where retry-on-timeout is the norm; bringing the same contract
+to REST is part of the outstanding envelope work noted above.
 
 **Request Body:**
 
 ```json
-{ "targetWorkflowStateId": "wf-state-done", "expectedVersion": 4 }
+{ "workflowStateId": "3f2a..." }
 ```
 
-**Response Body (200 OK):**
+**Response Body (200 OK):** the updated issue, with `workflowStateId` and an incremented `version`.
 
-```json
-{ "data": { "id": "b3b2...", "workflowState": "DONE", "version": 5 }, "correlationId": "b0c1..." }
-```
+An unknown workflow-state ID and one belonging to another workspace are both resolved through
+`RestWorkspaceScope` and both surface as the same denial, so the response cannot be used to probe
+for the existence of another workspace's states.
 
 #### Error Codes
 

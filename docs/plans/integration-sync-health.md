@@ -104,7 +104,7 @@ proposition is "you can trust what's in the file", that is the most consequentia
 - **Integration lifecycle REST/CLI surface.** `IIntegrationService` (configure/validate/enable/
   pause/remove) remains unreachable from adapters. This plan adds a *read-only health* surface
   only; wiring the mutating lifecycle is a separate, larger slice (§13.2).
-- **Manual sync trigger.** `POST /api/v1/integrations/{id}/sync` is reserved in tech-design §9.1
+- **Manual sync trigger.** `POST /api/integrations/{id}/sync` is reserved in tech-design §9.1
   and is **not** built here; the coordinator remains the only sync driver (§13.2).
 - **Sync-conflict detection / `SYNC_CONFLICT` / `LastSyncedVersion`.** FR-INT-005 and
   `SyncConflictDetector.cs` belong to M5.5 (§13.2).
@@ -799,7 +799,7 @@ sync-freshness claim, so there was nothing to correct or contradict.
 |---|---|
 | Option B — per-integration sync loops with per-workspace credentials | Breaks the versioned `IIngestionSource` contract; needs AC-IPP-104 manifest validation first (`DR-ISH-002`) |
 | Integration lifecycle REST/CLI/MCP surface | `IIntegrationService` has no adapter at all; a slice of its own, larger than this one |
-| `POST /api/v1/integrations/{id}/sync` manual trigger | Reserved in tech-design §9.1; needs the lifecycle surface above |
+| `POST /api/integrations/{id}/sync` manual trigger | Reserved in tech-design §9.1; needs the lifecycle surface above |
 | Angular health banner + board `syncCondition` chip | Frontend slice; the REST contract here is its prerequisite |
 | MAJ-014 core → plugin event dispatch, FR-INT-004 lifecycle hooks, FR-INT-005 sync conflicts | M5.5 |
 | Realtime push of health transitions over SignalR | `IRealtimeUpdatePublisher` exists; a natural but independent enhancement |

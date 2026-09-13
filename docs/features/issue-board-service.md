@@ -80,8 +80,8 @@ The Issue & Board Service is the single read/write path for issue data in Anvilb
 - **Activity read requests** (`issueId`, `cursor`, `limit`) — from `GET /api/issues/{id}/activity` and the `list-issue-activity` agent operation; `cursor` is opaque and a `null` `nextCursor` in the response means the history is exhausted.
 - **Comment read requests** (`issueId`) — from `GET /api/issues/{id}/comments`, which is what lets a client render persisted comment history rather than only comments it added in the current session.
 - **`NormalizedIssue` / `NormalizedComment` records** (from `integration-and-plugin-platform`'s `IIngestionSource.SyncAsync` and `IWebhookReceiver.HandleAsync` results) — provider-agnostic upsert input.
-- **Transition requests** (`targetWorkflowStateId`, `expectedVersion`, `Idempotency-Key`) — from `POST /api/v1/issues/{id}/transition`.
-- **`SessionState` update requests** (`title`, `description`) — from `PATCH /api/v1/issues/{id}/session-state`, callable by both human actors and enrichment/automation hooks (FR-WRK-006).
+- **Transition requests** (`targetWorkflowStateId`, `expectedVersion`, `Idempotency-Key`) — from `PATCH /api/issues/{id}/status`.
+- **`SessionState` update requests** (`title`, `description`) — from a planned `PATCH /api/issues/{id}/session-state` route (not yet implemented), callable by both human actors and enrichment/automation hooks (FR-WRK-006).
 - **`AddCommentAsync(issueId, body, parentCommentId?, actorId, ct)` calls** — `parentCommentId` is optional; when present it must reference an existing root-level (non-reply) comment on the same issue (FR-WRK-010).
 
 ### Outputs

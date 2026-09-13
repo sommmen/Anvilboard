@@ -27,7 +27,7 @@ workspace-scoped authorization, and three plugin interfaces (`IIngestionSource`,
   model in the tech design — see its migration/compatibility section for how existing statuses
   map onto the new workflow model.
 - The REST surface as it existed then (unauthenticated, unversioned routes under `/api/...`).
-  The canonical technical design versions these under `/api/v1` with workspace scoping and
+  The canonical technical design keeps them unversioned under `/api/...` but adds workspace scoping and
   authorization on every route — see its API section for current contracts.
 - The CLI/MCP agent surface built on `dotnet-agent-surface`, calling the same application
   services as the REST API.
