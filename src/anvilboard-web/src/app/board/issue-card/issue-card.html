@@ -1,15 +1,13 @@
 <article class="card" (click)="open.emit(issue())">
   <header class="card-header">
     <span class="card-key">{{ issue().key }}</span>
-    <span class="card-source" [title]="providerLabels[issue().source]">{{
-      providerLabels[issue().source]
-    }}</span>
+    <span class="card-source" [title]="issue().provider">{{ issue().provider }}</span>
   </header>
 
   <p class="card-title">{{ issue().title }}</p>
 
   <footer class="card-footer">
-    <span class="card-priority" [title]="priorityLabels[issue().priority]">
+    <span class="card-priority" [title]="issue().priority">
       {{ priorityGlyph(issue().priority) }}
     </span>
     @if (issue().assigneeId) {

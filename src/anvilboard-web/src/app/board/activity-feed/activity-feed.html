@@ -1,0 +1,28 @@
+<ol class="activity-feed">
+  @for (entry of entries(); track entry.id) {
+    <li class="activity-entry">
+      <span class="activity-glyph" aria-hidden="true">{{ glyph(entry.type) }}</span>
+      <div class="activity-body">
+        <p class="activity-text">{{ entry.text }}</p>
+        <p class="activity-meta">
+          <span class="activity-actor">{{ entry.actorDisplayName ?? 'System' }}</span>
+          <time [attr.datetime]="entry.occurredAt" [attr.title]="entry.occurredAt">
+            {{ relativeTime(entry.occurredAt) }}
+          </time>
+        </p>
+      </div>
+    </li>
+  } @empty {
+    @if (!loading()) {
+      <li class="activity-empty">No activity yet.</li>
+    }
+  }
+</ol>
+
+@if (loading()) {
+  <p class="activity-loading">Loading activity…</p>
+}
+
+@if (hasMore() && !loading()) {
+  <button type="button" class="ab-btn activity-more" (click)="loadMore.emit()">Load older activity</button>
+}

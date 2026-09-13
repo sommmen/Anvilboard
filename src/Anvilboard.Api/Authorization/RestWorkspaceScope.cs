@@ -105,6 +105,59 @@ public sealed class RestWorkspaceScope(AnvilboardDbContext db, IHttpContextAcces
                 $"Workflow state {stateId} is not accessible from the authenticated workspace.");
     }
 
+    /// <summary>Verifies an optional workflow-state reference belongs to the request's workspace.</summary>
+    public async Task<WorkflowStateId?> RequireWorkflowStateAsync(Guid? stateId, CancellationToken ct = default) =>
+        stateId is { } value ? await RequireWorkflowStateAsync(value, ct) : null;
+
+    /// <summary>Verifies an optional project reference belongs to the request's workspace.</summary>
+    /// <remarks>
+    /// <see cref="Project"/> carries no workspace of its own — it hangs off a team — so the check
+    /// joins through <c>Teams</c> rather than comparing a column, exactly as
+    /// <see cref="RequireIssueAsync"/> does.
+    /// </remarks>
+    public async Task<ProjectId?> RequireProjectAsync(Guid? projectId, CancellationToken ct = default)
+    {
+        if (projectId is not { } value)
+        {
+            return null;
+        }
+
+        var id = new ProjectId(value);
+        var workspaceId = WorkspaceId;
+
+        var belongs = await db.Projects
+            .AsNoTracking()
+            .Join(db.Teams.AsNoTracking(), project => project.TeamId, team => team.Id,
+                (project, team) => new { Project = project, team.WorkspaceId })
+            .AnyAsync(row => row.Project.Id == id && row.WorkspaceId == workspaceId, ct);
+
+        return belongs
+            ? id
+            : throw new WorkspaceScopeDeniedException(
+                $"Project {value} is not accessible from the authenticated workspace.");
+    }
+
+    /// <summary>Verifies an optional label reference belongs to the request's workspace.</summary>
+    public async Task<LabelId?> RequireLabelAsync(Guid? labelId, CancellationToken ct = default)
+    {
+        if (labelId is not { } value)
+        {
+            return null;
+        }
+
+        var id = new LabelId(value);
+        var workspaceId = WorkspaceId;
+
+        var belongs = await db.Labels
+            .AsNoTracking()
+            .AnyAsync(label => label.Id == id && label.WorkspaceId == workspaceId, ct);
+
+        return belongs
+            ? id
+            : throw new WorkspaceScopeDeniedException(
+                $"Label {value} is not accessible from the authenticated workspace.");
+    }
+
     /// <summary>Verifies a workflow transition belongs to the request's workspace.</summary>
     public async Task<WorkflowTransitionId> RequireWorkflowTransitionAsync(
         Guid transitionId,

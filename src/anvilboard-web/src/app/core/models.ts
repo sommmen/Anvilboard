@@ -162,3 +162,153 @@ export type RealtimeIssueChangeKind = 'CREATED' | 'UPDATED';
 export const REALTIME_ISSUE_CHANGED = 'issue.changed';
 export const REALTIME_ACTIVITY_ADDED = 'activity.added';
 export const REALTIME_DASHBOARD_CHANGED = 'dashboard.changed';
+
+// --- Board query ---------------------------------------------------------------------------
+// `GET /api/board` takes and echoes its vocabulary as strings, unlike the numeric enums above
+// that `/api/issues` serializes. These are string unions rather than TypeScript enums so an
+// unrecognised server value is a compile-time type error at the call site instead of an
+// `undefined` lookup at runtime.
+
+export type BoardGroupBy = 'WorkflowState' | 'Type' | 'Priority' | 'Assignee' | 'Label';
+
+export type BoardOrderBy = 'CreatedAt' | 'UpdatedAt' | 'Priority' | 'Manual';
+
+export type BoardSyncCondition = 'Fresh' | 'Stale' | 'Paused' | 'Failed';
+
+export const BOARD_GROUP_BY_OPTIONS: BoardGroupBy[] = [
+  'WorkflowState',
+  'Type',
+  'Priority',
+  'Assignee',
+  'Label',
+];
+
+export const BOARD_GROUP_BY_LABEL: Record<BoardGroupBy, string> = {
+  WorkflowState: 'Workflow state',
+  Type: 'Type',
+  Priority: 'Priority',
+  Assignee: 'Assignee',
+  Label: 'Label',
+};
+
+export const BOARD_ORDER_BY_OPTIONS: BoardOrderBy[] = ['CreatedAt', 'UpdatedAt', 'Priority', 'Manual'];
+
+export const BOARD_ORDER_BY_LABEL: Record<BoardOrderBy, string> = {
+  CreatedAt: 'Created',
+  UpdatedAt: 'Updated',
+  Priority: 'Priority',
+  Manual: 'Manual',
+};
+
+export const BOARD_SYNC_CONDITION_OPTIONS: BoardSyncCondition[] = ['Fresh', 'Stale', 'Paused', 'Failed'];
+
+export const BOARD_SYNC_CONDITION_LABEL: Record<BoardSyncCondition, string> = {
+  Fresh: 'Fresh',
+  Stale: 'Stale',
+  Paused: 'Paused',
+  Failed: 'Failed',
+};
+
+/** Query parameters for `GET /api/board`. Every field is optional; the server supplies defaults. */
+export interface BoardQuery {
+  workflowStateId?: string | null;
+  assigneeId?: string | null;
+  provider?: string | null;
+  projectId?: string | null;
+  priority?: string | null;
+  type?: string | null;
+  labelId?: string | null;
+  syncCondition?: BoardSyncCondition | null;
+  groupBy?: BoardGroupBy | null;
+  orderBy?: BoardOrderBy | null;
+  page?: number | null;
+  limit?: number | null;
+  cursor?: string | null;
+  includeArchived?: boolean | null;
+}
+
+export interface BoardIssue {
+  id: string;
+  key: string;
+  title: string;
+  workflowStateId: string;
+  type?: string | null;
+  priority: string;
+  assigneeId?: string | null;
+  projectId?: string | null;
+  provider: string;
+  labelIds: string[];
+  createdAt: string;
+  updatedAt: string;
+  archivedAt?: string | null;
+}
+
+export interface BoardGroup {
+  key: string;
+  displayName: string;
+  issues: BoardIssue[];
+}
+
+/** The server's resolved view of the request, so the client can tell which filters took effect. */
+export interface BoardAppliedQuery {
+  workflowStateId?: string | null;
+  assigneeId?: string | null;
+  provider?: string | null;
+  projectId?: string | null;
+  priority?: string | null;
+  type?: string | null;
+  labelId?: string | null;
+  syncCondition?: string | null;
+  groupBy: BoardGroupBy;
+  orderBy: BoardOrderBy;
+  page: number;
+  limit: number;
+  includeArchived: boolean;
+}
+
+export interface BoardResult {
+  groups: BoardGroup[];
+  totalCount: number;
+  page: number;
+  limit: number;
+  nextCursor?: string | null;
+  appliedQuery: BoardAppliedQuery;
+}
+
+// --- Activity feed -------------------------------------------------------------------------
+
+/**
+ * One rendered history entry. `text` is the server-rendered sentence — the client displays it
+ * verbatim so a new `type` the client has never heard of still reads correctly, and only reaches
+ * into `data` for the richer presentation of the types it does recognise.
+ */
+export interface ActivityEntry {
+  id: string;
+  type: string;
+  actorId?: string | null;
+  actorDisplayName?: string | null;
+  occurredAt: string;
+  data?: unknown;
+  text: string;
+}
+
+/** A `null` `nextCursor` means the feed is exhausted; there is no separate `hasMore` flag. */
+export interface ActivityPage {
+  entries: ActivityEntry[];
+  nextCursor?: string | null;
+}
+
+// --- Taxonomy ------------------------------------------------------------------------------
+
+export interface ProjectSummary {
+  id: string;
+  teamId: string;
+  name: string;
+  description?: string | null;
+}
+
+export interface LabelSummary {
+  id: string;
+  name: string;
+  color: string;
+}

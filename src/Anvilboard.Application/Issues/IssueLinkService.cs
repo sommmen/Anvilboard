@@ -84,6 +84,65 @@ public sealed class IssueLinkService(AnvilboardDbContext db)
             .ToList();
     }
 
+    /// <summary>
+    /// Corrects a link's type and/or description in place. Re-creating the link instead would reset
+    /// <see cref="IssueLink.CreatedAt"/> and orphan the activity already recorded against it, so a
+    /// mistyped link is edited rather than deleted and re-added (MAJ-011).
+    /// </summary>
+    public async Task<IssueLinkDto> UpdateLinkAsync(
+        WorkspaceId workspaceId,
+        IssueId issueId,
+        IssueLinkId linkId,
+        string? type = null,
+        string? description = null,
+        MemberId? actorId = null,
+        CancellationToken ct = default)
+    {
+        if (type is null && description is null)
+        {
+            throw new IssueLinkException("VALIDATION_FAILED", "At least one of type or description must be supplied.");
+        }
+
+        if (type is not null && string.IsNullOrWhiteSpace(type))
+        {
+            throw new IssueLinkException("VALIDATION_FAILED", "Link type must not be empty.");
+        }
+
+        await RequireIssueInWorkspaceAsync(workspaceId, issueId, ct);
+
+        var link = await db.IssueLinks.FirstOrDefaultAsync(candidate => candidate.Id == linkId, ct);
+        if (link is null || (link.SourceIssueId != issueId && link.TargetIssueId != issueId))
+        {
+            throw new IssueLinkException("REFERENCED_ENTITY_NOT_FOUND", "The issue link was not found for this issue.");
+        }
+
+        var normalizedType = type?.Trim() ?? link.Type;
+
+        // The same uniqueness rule CreateLinkAsync enforces: retyping a link must not be a back door
+        // to a duplicate that the create path would have rejected.
+        if (normalizedType != link.Type && await db.IssueLinks.AnyAsync(candidate =>
+            candidate.Id != linkId
+            && candidate.SourceIssueId == link.SourceIssueId
+            && candidate.TargetIssueId == link.TargetIssueId
+            && candidate.Type == normalizedType, ct))
+        {
+            throw new IssueLinkException("RESOURCE_ALREADY_EXISTS", "An identical directional issue link already exists.");
+        }
+
+        link.Type = normalizedType;
+        link.Description = description ?? link.Description;
+
+        // Both endpoints, unlike create/remove: an edit made from one side must still appear in the
+        // other issue's feed, which is the only place the counterpart's watchers would see it.
+        await RecordActivityAsync(link.SourceIssueId, ActivityEventType.IssueLinkUpdated, actorId, link, ct);
+        await RecordActivityAsync(link.TargetIssueId, ActivityEventType.IssueLinkUpdated, actorId, link, ct);
+        await db.SaveChangesAsync(ct);
+
+        return IssueLinkDto.FromLink(link, link.SourceIssueId == issueId
+            ? IssueLinkDirection.Outgoing
+            : IssueLinkDirection.Incoming);
+    }
+
     public async Task RemoveLinkAsync(
         WorkspaceId workspaceId, IssueId issueId, IssueLinkId linkId, MemberId? actorId = null, CancellationToken ct = default)
     {

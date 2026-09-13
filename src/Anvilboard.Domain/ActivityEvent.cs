@@ -18,6 +18,11 @@ public sealed class ActivityEvent
     public DateTimeOffset OccurredAt { get; init; }
 }
 
+/// <remarks>
+/// Persisted by <c>ActivityEventConfiguration</c> as its underlying <see cref="int"/> with no
+/// value converter, so the ordinals are storage format. New members must be <em>appended</em>;
+/// inserting one mid-enum silently renumbers every already-persisted row below it.
+/// </remarks>
 public enum ActivityEventType
 {
     Created,
@@ -32,4 +37,5 @@ public enum ActivityEventType
     ArtifactAttached,
     ArtifactRefreshed,
     ArtifactRemoved,
+    IssueLinkUpdated,
 }

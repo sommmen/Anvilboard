@@ -1,3 +1,4 @@
+using Anvilboard.Application.Activity;
 using Anvilboard.Application.Artifacts;
 using Anvilboard.Application.Auditing;
 using Anvilboard.Application.Authorization;
@@ -33,6 +34,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IssueService>();
         services.AddScoped<IBoardQueryService, BoardQueryService>();
         services.AddScoped<IssueLinkService>();
+        services.AddScoped<IActivityQueryService, ActivityQueryService>();
         services.AddScoped<IArtifactService, ArtifactService>();
         services.AddScoped<IIntegrationService, IntegrationService>();
         services.AddScoped<DashboardService>();

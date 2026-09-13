@@ -225,6 +225,50 @@ public sealed class IssueService(
     }
 
     /// <summary>
+    /// Reads an issue's comment thread. Comments were previously only ever returned from the
+    /// <see cref="AddCommentAsync"/> response, so a client that reloaded the page lost the thread
+    /// entirely — this is the missing read path.
+    /// </summary>
+    public async Task<IReadOnlyList<CommentDto>> ListCommentsAsync(
+        WorkspaceId workspaceId, IssueId id, CancellationToken ct = default)
+    {
+        var exists = await db.Issues.AsNoTracking().InWorkspace(db, workspaceId).AnyAsync(i => i.Id == id, ct);
+        if (!exists)
+        {
+            throw new InvalidOperationException($"Issue {id} does not exist.");
+        }
+
+        // Sorted after materialization: the SQLite provider cannot translate ORDER BY over a
+        // DateTimeOffset. The filter still runs in the database, so this loads one issue's thread.
+        var comments = (await db.Comments.AsNoTracking()
+                .Where(comment => comment.IssueId == id)
+                .ToListAsync(ct))
+            .OrderBy(comment => comment.CreatedAt)
+            .ThenBy(comment => comment.Id.Value)
+            .ToList();
+
+        // One batched member lookup instead of a join, so a comment whose author was removed still
+        // renders (with a null display name) rather than dropping out of the thread.
+        var authorIds = comments.Where(c => c.AuthorId is not null).Select(c => c.AuthorId!.Value).Distinct().ToList();
+        var authors = authorIds.Count == 0
+            ? new Dictionary<MemberId, string>()
+            : await db.Members.AsNoTracking()
+                .Where(member => member.WorkspaceId == workspaceId && authorIds.Contains(member.Id))
+                .ToDictionaryAsync(member => member.Id, member => member.DisplayName, ct);
+
+        return comments
+            .Select(comment => new CommentDto(
+                comment.Id.Value,
+                comment.IssueId.Value,
+                comment.AuthorId?.Value,
+                comment.AuthorId is { } authorId && authors.TryGetValue(authorId, out var name) ? name : null,
+                comment.Body,
+                comment.Source.ToString(),
+                comment.CreatedAt))
+            .ToList();
+    }
+
+    /// <summary>
     /// Upserts an issue synced in from an ingestion plugin, matching on the
     /// (Provider, SourceKey) dedupe key from <see cref="NormalizedIssue"/>. Used by
     /// <see cref="SyncCoordinator"/> for both first-class (GitHub/Linear) and third-party plugins.
@@ -458,3 +502,13 @@ public sealed class IssueService(
         }
     }
 }
+
+/// <summary>An issue comment projected for transport, with the author's name already resolved.</summary>
+public sealed record CommentDto(
+    Guid Id,
+    Guid IssueId,
+    Guid? AuthorId,
+    string? AuthorDisplayName,
+    string Body,
+    string Source,
+    DateTimeOffset CreatedAt);

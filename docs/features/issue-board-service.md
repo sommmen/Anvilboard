@@ -8,8 +8,8 @@
 |-------|-------|
 | Component | issue-board-service |
 | Priority | P0 |
-| Status | Partial — backend CRUD, board/list querying/filtering/grouping, and dashboard aggregation are implemented; the web UI only groups by status (no filter stack), the issue-detail activity feed is not rendered, comments are flat (not threaded), and optimistic concurrency (`Issue.Version`) and the link-update endpoint are incomplete. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + the integration sync-health change set — six populated .NET test projects 443 passing, `npm test` 21 passing |
+| Status | Partial — backend CRUD, board/list querying/filtering/grouping, and dashboard aggregation are implemented and now reachable from REST (`GET /api/board`), the agent surface (`query-board`), and the web UI's filter stack; activity and comment history have cursor-paged read paths rendered by the issue-detail panel. Comments are still flat (not threaded) and optimistic concurrency (`Issue.Version`) is not enforced on every mutation path. See `docs/audit-report.md` for details. |
+| Last verified | 2026-09-12 against commit `e3e03a5` + the board-experience-parity change set — six populated .NET test projects 521 passing, `npm test` 44 passing |
 | SRS Refs | FR-WRK-001, FR-WRK-002, FR-WRK-003, FR-WRK-004, FR-WRK-005, FR-WRK-006, FR-WRK-007, FR-WRK-008, FR-WRK-009, FR-WRK-010, FR-WRK-011, FR-WRK-012, FR-WRK-013, FR-WRK-014, NFR-PERF-001, NFR-PERF-002, NFR-USB-001 |
 | Tech Design Ref | §8.1 — Issue & Board Service row; also §7.5 Computation Rules, §9 API Design, §12 Performance Design |
 | Depends On | workflow-engine, workspace-authorization |
@@ -76,7 +76,9 @@ The Issue & Board Service is the single read/write path for issue data in Anvilb
 ### Inputs
 - **`CreateAsync` / `ChangeStatusAsync` / `AssignAsync` / `AddCommentAsync` / `ArchiveIssueAsync` / `UnarchiveIssueAsync` calls** (REST controllers, CLI commands, MCP tool handlers, all via `Anvilboard.Application`) — authenticated, workspace-scoped mutation requests.
 - **Sync-conflict resolution requests** (`keep-local`, `apply-remote`, or a client-supplied merged non-additive field set) from the dashboard endpoint; every resolution is versioned and activity-recorded.
-- **Board/list query parameters** (`workspaceId`, `workflowStateId`, `assigneeId`, `provider`, `syncCondition`, `type`, `priority`, `groupBy`, `orderBy`, `includeArchived`, `page`, `limit`) — from `GET /api/v1/issues` and the equivalent CLI/MCP list operations (tech-design §9.2).
+- **Board/list query parameters** (`workspaceId`, `workflowStateId`, `assigneeId`, `provider`, `syncCondition`, `type`, `priority`, `groupBy`, `orderBy`, `includeArchived`, `page`, `limit`) — from `GET /api/board` and the equivalent `query-board` CLI/MCP operation (tech-design §9.2). The legacy unfiltered `GET /api/issues` remains for compatibility but is superseded by `GET /api/board`.
+- **Activity read requests** (`issueId`, `cursor`, `limit`) — from `GET /api/issues/{id}/activity` and the `list-issue-activity` agent operation; `cursor` is opaque and a `null` `nextCursor` in the response means the history is exhausted.
+- **Comment read requests** (`issueId`) — from `GET /api/issues/{id}/comments`, which is what lets a client render persisted comment history rather than only comments it added in the current session.
 - **`NormalizedIssue` / `NormalizedComment` records** (from `integration-and-plugin-platform`'s `IIngestionSource.SyncAsync` and `IWebhookReceiver.HandleAsync` results) — provider-agnostic upsert input.
 - **Transition requests** (`targetWorkflowStateId`, `expectedVersion`, `Idempotency-Key`) — from `POST /api/v1/issues/{id}/transition`.
 - **`SessionState` update requests** (`title`, `description`) — from `PATCH /api/v1/issues/{id}/session-state`, callable by both human actors and enrichment/automation hooks (FR-WRK-006).
@@ -154,9 +156,9 @@ The target transition contract uses `WorkflowStateId` per tech-design §7.5/§8.
 5. Apply `issue.WorkflowStateId = targetWorkflowStateId`, increment `issue.Version`, set `issue.UpdatedAt`; if the target state `IsTerminal`, set `CompletedAt` (mirrors the existing `IsTerminal()` logic in `IssueStatusExtensions`, moved to operate on `WorkflowState.IsTerminal`).
 6. Persist the issue and templated `ActivityEvent(StatusChanged)` within one transaction, return the committed result, then invoke `PostPhaseChange` hooks concurrently under their lifecycle budget and publish the compact real-time change event. Post-commit work cannot alter this successful transition result.
 
-### `ListAsync` → planned `IBoardQueryService.QueryAsync(BoardQuery query, ct)`
+### `IBoardQueryService.QueryAsync(BoardQuery query, ct)` (implemented, exposed as `GET /api/board`)
 
-The current `ListAsync(TeamId?, IssueStatus?, MemberId?, ct)` filters only by team/status/assignee and sorts client-side (documented as acceptable only "at this project's target scale"). FR-WRK-001/FR-WRK-005 require filtering/grouping by team, workflow state, assignee, priority, type, project, label, provider, and sync condition, plus deterministic pagination (tech-design AC-005/AC-006):
+The legacy `ListAsync(TeamId?, IssueStatus?, MemberId?, ct)` filters only by team/status/assignee and sorts client-side (documented as acceptable only "at this project's target scale"); it is retained for compatibility but every new caller uses `QueryAsync`. FR-WRK-001/FR-WRK-005 require filtering/grouping by team, workflow state, assignee, priority, type, project, label, provider, and sync condition, plus deterministic pagination (tech-design AC-005/AC-006):
 
 | Filter field | Type | Behavior |
 |---|---|---|

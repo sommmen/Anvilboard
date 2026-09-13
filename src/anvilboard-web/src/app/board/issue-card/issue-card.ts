@@ -1,6 +1,14 @@
 import { Component, input, output } from '@angular/core';
-import { ISSUE_PRIORITY_LABEL, Issue, IssuePriority, PROVIDER_LABEL } from '../../core/models';
+import { BoardIssue } from '../../core/models';
 
+/**
+ * A card in the board projection. It takes `BoardIssue` rather than the full `Issue` because
+ * `GET /api/board` already sends exactly what a card needs — widening it to the full record would
+ * put description bodies on the wire for every card on screen.
+ *
+ * `priority` and `provider` arrive as server-rendered strings, so the card shows them as given
+ * instead of mapping through a client-side numeric enum that could drift from the server's.
+ */
 @Component({
   imports: [],
   selector: 'app-issue-card',
@@ -8,22 +16,18 @@ import { ISSUE_PRIORITY_LABEL, Issue, IssuePriority, PROVIDER_LABEL } from '../.
   templateUrl: './issue-card.html',
 })
 export class IssueCard {
-  readonly issue = input.required<Issue>();
-  readonly open = output<Issue>();
+  readonly issue = input.required<BoardIssue>();
+  readonly open = output<BoardIssue>();
 
-  readonly priorityLabels = ISSUE_PRIORITY_LABEL;
-  readonly providerLabels = PROVIDER_LABEL;
-  readonly Priority = IssuePriority;
-
-  priorityGlyph(priority: IssuePriority): string {
+  priorityGlyph(priority: string): string {
     switch (priority) {
-      case IssuePriority.Urgent:
+      case 'Urgent':
         return '🔥';
-      case IssuePriority.High:
+      case 'High':
         return '▲';
-      case IssuePriority.Medium:
+      case 'Medium':
         return '●';
-      case IssuePriority.Low:
+      case 'Low':
         return '▽';
       default:
         return '·';

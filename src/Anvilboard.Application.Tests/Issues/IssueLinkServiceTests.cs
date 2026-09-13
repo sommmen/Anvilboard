@@ -250,6 +250,163 @@ public sealed class IssueLinkServiceTests
         Assert.Equal(beforeVersion, unchanged.Version);
     }
 
+    [Fact]
+    public async Task UpdateLinkAsync_TypeOnly_PreservesDescriptionAndCreatedAt()
+    {
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var created = await service.CreateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", "why they relate");
+
+        var updated = await service.UpdateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "BLOCKS");
+
+        Assert.Equal("BLOCKS", updated.Type);
+        Assert.Equal("why they relate", updated.Description);
+        Assert.Equal(created.CreatedAt, updated.CreatedAt);
+    }
+
+    [Fact]
+    public async Task UpdateLinkAsync_DescriptionOnly_PreservesType()
+    {
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var created = await service.CreateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+
+        var updated = await service.UpdateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), description: "added later");
+
+        Assert.Equal("RELATED", updated.Type);
+        Assert.Equal("added later", updated.Description);
+    }
+
+    [Fact]
+    public async Task UpdateLinkAsync_RecordsActivityOnBothIssues()
+    {
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var created = await service.CreateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+
+        await service.UpdateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "BLOCKS");
+
+        var events = await fixture.Db.ActivityEvents
+            .Where(e => e.Type == ActivityEventType.IssueLinkUpdated)
+            .ToListAsync();
+        Assert.Equal(2, events.Count);
+        Assert.Contains(events, e => e.IssueId == fixture.IssueA.Id);
+        Assert.Contains(events, e => e.IssueId == fixture.IssueB.Id);
+    }
+
+    [Fact]
+    public async Task UpdateLinkAsync_RetypeOntoExistingPair_ThrowsResourceAlreadyExists()
+    {
+        // Retyping must not become a back door around the create path's uniqueness rule.
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "BLOCKS");
+        var second = await service.CreateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+
+        var ex = await Assert.ThrowsAsync<IssueLinkException>(
+            () => service.UpdateLinkAsync(
+                fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(second.Id), type: "BLOCKS"));
+
+        Assert.Equal("RESOURCE_ALREADY_EXISTS", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task UpdateLinkAsync_SameTypeAgain_Succeeds()
+    {
+        // The uniqueness re-check must only fire when the type actually changed, otherwise a
+        // description-only edit that also re-sends the current type would collide with itself.
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var created = await service.CreateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+
+        var updated = await service.UpdateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "RELATED", description: "note");
+
+        Assert.Equal("RELATED", updated.Type);
+        Assert.Equal("note", updated.Description);
+    }
+
+    [Fact]
+    public async Task UpdateLinkAsync_NoFieldsSupplied_ThrowsValidationFailed()
+    {
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var created = await service.CreateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+
+        var ex = await Assert.ThrowsAsync<IssueLinkException>(
+            () => service.UpdateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id)));
+
+        Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task UpdateLinkAsync_WhitespaceType_ThrowsValidationFailed()
+    {
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var created = await service.CreateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+
+        var ex = await Assert.ThrowsAsync<IssueLinkException>(
+            () => service.UpdateLinkAsync(
+                fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "   "));
+
+        Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task UpdateLinkAsync_LinkNotAssociatedWithIssue_ThrowsReferencedEntityNotFound()
+    {
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var created = await service.CreateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+
+        var ex = await Assert.ThrowsAsync<IssueLinkException>(
+            () => service.UpdateLinkAsync(
+                fixture.WorkspaceId, fixture.IssueC.Id, new IssueLinkId(created.Id), type: "BLOCKS"));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task UpdateLinkAsync_OtherWorkspaceIssue_ThrowsReferencedEntityNotFound()
+    {
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var created = await service.CreateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+
+        var ex = await Assert.ThrowsAsync<IssueLinkException>(
+            () => service.UpdateLinkAsync(
+                fixture.OtherWorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "BLOCKS"));
+
+        Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task UpdateLinkAsync_FromTargetSide_ReturnsIncomingDirection()
+    {
+        await using var fixture = await IssueLinkFixture.CreateAsync();
+        var service = new IssueLinkService(fixture.Db);
+        var created = await service.CreateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+
+        var updated = await service.UpdateLinkAsync(
+            fixture.WorkspaceId, fixture.IssueB.Id, new IssueLinkId(created.Id), type: "BLOCKS");
+
+        Assert.Equal(IssueLinkDirection.Incoming, updated.Direction);
+    }
+
     private sealed class IssueLinkFixture : IAsyncDisposable
     {
         private readonly SqliteConnection connection;

@@ -1,4 +1,6 @@
 using Anvilboard.Api.Authorization;
+using Anvilboard.Application.Activity;
+using Anvilboard.Application.Automation;
 using Anvilboard.Application.Issues;
 using Anvilboard.Domain;
 
@@ -127,6 +129,48 @@ public static class IssueEndpoints
             }
         }).RequirePermission(Permission.ReadWriteComments);
 
+        group.MapGet("/{id:guid}/comments", async (Guid id, IssueService service, RestWorkspaceScope scope, CancellationToken ct) =>
+        {
+            try
+            {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var comments = await service.ListCommentsAsync(scope.WorkspaceId, issueId, ct);
+                return Results.Ok(comments);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
+            }
+        });
+
+        group.MapGet("/{id:guid}/activity", async (
+            Guid id,
+            int? limit,
+            string? cursor,
+            IActivityQueryService service,
+            RestWorkspaceScope scope,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var page = await service.ListForIssueAsync(
+                    scope.WorkspaceId, issueId, limit ?? ActivityQueryService.DefaultLimit, cursor, ct);
+                return Results.Ok(page);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
+            }
+            catch (ActivityQueryException ex)
+            {
+                return Results.Problem(
+                    title: ex.ErrorCode,
+                    detail: ex.Message,
+                    statusCode: ErrorCodeCatalog.HttpStatusFor(ex.ErrorCode));
+            }
+        });
+
         group.MapGet("/{id:guid}/links", async (Guid id, IssueLinkService service, RestWorkspaceScope scope, CancellationToken ct) =>
         {
             try
@@ -173,6 +217,35 @@ public static class IssueEndpoints
             }
         }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
 
+        group.MapPatch("/{id:guid}/links/{linkId:guid}", async (
+            Guid id,
+            Guid linkId,
+            UpdateIssueLinkRequest request,
+            IssueLinkService service,
+            RestWorkspaceScope scope,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                var issueId = await scope.RequireIssueAsync(id, ct);
+                var actorId = await scope.RequireMemberAsync(request.ActorId, ct);
+                var link = await service.UpdateLinkAsync(
+                    scope.WorkspaceId, issueId, new IssueLinkId(linkId), request.Type, request.Description, actorId, ct);
+                return Results.Ok(link);
+            }
+            catch (WorkspaceScopeDeniedException)
+            {
+                return WorkspaceScopeResults.Denied();
+            }
+            catch (IssueLinkException ex)
+            {
+                return Results.Problem(
+                    title: ex.ErrorCode,
+                    detail: ex.Message,
+                    statusCode: ErrorCodeCatalog.HttpStatusFor(ex.ErrorCode));
+            }
+        }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
+
         group.MapDelete("/{id:guid}/links/{linkId:guid}", async (Guid id, Guid linkId, Guid? actorId, IssueLinkService service, RestWorkspaceScope scope, CancellationToken ct) =>
         {
             try
@@ -201,3 +274,7 @@ public sealed record ChangeStatusRequest(Guid WorkflowStateId);
 public sealed record AssignRequest(Guid? AssigneeId);
 public sealed record AddCommentRequest(string Body, Guid? AuthorId = null);
 public sealed record CreateIssueLinkRequest(Guid TargetIssueId, string Type, string? Description = null, Guid? ActorId = null);
+
+/// <summary>Both fields are nullable to mean "leave unchanged"; supplying neither is rejected as a
+/// no-op rather than silently recording an activity event for nothing.</summary>
+public sealed record UpdateIssueLinkRequest(string? Type = null, string? Description = null, Guid? ActorId = null);

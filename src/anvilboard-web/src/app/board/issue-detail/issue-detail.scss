@@ -137,16 +137,40 @@
   flex: 1;
 }
 
+.issue-link-edit,
 .issue-link-remove {
   background: transparent;
   border: none;
   color: var(--ab-text-faint);
   font-size: 11px;
-  margin-left: auto;
 
   &:hover {
     color: var(--ab-text);
   }
+}
+
+.issue-link-edit {
+  margin-left: auto;
+}
+
+.issue-link-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  margin-bottom: 6px;
+  background: var(--ab-bg-elevated);
+  border: 1px solid var(--ab-border);
+  border-radius: var(--ab-radius-md);
+}
+
+.issue-link-editor-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.panel-activity {
+  margin-top: 18px;
 }
 
 .link-composer {

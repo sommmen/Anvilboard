@@ -195,14 +195,30 @@ fixed**.
 - **Impact**: Discussion UX described in the spec (nested replies) cannot be built without a data-model change.
 - **Fix**: Either add a parent-comment reference to the domain model, or re-scope the spec to flat comments until threading is implemented.
 
-### MAJ-007: Web UI only groups by status; backend filtering is richer than the UI exposes
+### MAJ-007: Web UI only groups by status; backend filtering is richer than the UI exposes — **RESOLVED**
+
+> **Resolved.** `BoardQueryService` is now reachable end-to-end. `GET /api/board`
+> (`src/Anvilboard.Api/Endpoints/BoardEndpoints.cs`) exposes every filter dimension the service
+> supports, and the Angular board renders them through a dedicated filter stack
+> (`src/anvilboard-web/src/app/board/board-filters/`) with kanban and list presentations plus
+> URL-mirrored state. The five server-side groupings (workflow state, type, priority, assignee,
+> label) are selectable from the UI. See
+> [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md).
+
 - **Location**: `docs/features/issue-board-service.md`
 - **Issue**: `BoardQueryService` supports multi-dimension filtering (team, workflow state, assignee, priority, project, label, source, sync condition per PRD US-HUM-002), but the Angular board view only groups/filters by status.
 - **Evidence**: Frontend board component inspection shows a single status-based grouping; no UI controls for the other filter dimensions the backend supports.
 - **Impact**: Backend capability is not reachable by end users, understating the gap between "backend done" and "feature usable."
 - **Fix**: Extend the board UI to expose the already-implemented backend filter dimensions, or note the UI gap explicitly in the feature doc (done by this audit's Status row).
 
-### MAJ-008: Issue-detail activity feed missing from the frontend
+### MAJ-008: Issue-detail activity feed missing from the frontend — **RESOLVED**
+
+> **Resolved.** `GET /api/issues/{id}/activity` (cursor-paged, server-rendered `text` per entry)
+> backs a new `app-activity-feed` component wired into the issue-detail panel, refreshed on the
+> `activity.added` realtime event. The same pass added `GET /api/issues/{id}/comments`, so the
+> comment thread now loads persisted history instead of only comments added in the current
+> session. See [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md).
+
 - **Location**: `docs/features/issue-board-service.md`
 - **Issue**: Activity events are recorded server-side, but the issue-detail Angular view does not render an activity/history feed.
 - **Evidence**: No activity-feed component found wired to the issue-detail route; `ActivityEvent` data is not fetched/displayed there.
@@ -216,14 +232,28 @@ fixed**.
 - **Impact**: Conflicting concurrent edits may silently overwrite each other on the paths that skip the check, contradicting the PRD's "conflicting edits show what changed" requirement (US-HUM-003).
 - **Fix**: Audit all issue-mutation entry points for consistent version-check enforcement.
 
-### MAJ-010: Link-update endpoint missing
+### MAJ-010: Link-update endpoint missing — **RESOLVED**
+
+> **Resolved.** `PATCH /api/issues/{id}/links/{linkId}` and the `update-issue-link` agent
+> operation now correct a link's type or description in place, writing an
+> `ActivityEventType.IssueLinkUpdated` entry rather than discarding the link's history. The
+> issue-detail panel edits a link inline. See
+> [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md).
+
 - **Location**: `docs/features/issue-linking.md`
 - **Issue**: Spec implies links can be updated (e.g., change link type) in addition to created/removed. No update endpoint was found; only create/delete.
 - **Evidence**: `IssueLinkService`/controller inspection shows create and delete operations, no update.
 - **Impact**: Users must delete and recreate a link to change its type, losing any metadata/history tied to the original link.
 - **Fix**: Add a link-update endpoint, or clarify the spec to state links are immutable except for delete/recreate.
 
-### MAJ-011: Web issue-detail does not enforce link types server-side in the UI layer
+### MAJ-011: Web issue-detail does not enforce link types server-side in the UI layer — **RESOLVED**
+
+> **Resolved.** `GET /api/issue-link-types` serves the canonical vocabulary and the issue-detail
+> form sources its suggestions from it, so the client no longer carries a hardcoded list that can
+> drift from the server's. The type remains a free-text field by design (`FR-LNK-001` AC1 validates
+> only non-empty), so this is a suggestion surface rather than client-side rejection. See
+> [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md).
+
 - **Location**: `docs/features/issue-linking.md`
 - **Issue**: The set of valid link types is enforced by the backend service, but the Angular issue-detail UI does not mirror/validate this, allowing potentially confusing UI states before a server rejection.
 - **Evidence**: Frontend link-creation form inspection shows no client-side type-list validation sourced from the backend's canonical set.
@@ -536,6 +566,6 @@ graph TD
 5. ~~**Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations**~~ — MAJ-003, MAJ-004, and MAJ-005 closed with workspace-scoped REST and CLI/MCP operations, idempotent agent mutations, audit emission, and integration coverage — done: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md)
 6. ~~**Wire agent-surface authorization, idempotency, and an `apiVersion` contract field**~~ — MAJ-015, MAJ-016, and MAJ-017 closed with SQLite-backed integration coverage — done
 7. ~~**Add sync-health/backoff tracking and enforce paused-integration webhook rejection**~~ — MAJ-012 and MAJ-013 closed with the `IntegrationHealth` table, a single sync-condition derivation reused by the board filter and dashboard, categorized exponential backoff honouring `Retry-After`, paused-webhook rejection after signature verification, and REST plus agent read surfaces — done: [`docs/plans/integration-sync-health.md`](./plans/integration-sync-health.md)
-8. **Close remaining UI/UX gaps (board filter parity, issue-detail activity feed, link-update endpoint)** — fixes MAJ-007, MAJ-008, MAJ-010, MAJ-011 — medium
+8. ~~**Close remaining UI/UX gaps (board filter parity, issue-detail activity feed, link-update endpoint)**~~ — MAJ-007, MAJ-008, MAJ-010, and MAJ-011 closed with `GET /api/board` wiring the orphaned `IBoardQueryService` to REST and agent callers, cursor-paged activity and comment read paths, `PATCH …/links/{linkId}`, a server-owned link-type vocabulary, and the Angular filter stack plus activity feed — done: [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md)
 9. **Add a generic filterable audit-query method (`QueryAsync`-equivalent)** — fixes MAJ-018 — small
 10. ~~**Reword the README Kanban-column description and add missing agent tools to the documented catalog**~~ — MIN-001 and MIN-005 both closed during the documentation-currency pass (see MIN-007) — done

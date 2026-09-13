@@ -1,0 +1,144 @@
+<div class="board-filters">
+  <label class="filter">
+    <span>State</span>
+    <select
+      [value]="query().workflowStateId ?? ''"
+      (change)="updateFromSelect('workflowStateId', $any($event.target).value)"
+    >
+      <option value="">Any</option>
+      @for (state of workflowStates(); track state.id) {
+        <option [value]="state.id">{{ state.displayName }}</option>
+      }
+    </select>
+  </label>
+
+  <label class="filter">
+    <span>Assignee</span>
+    <select
+      [value]="query().assigneeId ?? ''"
+      (change)="updateFromSelect('assigneeId', $any($event.target).value)"
+    >
+      <option value="">Anyone</option>
+      @for (member of members(); track member.id) {
+        <option [value]="member.id">{{ member.displayName }}</option>
+      }
+    </select>
+  </label>
+
+  <label class="filter">
+    <span>Project</span>
+    <select
+      [value]="query().projectId ?? ''"
+      (change)="updateFromSelect('projectId', $any($event.target).value)"
+    >
+      <option value="">Any</option>
+      @for (project of projects(); track project.id) {
+        <option [value]="project.id">{{ project.name }}</option>
+      }
+    </select>
+  </label>
+
+  <label class="filter">
+    <span>Label</span>
+    <select
+      [value]="query().labelId ?? ''"
+      (change)="updateFromSelect('labelId', $any($event.target).value)"
+    >
+      <option value="">Any</option>
+      @for (label of labels(); track label.id) {
+        <option [value]="label.id">{{ label.name }}</option>
+      }
+    </select>
+  </label>
+
+  <label class="filter">
+    <span>Priority</span>
+    <select
+      [value]="query().priority ?? ''"
+      (change)="updateFromSelect('priority', $any($event.target).value)"
+    >
+      <option value="">Any</option>
+      @for (priority of priorityOptions; track priority) {
+        <option [value]="priority">{{ priorityLabels[priority] }}</option>
+      }
+    </select>
+  </label>
+
+  <label class="filter">
+    <span>Source</span>
+    <select
+      [value]="query().provider ?? ''"
+      (change)="updateFromSelect('provider', $any($event.target).value)"
+    >
+      <option value="">Any</option>
+      @for (provider of providerOptions; track provider) {
+        <option [value]="provider">{{ provider }}</option>
+      }
+    </select>
+  </label>
+
+  <label class="filter">
+    <span>Sync</span>
+    <select
+      [value]="query().syncCondition ?? ''"
+      (change)="setSyncCondition($any($event.target).value)"
+    >
+      <option value="">Any</option>
+      @for (condition of syncConditionOptions; track condition) {
+        <option [value]="condition">{{ syncConditionLabels[condition] }}</option>
+      }
+    </select>
+  </label>
+
+  <label class="filter">
+    <span>Group by</span>
+    <select [value]="query().groupBy ?? 'WorkflowState'" (change)="setGroupBy($any($event.target).value)">
+      @for (option of groupByOptions; track option) {
+        <option [value]="option">{{ groupByLabels[option] }}</option>
+      }
+    </select>
+  </label>
+
+  <label class="filter">
+    <span>Order by</span>
+    <select [value]="query().orderBy ?? 'CreatedAt'" (change)="setOrderBy($any($event.target).value)">
+      @for (option of orderByOptions; track option) {
+        <option [value]="option">{{ orderByLabels[option] }}</option>
+      }
+    </select>
+  </label>
+
+  <label class="filter filter-check">
+    <input
+      type="checkbox"
+      [checked]="query().includeArchived ?? false"
+      (change)="setIncludeArchived($any($event.target).checked)"
+    />
+    <span>Archived</span>
+  </label>
+
+  <div class="view-switch" role="group" aria-label="Board view">
+    <button
+      type="button"
+      class="ab-btn"
+      [class.is-active]="view() === 'kanban'"
+      [attr.aria-pressed]="view() === 'kanban'"
+      (click)="setView('kanban')"
+    >
+      Kanban
+    </button>
+    <button
+      type="button"
+      class="ab-btn"
+      [class.is-active]="view() === 'list'"
+      [attr.aria-pressed]="view() === 'list'"
+      (click)="setView('list')"
+    >
+      List
+    </button>
+  </div>
+
+  @if (hasActiveFilters()) {
+    <button type="button" class="ab-btn clear-filters" (click)="clear()">Clear filters</button>
+  }
+</div>

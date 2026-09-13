@@ -2,13 +2,18 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
+  ActivityPage,
+  BoardQuery,
+  BoardResult,
   Comment,
   DashboardSummary,
   Issue,
   IssueLink,
   IssuePriority,
   IssueStatus,
+  LabelSummary,
   Member,
+  ProjectSummary,
   Team,
   WorkflowState,
 } from './models';
@@ -103,6 +108,61 @@ export class BoardApiService {
     const params: Record<string, string> = {};
     if (actorId) params['actorId'] = actorId;
     return this.http.delete<void>(`/api/issues/${issueId}/links/${linkId}`, { params });
+  }
+
+  /**
+   * Partially updates a link. Omitting a field leaves it unchanged, so the caller can retype a
+   * link without having to resend the description it never touched.
+   */
+  updateIssueLink(
+    issueId: string,
+    linkId: string,
+    changes: { type?: string; description?: string },
+    actorId?: string,
+  ): Observable<IssueLink> {
+    return this.http.patch<IssueLink>(`/api/issues/${issueId}/links/${linkId}`, {
+      ...changes,
+      actorId,
+    });
+  }
+
+  /**
+   * The grouped, filtered board. Unlike {@link listIssues}, grouping and ordering happen on the
+   * server, so the client renders whatever groups come back instead of assuming a fixed set of
+   * status columns — which is what lets group-by-assignee or group-by-label work at all.
+   */
+  queryBoard(query: BoardQuery = {}): Observable<BoardResult> {
+    const params: Record<string, string> = {};
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== null && value !== '') {
+        params[key] = String(value);
+      }
+    }
+    return this.http.get<BoardResult>('/api/board', { params });
+  }
+
+  listIssueComments(issueId: string): Observable<Comment[]> {
+    return this.http.get<Comment[]>(`/api/issues/${issueId}/comments`);
+  }
+
+  listIssueActivity(issueId: string, options?: { limit?: number; cursor?: string }): Observable<ActivityPage> {
+    const params: Record<string, string> = {};
+    if (options?.limit !== undefined) params['limit'] = String(options.limit);
+    if (options?.cursor) params['cursor'] = options.cursor;
+    return this.http.get<ActivityPage>(`/api/issues/${issueId}/activity`, { params });
+  }
+
+  listProjects(): Observable<ProjectSummary[]> {
+    return this.http.get<ProjectSummary[]>('/api/projects');
+  }
+
+  listLabels(): Observable<LabelSummary[]> {
+    return this.http.get<LabelSummary[]>('/api/labels');
+  }
+
+  /** The server-owned link-type vocabulary, so the client never hardcodes a stale suggestion list. */
+  listLinkTypes(): Observable<string[]> {
+    return this.http.get<string[]>('/api/issue-link-types');
   }
 
   getDashboardSummary(teamId?: string): Observable<DashboardSummary> {
