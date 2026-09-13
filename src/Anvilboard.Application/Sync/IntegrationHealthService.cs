@@ -79,7 +79,6 @@ public sealed class IntegrationHealthService(
             db.IntegrationHealth.Add(health);
         }
 
-        health.PluginKey = outcome.PluginKey;
         health.LastAttemptAt = outcome.AttemptedAt;
         health.NextAttemptNotBefore = outcome.NextAttemptNotBefore;
         health.UpdatedAt = now;
