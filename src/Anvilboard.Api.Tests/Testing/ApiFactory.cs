@@ -66,38 +66,6 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncDisposabl
     }
 
     /// <summary>
-    /// Seeds the workflow states a workspace needs before an issue can be created. The bootstrap
-    /// endpoint does not seed them (only the <c>AddWorkflowStates</c> migration does, for workspaces
-    /// that already existed), so a test that creates issues has to supply them itself.
-    /// </summary>
-    public async Task SeedWorkflowStatesAsync()
-    {
-        using var scope = Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
-        var workspaceId = await db.Workspaces.Select(workspace => workspace.Id).FirstAsync();
-
-        db.WorkflowStates.AddRange(
-            new WorkflowState
-            {
-                Id = WorkflowStateId.New(),
-                WorkspaceId = workspaceId,
-                Key = "backlog",
-                DisplayName = "Backlog",
-                Order = 0,
-            },
-            new WorkflowState
-            {
-                Id = WorkflowStateId.New(),
-                WorkspaceId = workspaceId,
-                Key = "done",
-                DisplayName = "Done",
-                Order = 1,
-                IsTerminal = true,
-            });
-        await db.SaveChangesAsync();
-    }
-
-    /// <summary>
     /// Seeds a second workspace with its own administrator directly through the DbContext, and
     /// returns that workspace's id. The bootstrap endpoint refuses to run twice, so tests that need
     /// two tenants on <em>one</em> host — the only way to prove cross-workspace isolation inside a
@@ -165,6 +133,132 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncDisposabl
         }
 
         return await LoginAndGetSessionCookieAsync(client, username, password);
+    }
+
+    /// <summary>
+    /// Seeds a team and a single issue into <paramref name="workspaceId"/> directly through the
+    /// DbContext, returning both ids. Cross-workspace isolation tests need a target that provably
+    /// exists but belongs to somebody else, which no authenticated API surface will hand out.
+    /// </summary>
+    public async Task<(Guid TeamId, Guid IssueId)> SeedTeamWithIssueAsync(
+        WorkspaceId workspaceId,
+        string teamKey = "FOR",
+        string issueTitle = "Foreign issue")
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
+
+        var team = new Team
+        {
+            Id = TeamId.New(),
+            WorkspaceId = workspaceId,
+            Name = teamKey,
+            Key = teamKey,
+            NextIssueNumber = 2,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Teams.Add(team);
+
+        var issue = new Issue
+        {
+            Id = IssueId.New(),
+            TeamId = team.Id,
+            Key = $"{teamKey}-1",
+            Title = issueTitle,
+            Status = IssueStatus.Backlog,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Issues.Add(issue);
+
+        await db.SaveChangesAsync();
+        return (team.Id.Value, issue.Id.Value);
+    }
+
+    /// <summary>
+    /// Reads an issue straight from the database, bypassing every workspace guard, so a test can
+    /// prove that a denied request also changed nothing.
+    /// </summary>
+    public async Task<Issue> ReadIssueAsync(Guid issueId)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
+        return await db.Issues.AsNoTracking().SingleAsync(issue => issue.Id == new IssueId(issueId));
+    }
+
+    /// <summary>
+    /// Counts a team's issues, bypassing every workspace guard, so a test can prove that a denied
+    /// create landed nowhere.
+    /// </summary>
+    public async Task<int> CountIssuesInTeamAsync(Guid teamId)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
+        return await db.Issues.CountAsync(issue => issue.TeamId == new TeamId(teamId));
+    }
+
+    /// <summary>
+    /// Counts rows a denied write must not have created, bypassing every workspace guard.
+    /// </summary>
+    public async Task<(int Comments, int Artifacts, int Links)> CountChildRowsAsync(Guid issueId)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
+        var id = new IssueId(issueId);
+        return (
+            await db.Comments.CountAsync(comment => comment.IssueId == id),
+            await db.Artifacts.CountAsync(artifact => artifact.IssueId == id),
+            await db.IssueLinks.CountAsync(link => link.SourceIssueId == id || link.TargetIssueId == id));
+    }
+
+    /// <summary>
+    /// Attaches a link between two issues straight through the DbContext. A delete-denial test needs
+    /// a link that provably exists inside somebody else's workspace, which no scoped API will create.
+    /// </summary>
+    public async Task<Guid> SeedLinkAsync(Guid sourceIssueId, Guid targetIssueId)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
+
+        var link = new IssueLink
+        {
+            Id = IssueLinkId.New(),
+            SourceIssueId = new IssueId(sourceIssueId),
+            TargetIssueId = new IssueId(targetIssueId),
+            Type = "related",
+            Description = "Foreign link",
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.IssueLinks.Add(link);
+
+        await db.SaveChangesAsync();
+        return link.Id.Value;
+    }
+
+    /// <summary>
+    /// Attaches an artifact straight through the DbContext, for the same reason as
+    /// <see cref="SeedLinkAsync"/>: the delete-denial target must already exist elsewhere.
+    /// </summary>
+    public async Task<Guid> SeedArtifactAsync(Guid issueId)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
+
+        var artifact = new Artifact
+        {
+            Id = ArtifactId.New(),
+            IssueId = new IssueId(issueId),
+            Kind = ArtifactKind.Link,
+            Title = "Foreign artifact",
+            ContentReference = "https://example.test/foreign",
+            Source = "local",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Artifacts.Add(artifact);
+
+        await db.SaveChangesAsync();
+        return artifact.Id.Value;
     }
 
     /// <summary>
