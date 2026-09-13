@@ -236,6 +236,10 @@ public sealed class SyncCoordinator(
     /// rejected credential is quarantined on a flat long interval (exponential growth is pointless
     /// when no amount of waiting fixes it), and everything else grows exponentially with full
     /// jitter so sources that failed together do not re-synchronize on recovery.
+    /// A non-positive <c>Retry-After</c> — including one a provider sent as negative and
+    /// <see cref="ProviderThrottledException"/> clamped to zero — reads as "no interval stated"
+    /// and falls through to the ordinary schedule; retrying immediately against a source that just
+    /// throttled us would only earn a second throttle.
     /// </remarks>
     internal static BackoffState Advance(
         BackoffState current,

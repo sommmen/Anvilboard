@@ -29,6 +29,36 @@ public sealed class BoardQueryServiceTests
         Assert.Equal(3, withArchived.TotalCount);
     }
 
+    [Fact]
+    public async Task QueryAsync_SyncConditionNarrowsToTheProvidersInThatCondition()
+    {
+        await using var fixture = await BoardQueryFixture.CreateAsync();
+
+        // The seeded GitHub integration has no health row yet, which derives as Stale, so the
+        // filter must resolve to { GitHub } and drop the locally created issues.
+        var page = await fixture.Service.QueryAsync(
+            new BoardQuery(fixture.WorkspaceId, SyncCondition: BoardSyncCondition.Stale, IncludeArchived: true));
+
+        Assert.Equal(1, page.TotalCount);
+        var issue = Assert.Single(page.Groups.SelectMany(group => group.Issues));
+        Assert.Equal("TST-1", issue.Key);
+    }
+
+    [Fact]
+    public async Task QueryAsync_SyncConditionWithNoMatchingProvidersReturnsAnEmptyPage()
+    {
+        await using var fixture = await BoardQueryFixture.CreateAsync();
+
+        // Nothing is failing, so the resolved provider set is empty. That must mean "no issues",
+        // never "no filter" — the unfiltered board would return three issues here.
+        var page = await fixture.Service.QueryAsync(
+            new BoardQuery(fixture.WorkspaceId, SyncCondition: BoardSyncCondition.Failed, IncludeArchived: true));
+
+        Assert.Equal(0, page.TotalCount);
+        Assert.Empty(page.Groups);
+        Assert.Null(page.NextCursor);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(101)]
@@ -82,9 +112,19 @@ public sealed class BoardQueryServiceTests
             db.Workspaces.Add(new Workspace { Id = workspaceId, Name = "Workspace", Slug = "workspace", CreatedAt = DateTimeOffset.UtcNow });
             db.Teams.Add(new Team { Id = teamId, WorkspaceId = workspaceId, Name = "Team", Key = "TST", CreatedAt = DateTimeOffset.UtcNow });
             db.WorkflowStates.Add(new WorkflowState { Id = workflowStateId, WorkspaceId = workspaceId, Key = "todo", DisplayName = "Todo", Order = 0 });
+            db.Integrations.Add(new Integration
+            {
+                Id = IntegrationId.New(),
+                WorkspaceId = workspaceId,
+                Provider = IntegrationProvider.GitHub,
+                SettingsJson = "{}",
+                Status = IntegrationStatus.Enabled,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
             var now = DateTimeOffset.UtcNow;
             db.Issues.AddRange(
-                new Issue { Id = IssueId.New(), TeamId = teamId, WorkflowStateId = workflowStateId, Key = "TST-1", Title = "Newest bug", Type = "Bug", CreatedAt = now, UpdatedAt = now },
+                new Issue { Id = IssueId.New(), TeamId = teamId, WorkflowStateId = workflowStateId, Key = "TST-1", Title = "Newest bug", Type = "Bug", Source = IntegrationProvider.GitHub, CreatedAt = now, UpdatedAt = now },
                 new Issue { Id = IssueId.New(), TeamId = teamId, WorkflowStateId = workflowStateId, Key = "TST-2", Title = "Older bug", Type = "Bug", CreatedAt = now.AddMinutes(-1), UpdatedAt = now },
                 new Issue { Id = IssueId.New(), TeamId = teamId, WorkflowStateId = workflowStateId, Key = "TST-3", Title = "Archived", Type = "Task", ArchivedAt = now, CreatedAt = now, UpdatedAt = now });
             await db.SaveChangesAsync();
