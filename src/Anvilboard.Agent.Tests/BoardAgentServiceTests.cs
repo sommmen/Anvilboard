@@ -24,6 +24,7 @@ public sealed class BoardAgentServiceTests
                 "dashboard-summary",
                 "get-issue",
                 "list-backups",
+                "list-integration-health",
                 "list-issue-links",
                 "list-issues",
                 "list-workflow-states",

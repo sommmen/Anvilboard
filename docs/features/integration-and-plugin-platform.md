@@ -8,10 +8,11 @@
 |-------|-------|
 | Component | integration-and-plugin-platform |
 | Priority | P0 |
-| Status | Partial — integration lifecycle, write-only secret handling, webhook signature verification, reflection-based plugin loading, and approval-gated outbound plugin events (FR-INT-006, via `IPluginEventPublisher`/`PluginEventRelay`) are implemented; paused integrations still accept webhooks, sync health/backoff tracking is not implemented, the core does not dispatch events *to* plugins (audit `MAJ-014`), and plugin manifest validation is weaker than spec'd. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
+| Status | Partial — integration lifecycle, write-only secret handling, webhook signature verification, reflection-based plugin loading, approval-gated outbound plugin events (FR-INT-006, via `IPluginEventPublisher`/`PluginEventRelay`), paused-webhook rejection (audit `MAJ-012`), and sync health tracking with categorized exponential backoff (audit `MAJ-013`) are implemented; the core does not dispatch events *to* plugins (audit `MAJ-014`), and plugin manifest validation is weaker than spec'd. See `docs/audit-report.md` for details. |
+| Last verified | 2026-09-12 against commit `e3e03a5` + the integration sync-health change set — six populated .NET test projects 443 passing, `npm test` 21 passing |
 | SRS Refs | FR-INT-001, FR-INT-002, FR-INT-003, FR-INT-004, FR-INT-005, FR-INT-006, FR-INT-007, FR-INT-009, NFR-REL-002, NFR-SEC-001 |
 | Tech Design Ref | §8.1 — Integration & Plugin Platform row; also §7.6 Retry & Circuit Breaker Configuration, §7.7 Error Catalog, §11.3 Data Encryption |
+| Implementation Plan | [`docs/plans/integration-sync-health.md`](../plans/integration-sync-health.md) — implemented: sync health, backoff, and paused-webhook rejection (audit `MAJ-012`, `MAJ-013`) |
 | Depends On | issue-board-service, workspace-authorization, artifacts, realtime-updates |
 | Blocks | agent-and-automation-surface, audit-and-recovery |
 
@@ -159,12 +160,17 @@ sequenceDiagram
 
 Runs one independent `while` loop per registered `IIngestionSource`, started together via `Task.WhenAll` in `ExecuteAsync`. Each iteration: reads `IngestionOptions` for that source's key; skips the poll (waits 1 minute) if disabled; otherwise calls `source.SyncAsync(cursor, ct)`, upserts each yielded record through `IssueService.UpsertFromExternalAsync`, advances the cursor from `normalized.SyncFingerprint`, and waits `options.PollInterval`. A caught, logged exception (excluding `OperationCanceledException`) does not stop the loop — it proceeds to the next `Delay`/iteration, which is the mechanism satisfying FR-INT-002 AC 4 ("one failing integration does not block local work or unrelated integrations") and NFR-REL-002.
 
-Future-state additions required by tech-design §7.6:
+The tech-design §7.6 additions below are implemented (audit `MAJ-013`; see
+[`docs/plans/integration-sync-health.md`](../plans/integration-sync-health.md)):
 
-1. **Bounded exponential backoff**: on a transient provider failure, wait an increasing bounded interval (not the fixed `PollInterval`) before the next attempt; reset to `PollInterval` after a successful sync.
-2. **`Retry-After` / rate-limit honoring**: if the provider response includes a `Retry-After` header or rate-limit reset time, the next attempt must not occur before that time.
-3. **Non-transient errors are not retried on the same cadence**: a 4xx business error (e.g., revoked token) should mark the integration `FAILED` immediately rather than retry-looping at the transient backoff cadence.
-4. **`IntegrationHealth` write**: after every attempt (success or failure), update `lastAttemptAt`; on success, additionally update `lastSuccessAt` and clear `lastErrorCategory`; on failure, set `lastErrorCategory` to a safe, non-secret classification (`AUTH`, `RATE_LIMITED`, `TRANSPORT`, `UNKNOWN`).
+1. **Bounded exponential backoff**: on a transient provider failure the loop waits a full-jitter interval over `[1, min(PollInterval × 2^(n-1), MaxBackoff))` rather than the fixed `PollInterval`, and resets to `PollInterval` after a successful sync. The jitter exists so several integrations that fail together do not re-converge into a synchronized retry stampede.
+2. **`Retry-After` / rate-limit honoring**: a `ProviderThrottledException` carrying a positive `RetryAfter` is obeyed verbatim, overriding the computed backoff — a provider's own stated interval always wins over the client's guess.
+3. **Non-transient errors are not retried on the same cadence**: `ProviderAuthenticationException` quarantines the integration at a flat `QuarantineInterval` and marks it `FAILED`, so a revoked token is not hammered at the transient cadence.
+4. **`IntegrationHealth` write**: after every attempt `lastAttemptAt` is updated; on success `lastSuccessAt` is set and `lastErrorCategory`/`consecutiveFailureCount` cleared; on failure `lastErrorCategory` records a coarse, non-secret classification (`Auth`, `RateLimited`, `Transport`, `Protocol`, `Unknown`). The provider's error *message* is never persisted, since a provider that echoes a credential back in an error string must not be able to write it into the health row or the audit log.
+
+Audit events are emitted on *transitions* only (`integration.sync.failed`,
+`integration.sync.recovered`), not per attempt: a five-minute poll would otherwise write hundreds
+of identical rows a day and bury the one event an operator needs.
 
 ### `GitHubIngestionSource.SyncAsync` / `LinearIngestionSource.SyncAsync` (existing)
 
@@ -191,7 +197,7 @@ Secret storage: credentials are never returned by any read method; every DTO ret
 
 `PluginManifest(Key, DisplayName, Version)` currently carries no explicit contract-version or capability field. FR-INT-003 requires validating "identity, supported contract version, declared capabilities, and configuration before activation." Planned addition: extend `PluginManifest` with a `SupportedContractVersion` (or equivalent) field, and have `PluginRegistry`'s assembly-loading path (`Anvilboard.Infrastructure/Plugins/PluginRegistry.cs`) reject — log and skip, not crash the host — any plugin whose declared contract version is incompatible with the host's supported range, consistent with the existing per-plugin `try/catch` isolation already present in that loader.
 
-### Sync condition derivation (planned)
+### Sync condition derivation (implemented)
 
 `syncCondition` is not a stored column; it is computed at read time (tech-design §7.5) from an `IntegrationHealth` record:
 
@@ -202,7 +208,16 @@ STALE    if lastSuccessAt is older than the configured freshness threshold
 FRESH    otherwise
 ```
 
-This derivation must be implemented once, in this component, and reused by both the board query's `syncCondition` filter and the dashboard's freshness/exception summary — never duplicated.
+The order is significant and evaluated top-down: `FAILED` deliberately outranks `PAUSED`, so pausing
+a broken integration cannot be used to make the breakage disappear from the board. An integration
+with no health row at all reads as `STALE` rather than being omitted — "never successfully synced"
+is the honest answer to a freshness question, not silence.
+
+This derivation is implemented exactly once, as the static
+`IIntegrationHealthService.DeriveCondition(...)` in
+`src/Anvilboard.Application/Sync/IIntegrationHealthService.cs`, and is reused by the board query's
+`syncCondition` filter, the dashboard's freshness summary, `GET /api/integrations/health`, and the
+`list-integration-health` agent operation — never duplicated.
 
 ### `ILifecycleHook<TEvent>` (planned; new, FR-INT-004)
 
@@ -321,6 +336,7 @@ Every anticipated failure resolves to a §7.7 catalog code; no raw provider HTTP
 | Condition | Code | HTTP status | Notes |
 |---|---:|---|---|
 | Sync/test action against a paused integration | `INTEGRATION_PAUSED` | 409 | State that synchronization is paused and must be resumed deliberately. |
+| Inbound webhook delivery addressed to a paused integration | `INTEGRATION_PAUSED` | 409 | Rejected *after* HMAC verification, so the status code cannot be used as an unauthenticated oracle for which integrations exist. An install with no `Integration` row (configuration-only) is still ingested. |
 | Provider timeout, transport failure, or retry budget exhaustion | `PROVIDER_UNAVAILABLE` | 502 | Identifies provider and operation; retry only after bounded backoff. |
 | Integration/workflow-state reference not found | `REFERENCED_ENTITY_NOT_FOUND` | 404 | E.g., sync request against a removed integration ID. |
 | Malformed lifecycle request body (missing `confirm`, invalid settings) | `VALIDATION_FAILED` | 400 | Names the invalid/missing field. |
@@ -350,12 +366,14 @@ src/
 │   └── IPluginStateStore.cs              # Planned: plugin-writable runtime state contract (FR-INT-007)
 ├── Anvilboard.Application/
 │   └── Sync/
-│       ├── SyncCoordinator.cs            # Existing; planned: backoff + IntegrationHealth writes + conflict detection
-│       ├── IntegrationHealthService.cs   # Planned: sync-condition derivation (FRESH/STALE/PAUSED/FAILED)
+│       ├── SyncCoordinator.cs            # Existing; implemented: categorized backoff + IntegrationHealth writes; planned: conflict detection
+│       ├── IIntegrationHealthService.cs  # Implemented: the single DeriveCondition(...) + health DTOs
+│       ├── IntegrationHealthService.cs   # Implemented: attempt recording, audit-on-transition, health queries
+│       ├── ProviderExceptions.cs         # Implemented: throttled/auth/transport/protocol provider failure family
 │       ├── SyncConflictDetector.cs       # Planned: additive list-union merge + Issue.Version vs ExternalLink.LastSyncedVersion comparison (FR-INT-005)
 │       └── LifecycleHookDispatcher.cs    # Planned: budget-bounded ILifecycleHook<TEvent> invocation, Pre*/Post* routing (FR-INT-004)
 ├── Anvilboard.Domain/
-│   ├── IntegrationHealth.cs              # Planned: lastAttemptAt/lastSuccessAt/isPaused/lastErrorCategory entity
+│   ├── IntegrationHealth.cs              # Implemented: lastAttemptAt/lastSuccessAt/lastErrorCategory/consecutiveFailureCount/nextAttemptNotBefore entity
 │   └── SyncConflict.cs                   # Planned: issueId/provider/remotePayloadSnapshot/detectedAt entity
 ├── Anvilboard.Integrations.GitHub/
 │   ├── GitHubIngestionSource.cs          # Existing
@@ -383,6 +401,19 @@ src/
 - **Unit**: `RunSourceLoopAsync()` fault-isolation behavior (one source's exception does not stop its own loop or any other source's loop), cursor advancement from `SyncFingerprint`, disabled-source skip behavior.
 - **Integration**: `UpsertFromExternalAsync` dedupe-on-`(Provider, SourceKey)` via a seeded `IIngestionSource` test double producing overlapping/duplicate `NormalizedIssue`s; fault-injection test holding one source's `SyncAsync` throwing while asserting another source's loop and a concurrent local `IssueService.CreateAsync` both complete.
 - **Fixtures / Mocks**: fake `IIngestionSource` implementations with configurable yield/throw behavior per call; seeded `AnvilboardDbContext`.
+
+**Test files**: `src/Anvilboard.Application.Tests/Sync/DeriveConditionTests.cs`,
+`src/Anvilboard.Application.Tests/Sync/SyncBackoffTests.cs`,
+`src/Anvilboard.Application.Tests/Sync/IntegrationHealthServiceTests.cs`,
+`src/Anvilboard.Application.Tests/Dashboard/DashboardFreshnessTests.cs`,
+`src/Anvilboard.Api.Tests/Integrations/IntegrationHealthEndpointTests.cs`,
+`src/Anvilboard.Api.Tests/Realtime/WebhookPauseGateTests.cs`,
+`src/Anvilboard.Agent.Tests/IntegrationHealthOperationTests.cs`
+
+**Test scope**:
+- **Unit**: `DeriveCondition` precedence (including that pausing a failing integration still reports `FAILED`) and the never-synced → `STALE` case; failure categorization per provider exception type; `Retry-After` overriding computed backoff; authentication failures quarantining at a flat interval; jitter staying within its bound across repeated samples; failure-counter clamping.
+- **Integration**: health round-trips against the real SQLite schema, including audit rows written on transitions only and never carrying the provider error message, and a no-op when the integration row was removed mid-attempt; dashboard freshness counts and oldest-successful-sync selection; `GET /api/integrations/health` shape, workspace isolation, `Removed` exclusion, and 401 when unauthenticated; webhook deliveries rejected with 409 for a paused integration and ingested normally otherwise; the `list-integration-health` agent operation under both a permitted and an unpermitted role.
+- **Fixtures / Mocks**: manually advanced `TestTimeProvider` so staleness thresholds are crossed without sleeping; real `AuditService` over an in-memory SQLite connection so audit assertions observe rows actually written rather than mock expectations.
 
 **Test file**: `src/Anvilboard.Integrations.GitHub.Tests/GitHubWebhookReceiverTests.cs` (and equivalent `Anvilboard.Integrations.Linear.Tests/LinearWebhookReceiverTests.cs`)
 

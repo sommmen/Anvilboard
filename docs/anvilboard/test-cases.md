@@ -3,7 +3,7 @@
 > **Status:** This document originally described a target-state QA specification for a proof of
 > concept with no automated test projects. That is now **stale** — the solution has 6 populated
 > xUnit test projects (plus 1 empty `Anvilboard.IntegrationTests` scaffold) with real, passing
-> coverage: the six populated .NET test projects report **394 passing, 0 failing**. The tables below have
+> coverage: the six populated .NET test projects report **443 passing, 0 failing**. The tables below have
 > been updated to reflect actual existing tests; see [`docs/audit-report.md`](../audit-report.md)
 > for the audit that surfaced this and the remaining gaps (no dedicated
 > `DashboardService`/`IssueService`/`SyncCoordinator` test file, and no CLI/MCP
@@ -22,7 +22,7 @@
 | **Tech Stack** | .NET 10 / ASP.NET Core, Angular, EF Core, SQLite for supported single-host deployment |
 | **Test Framework** | xUnit across 6 populated test projects (`Application.Tests`, `Api.Tests`, `Infrastructure.Tests`, `Agent.Tests`, `Integrations.GitHub.Tests`, `Integrations.Linear.Tests`) plus an empty `IntegrationTests` scaffold, spanning 43 test files; Angular/Vitest (`ng test`) covers a handful of components and services (`app.spec.ts`, `board-page.spec.ts`, `realtime-board-sync.service.spec.ts`) but no dedicated CLI/MCP contract-equivalence test project exists yet |
 | **Scan Date** | Updated by doc/implementation audit — see `docs/audit-report.md` |
-| **Input Mode** | Code Mode — verified against the individual runs of the six populated .NET test projects (394 passing, 0 failing) |
+| **Input Mode** | Code Mode — verified against the individual runs of the six populated .NET test projects (443 passing, 0 failing) |
 
 ### 1.2 Testable Units
 
@@ -45,7 +45,7 @@
 |---|---:|
 | Test projects | 6 `*.Tests` unit/integration projects with tests + 1 empty `Anvilboard.IntegrationTests` scaffold (no `.cs` test files yet) |
 | Testable boundaries with an existing test file | 9 of 10 listed above have at least one test file |
-| Total automated tests (last run) | 415 total: 394 .NET (Application 221, API 63, Infrastructure 41, Agent 52, GitHub 12, Linear 5) plus 21 Angular (`npm test -- --watch=false`, 3 spec files), all passing |
+| Total automated tests (last run) | 464 total: 443 .NET (Application 257, API 73, Agent 55, Infrastructure 41, GitHub 12, Linear 5) plus 21 Angular (`npm test -- --watch=false`, 3 spec files), all passing |
 | Test result | All passing, 0 failures |
 | Known coverage gaps | No dedicated `DashboardService`, `IssueService`, or `SyncCoordinator` test file; no CLI/MCP contract-equivalence test project (though `Anvilboard.Agent.Tests` now covers authorization, the operation catalog, request guards, and MCP stdout isolation); `Anvilboard.IntegrationTests` project exists but is empty |
 
@@ -133,9 +133,12 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 |---|---|---|---|---|---:|---|---|
 | TC-SYNC-001 | Sync | New provider item upserts once with provenance and cursor progress | healthy provider | Creates/updates one local issue, records provider provenance, and advances cursor only after durable processing. | P0 | fake provider + SQLite | Planned |
 | TC-SYNC-002 | Sync | Duplicate external delivery is idempotently deduplicated | duplicate delivery | Repeated delivery creates no second issue, activity, or audit mutation. | P0 | fake provider + SQLite | Planned |
-| TC-SYNC-003 | Sync | One source failure is isolated from other configured sources | failing source | Failing source records health/backoff state; healthy source loop continues. | P0 | fault-injection fixture | Planned |
-| TC-SYNC-004 | Sync | Retry budget exhaustion becomes provider-unavailable contract | timeout / retry exhausted | `502 PROVIDER_UNAVAILABLE` at actionable boundary; retry uses bounded backoff and no raw transport exception escapes. | P0 | fake clock/provider | Planned |
-| TC-SYNC-005 | Sync | Paused integration refuses deliberate sync action | paused integration | `409 INTEGRATION_PAUSED`; cursor and local issues stay unchanged. | P1 | SQLite fixture | Planned |
+| TC-SYNC-003 | Sync | One source failure is isolated from other configured sources | failing source | Failing source records health/backoff state; healthy source loop continues. | P0 | fault-injection fixture | Automated (`SyncCoordinatorTests`; health/backoff persistence in `IntegrationHealthServiceTests`) |
+| TC-SYNC-004 | Sync | Retry budget exhaustion becomes provider-unavailable contract | timeout / retry exhausted | `502 PROVIDER_UNAVAILABLE` at actionable boundary; retry uses bounded backoff and no raw transport exception escapes. | P0 | fake clock/provider | Partially automated (`SyncBackoffTests` covers categorization, `Retry-After`, auth quarantine, jitter bound, and counter clamping; the `502` boundary needs the sync action endpoint, which is not yet built) |
+| TC-SYNC-005 | Sync | Paused integration refuses deliberate sync action | paused integration | `409 INTEGRATION_PAUSED`; cursor and local issues stay unchanged. | P1 | SQLite fixture | Partially automated (`WebhookPauseGateTests` covers the inbound-webhook half of `INTEGRATION_PAUSED`; the deliberate sync action endpoint does not exist yet) |
+| TC-SYNC-006 | Sync | Derived sync condition is computed in exactly one place and ranks failure above pause | healthy, failing, paused, never-synced | `DeriveCondition` returns `FAILED` for a paused-but-failing integration, `STALE` for one that has never succeeded, and both the board filter and dashboard summary consume that single implementation. | P0 | pure unit + SQLite fixture | Automated (`DeriveConditionTests`, `IntegrationHealthServiceTests`, `DashboardFreshnessTests`) |
+| TC-SYNC-007 | Sync | Sync failure/recovery is audited on transition, without leaking provider error text | repeated failure then recovery | Five consecutive failures plus one success write exactly two audit rows; neither `ResultSummary` contains the provider exception message. | P0 | SQLite fixture + real `AuditService` | Automated (`IntegrationHealthServiceTests`) |
+| TC-SYNC-008 | Sync | Health is readable over REST and the agent surface, workspace-scoped and permission-gated | authorized, unauthorized role, unauthenticated, other workspace | `GET /api/integrations/health` returns only the caller's workspace and `401` unauthenticated; the `list-integration-health` agent operation is denied to a role lacking `ReadIntegrationHealth`. | P0 | `WebApplicationFactory` + agent harness | Automated (`IntegrationHealthEndpointTests`, `IntegrationHealthOperationTests`) |
 | TC-WEBHOOK-001 | Webhook | Invalid GitHub or Linear signature is rejected before ingestion | invalid signature | Request is rejected without calling the sync/issue service or persisting payload. | P0 | signed request fixture | Planned |
 | TC-WEBHOOK-002 | Webhook | A team key configured in more than one workspace is rejected instead of guessing a tenant | ambiguous team key, unconfigured team key | `POST /webhooks/{provider}` returns `400` when the delivery's team key exists in two workspaces, and `400` when it matches no local team, in both cases without upserting an issue or resolving a trusted workspace. | P0 | `WebApplicationFactory` + two-workspace fixture | Automated (`WebhookEndpointsTests.PostWebhook_TeamKeyExistsInTwoWorkspaces_Returns400InsteadOfGuessingATenant`, `PostWebhook_TeamKeyMatchesNoLocalTeam_Returns400`) |
 | TC-WEBHOOK-003 | Webhook | A trusted webhook cannot mutate an `ExternalLink`'s issue across workspaces | cross-tenant link | `IssueService.UpsertFromExternalAsync` throws `InvalidOperationException` instead of applying the update when the existing `(Provider, SourceKey)` link's issue belongs to a different workspace than the trusted webhook's resolved target. | P0 | `RealtimeFixture` (SQLite) | Automated (`IssueServiceRealtimePublicationTests.UpsertFromExternalAsync_ExistingLinkOwnedByDifferentWorkspace_ThrowsInsteadOfCrossTenantMutation`) |
@@ -272,6 +275,7 @@ AC identifiers are intentionally qualified with their source document because se
 | `INVALID_WORKFLOW_TRANSITION`, `RESOURCE_ALREADY_EXISTS`, `CONCURRENCY_CONFLICT` | TC-WF-002–003, TC-ISSUE-003–004 |
 | `IDEMPOTENCY_KEY_REUSED`, `RATE_LIMITED` | TC-AUTO-003, TC-AUTO-007 |
 | `PROVIDER_UNAVAILABLE`, `INTEGRATION_PAUSED` | TC-SYNC-004–005 |
+| Sync-condition derivation, transition auditing, health read surfaces | TC-SYNC-006–008 |
 | `BACKUP_INTEGRITY_INVALID` | TC-BACKUP-002 |
 
 ## 6. Gap Analysis and Implementation Order
@@ -279,7 +283,8 @@ AC identifiers are intentionally qualified with their source document because se
 | Gap | Rationale | Recommendation |
 |---|---|---|
 | `Anvilboard.IntegrationTests` project is empty | The project scaffold and `WebApplicationFactory`-style dependencies exist, but no `.cs` test files were added. | Add the planned end-to-end integration test cases to this project. |
-| No `DashboardService`/`IssueService`/`SyncCoordinator` test files | These services exist in `Anvilboard.Application`/`Anvilboard.Infrastructure` but have no dedicated unit test file yet. | Add the planned unit test cases for these services. |
+| No `IssueService` test file | `IssueService` exists in `Anvilboard.Application` but has no dedicated unit test file yet. | Add the planned unit test cases for this service. |
+| Sync health and backoff coverage (`MAJ-012`, `MAJ-013`) | Closed — `DeriveConditionTests`, `SyncBackoffTests`, `IntegrationHealthServiceTests`, `DashboardFreshnessTests`, `WebhookPauseGateTests`, `IntegrationHealthEndpointTests`, and `IntegrationHealthOperationTests` cover derivation, categorized backoff, transition auditing, dashboard freshness, paused-webhook rejection, and both read surfaces. | None. |
 | No CLI/MCP contract-equivalence tests | `Anvilboard.Agent.Tests` covers authorization, catalog invariants, request guards, and MCP stdout isolation, but nothing asserts that the CLI and MCP transports produce identical envelopes and error codes for the same operation. | Add a CLI/MCP contract-equivalence test project. |
 | Thin Angular component coverage | `ng test` runs 21 tests across 3 spec files (`app`, `board-page`, `realtime-board-sync.service`); the remaining components and services are untested. | Add Angular component tests as the frontend interaction design is decomposed. |
 | Plugin-event relay coverage (`FR-INT-006`, `AC-RT-006`) | Closed — `PluginEventRelayTests` covers approval filtering and mapping, `GitHubWebhookReceiverTests` covers event reporting, and `WorkspaceRealtimeHubTests` drives a webhook delivery through to a connected hub client in both the approved and unapproved cases. | None. |

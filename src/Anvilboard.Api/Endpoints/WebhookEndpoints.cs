@@ -75,6 +75,21 @@ public static class WebhookEndpoints
                 trustedWorkspaceId = matchingWorkspaceIds[0];
             }
 
+            // Deliberately after HandleAsync verified the provider's HMAC: only a caller that has
+            // already proved the shared secret can observe this 409, so the pause state is not an
+            // oracle an unauthenticated prober can read. A paused integration that kept ingesting
+            // webhooks would make "paused" mean nothing (FR-INT-001 AC3).
+            if (await IsPausedAsync(db, trustedWorkspaceId, ProviderFor(receiver.RoutePrefix), ct))
+            {
+                return Results.Json(
+                    new
+                    {
+                        error = "INTEGRATION_PAUSED",
+                        message = "The integration for this provider is paused; the delivery was not ingested.",
+                    },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
             var touchedTeamIds = new List<TeamId>();
             foreach (var normalized in result.Issues)
             {
@@ -141,4 +156,55 @@ public static class WebhookEndpoints
             return Results.Ok(new { accepted = true, issuesProcessed = result.Issues.Count });
         }).WithTags("Webhooks").AllowAnonymous();
     }
+
+    /// <summary>
+    /// Decides whether a verified delivery must be refused because its integration is paused.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A provider with no <see cref="Integration"/> row at all is <em>not</em> refused: this
+    /// deployment still supports running an ingestion plugin from host configuration alone, and
+    /// rejecting those would break working installs to enforce a state they never entered.
+    /// </para>
+    /// <para>
+    /// Without a trusted workspace the delivery could belong to any tenant, so it is refused only
+    /// when <b>every</b> candidate integration is paused — otherwise one tenant pausing its
+    /// integration would silently drop another tenant's deliveries.
+    /// </para>
+    /// </remarks>
+    private static async Task<bool> IsPausedAsync(
+        AnvilboardDbContext db,
+        WorkspaceId? trustedWorkspaceId,
+        IntegrationProvider provider,
+        CancellationToken ct)
+    {
+        var candidates = db.Integrations
+            .AsNoTracking()
+            .Where(integration => integration.Provider == provider
+                && integration.Status != IntegrationStatus.Removed);
+
+        if (trustedWorkspaceId is { } workspaceId)
+        {
+            return await candidates.AnyAsync(
+                integration => integration.WorkspaceId == workspaceId
+                    && integration.Status == IntegrationStatus.Paused,
+                ct);
+        }
+
+        var statuses = await candidates.Select(integration => integration.Status).ToListAsync(ct);
+
+        return statuses.Count > 0 && statuses.TrueForAll(status => status == IntegrationStatus.Paused);
+    }
+
+    /// <summary>
+    /// Maps a receiver's route prefix onto the provider enum its integration rows use. Mirrors
+    /// <c>SyncCoordinator.ProviderFor</c> so the push and pull sides agree on which integration a
+    /// plugin belongs to.
+    /// </summary>
+    private static IntegrationProvider ProviderFor(string routePrefix) => routePrefix.ToLowerInvariant() switch
+    {
+        "github" => IntegrationProvider.GitHub,
+        "linear" => IntegrationProvider.Linear,
+        _ => IntegrationProvider.Custom,
+    };
 }

@@ -1,12 +1,13 @@
 using System.Text;
 using System.Text.Json;
+using Anvilboard.Application.Sync;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Anvilboard.Application.Issues;
 
-public sealed class BoardQueryService(AnvilboardDbContext db) : IBoardQueryService
+public sealed class BoardQueryService(AnvilboardDbContext db, IIntegrationHealthService health) : IBoardQueryService
 {
     private const int DefaultLimit = 25;
     private const int MaximumLimit = 100;
@@ -15,11 +16,20 @@ public sealed class BoardQueryService(AnvilboardDbContext db) : IBoardQueryServi
     {
         Validate(query);
 
-        // Sync health is supplied by the integration-platform slice. Until that model exists, a
-        // requested condition intentionally matches nothing rather than inventing health state.
-        if (query.SyncCondition is not null)
+        // Sync condition is a property of the *integration*, not of an issue, so it is resolved to
+        // the set of providers currently in that condition and applied as an ordinary provider
+        // filter. Routing through IIntegrationHealthService (rather than re-deriving here) is what
+        // keeps this filter and the dashboard's freshness summary from ever disagreeing.
+        IReadOnlySet<IntegrationProvider>? conditionProviders = null;
+        if (query.SyncCondition is { } requestedCondition)
         {
-            return new BoardQueryResult([], 0, query.Page, query.Limit, null, query);
+            conditionProviders = await health.ProvidersInConditionAsync(
+                query.WorkspaceId, ToSyncCondition(requestedCondition), ct);
+
+            if (conditionProviders.Count == 0)
+            {
+                return new BoardQueryResult([], 0, query.Page, query.Limit, null, query);
+            }
         }
 
         var issuesQuery = db.Issues.AsNoTracking()
@@ -45,6 +55,12 @@ public sealed class BoardQueryService(AnvilboardDbContext db) : IBoardQueryServi
         if (query.Provider is { } provider)
         {
             issuesQuery = issuesQuery.Where(issue => issue.Source == provider);
+        }
+
+        if (conditionProviders is not null)
+        {
+            var matching = conditionProviders.ToArray();
+            issuesQuery = issuesQuery.Where(issue => matching.Contains(issue.Source));
         }
 
         if (query.ProjectId is { } projectId)
@@ -102,6 +118,20 @@ public sealed class BoardQueryService(AnvilboardDbContext db) : IBoardQueryServi
     }
 
     private static BoardQueryResult Empty(BoardQuery query) => new([], 0, query.Page, query.Limit, null, query);
+
+    /// <summary>
+    /// Maps the board-query filter vocabulary onto the domain condition. They are separate enums
+    /// because the query contract is part of the public REST surface and must not be forced to
+    /// change whenever the domain gains a condition the board has no filter for.
+    /// </summary>
+    private static SyncCondition ToSyncCondition(BoardSyncCondition condition) => condition switch
+    {
+        BoardSyncCondition.Fresh => SyncCondition.Fresh,
+        BoardSyncCondition.Stale => SyncCondition.Stale,
+        BoardSyncCondition.Paused => SyncCondition.Paused,
+        BoardSyncCondition.Failed => SyncCondition.Failed,
+        _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, null),
+    };
 
     private static void Validate(BoardQuery query)
     {

@@ -36,4 +36,37 @@ public sealed class IngestionOptions
 {
     public bool Enabled { get; set; }
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Ceiling for exponential backoff after consecutive transient failures. Without a ceiling a
+    /// long outage would push the next attempt days out, so a provider that recovered would stay
+    /// un-synced long after it was healthy again.
+    /// </summary>
+    public TimeSpan MaxBackoff { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// The flat interval used after a non-transient failure (rejected credentials). Exponential
+    /// backoff is the wrong shape here: retrying a revoked token never succeeds regardless of how
+    /// long the wait is, so the goal is only to keep probing cheaply until it is reconfigured.
+    /// </summary>
+    public TimeSpan QuarantineInterval { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// How long an integration may go without a successful sync before it is reported as stale.
+    /// Null means "derive from <see cref="PollInterval"/>", which is the default because a
+    /// sensible threshold is a multiple of the cadence rather than an absolute duration.
+    /// </summary>
+    public TimeSpan? StalenessThreshold { get; set; }
+
+    /// <summary>
+    /// The effective staleness threshold: <see cref="StalenessThreshold"/> when configured,
+    /// otherwise three poll intervals (floored at one minute) so a single missed poll — or one
+    /// that merely overran — never trips a staleness alarm.
+    /// </summary>
+    public TimeSpan EffectiveStalenessThreshold =>
+        StalenessThreshold is { } configured && configured > TimeSpan.Zero
+            ? configured
+            : Max(PollInterval * 3, TimeSpan.FromMinutes(1));
+
+    private static TimeSpan Max(TimeSpan left, TimeSpan right) => left > right ? left : right;
 }

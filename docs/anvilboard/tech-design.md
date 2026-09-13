@@ -381,7 +381,7 @@ Every anticipated failure has a stable catalog entry. Implementations must retur
 | `IDEMPOTENCY_KEY_REUSED` | 409 | Same idempotency key used with a different canonical payload or actor. | State that the key belongs to a different request; generate a new key. | FR-AUT-002, NFR-REL-001 |
 | `RATE_LIMITED` | 429 | Channel request limit exceeded. | Supply `Retry-After` and state when the caller can retry. | NFR-PERF-001, NFR-MNT-001 |
 | `PROVIDER_UNAVAILABLE` | 502 | Provider timeout, transport failure, or retry budget exhaustion. | Identify provider and sync operation; retry only after bounded backoff. | FR-INT-002, NFR-REL-002 |
-| `INTEGRATION_PAUSED` | 409 | Operator-paused integration receives a sync action. | State that synchronization is paused and must be resumed deliberately. | FR-INT-001 |
+| `INTEGRATION_PAUSED` | 409 | Operator-paused integration receives a sync action, or an inbound webhook is delivered for one. Produced by `WebhookEndpoints` (after signature verification, so it is not an unauthenticated existence oracle) and by integration sync actions. | State that synchronization is paused and must be resumed deliberately. | FR-INT-001 |
 | `BACKUP_INTEGRITY_INVALID` | 422 | Restore artifact fails checksum, manifest, schema, or compatibility validation. Produced by `BackupService.RestoreAsync`/`VerifyAsync`; the specific failed check is returned in the response body. | Identify failed integrity/compatibility check; select a verified compatible backup. | FR-OPS-002, NFR-AVL-001 |
 | `SYNC_CONFLICT` | 409 | Resync detects the linked provider record and the local issue both changed since `ExternalLink.LastSyncedVersion`. | State that a resync conflict exists on the affected field(s) and that the actor must choose keep-local/accept-remote/merge before the field updates. | FR-INT-005 |
 | `ARTIFACT_STORE_UNAVAILABLE` | 502 | The configured `IArtifactStore` implementation cannot read/write content (e.g., filesystem unreachable). | State that artifact storage is temporarily unavailable; retry after the store recovers. | FR-ART-001 |
@@ -705,6 +705,29 @@ One row per `RecordAndDispatchAsync` call, persisted in the same transaction as 
 
 Durable record of a detected mutable-field conflict (FR-INT-005), created by the sync coordinator and resolved via `POST /api/v1/issues/{id}/sync-conflicts/{conflictId}/resolve`. Only non-additive, mutable-field divergence reaches this table — additive comments/artifacts/links merge unconditionally beforehand and never appear here.
 
+#### Table: `IntegrationHealth` (new)
+
+| Column | Type | Constraints |
+|---|---|---|
+| `Id` | TEXT (UUID) | PK |
+| `IntegrationId` | TEXT (UUID) | FK → `Integrations.Id` ON DELETE CASCADE, NOT NULL, **UNIQUE** (one row per integration) |
+| `WorkspaceId` | TEXT (UUID) | NOT NULL, indexed (every health query is workspace-scoped) |
+| `PluginKey` | TEXT | NOT NULL, max 100 (the plugin whose loop writes this row) |
+| `LastAttemptAt` | TEXT (ISO-8601) | NULL (NULL = never attempted) |
+| `LastSuccessAt` | TEXT (ISO-8601) | NULL (NULL = never succeeded) |
+| `LastErrorCategory` | INTEGER | NULL (`Auth` / `RateLimited` / `Transport` / `Unknown`; the category only — never the provider message) |
+| `ConsecutiveFailureCount` | INTEGER | NOT NULL, clamped at 16 so backoff arithmetic cannot overflow |
+| `NextAttemptNotBefore` | TEXT (ISO-8601) | NULL (the coordinator's earliest permitted retry) |
+| `LastCursorToken` | TEXT | NULL (provider pagination cursor carried across attempts) |
+| `UpdatedAt` | TEXT (ISO-8601) | NOT NULL |
+
+Machine-written sync telemetry, deliberately a separate aggregate from `Integrations` rather than
+extra columns on it: `Integrations` is administrator-authored configuration holding protected
+credentials, while this is high-churn telemetry that must be safe to read with a much weaker
+permission. The `syncCondition` in §7.5 is derived from this row plus `Integrations.Status` and is
+never stored. Cascade delete is intentional — a removed integration must not leave an orphan row
+that keeps reporting a condition for something that no longer exists.
+
 #### Table: `PluginConfig` (new)
 
 | Column | Type | Constraints |
@@ -1000,7 +1023,7 @@ Detailed test cases are tracked separately; see [`docs/anvilboard/test-cases.md`
 > are implemented (often with test coverage) and others are not — see the linked feature spec's `Status`
 > row and the audit report for the itemized gap.
 >
-> **Last verified:** 2026-09-12 against the workflow administration change set — 394 populated .NET tests passing,
+> **Last verified:** 2026-09-12 against the integration sync-health change set — 443 populated .NET tests passing,
 > 0 failing; `npm run build` in `src/anvilboard-web` succeeds. Re-stamp this line whenever a milestone's
 > implementation state changes (INFO-005).
 
@@ -1012,7 +1035,7 @@ Detailed test cases are tracked separately; see [`docs/anvilboard/test-cases.md`
 | M3.5: Extended Ticket Model & List View | Free-form type/priority migration, session-state fields, threaded comments, Linear-style list view w/ grouping and ordering | 2 weeks | Partial — free-form type/priority migration is done; threaded comments are still flat (no reply-to) and the web list view only groups by status, not the full grouping/ordering set (see `issue-board-service.md`) |
 | M4: Automation Contract Normalization | Shared symbolic DTOs across REST/CLI/MCP, idempotency records, error taxonomy | 2 weeks | Partial — CLI/MCP authentication, workspace authorization, actor attribution, mutation idempotency, correlation, versioned `{ apiVersion, correlationId, data }` envelopes, and MCP stdout isolation are implemented. REST/application workspace-query scoping is delivered (MAJ-022); REST still needs the common response envelope/idempotency contract (see `agent-and-automation-surface.md`) |
 | M4.5: Artifacts & Issue Linking | `Artifacts`/`IssueLinks` schema (`Type`+`Description`, `BLOCKS` dependency projection), `IArtifactStore` abstraction (SQLite-backed), artifact/link CRUD endpoints | 2 weeks | Partial — schema, `IArtifactStore`, and issue-link CRUD (create/list/remove) are implemented and tested; there is no artifact application service (attach/list/remove) and no link-update endpoint (see `artifacts.md`, `issue-linking.md`) |
-| M5: Integration Provenance & Health | Sync-condition derivation, health surfacing on board/dashboard, secret redaction audit | 2 weeks | Partial — integration lifecycle, secret redaction, and webhook-signature verification are implemented; paused integrations still accept webhooks and sync health/backoff surfacing is not implemented (see `integration-and-plugin-platform.md`) |
+| M5: Integration Provenance & Health | Sync-condition derivation, health surfacing on board/dashboard, secret redaction audit | 2 weeks | Implemented — integration lifecycle, secret redaction, and webhook-signature verification, plus the `IntegrationHealth` table, the single §7.5 condition derivation, categorized exponential backoff with `Retry-After` honouring, paused-webhook rejection, board `syncCondition` filtering, dashboard freshness, `GET /api/integrations/health`, and the `list-integration-health` agent operation (MAJ-012, MAJ-013; see `integration-and-plugin-platform.md` and `../plans/integration-sync-health.md`) |
 | M5.5: Lifecycle Hooks & Sync-Conflict Handling | `ILifecycleHook<TEvent>` contract, lifecycle points (`Pre/PostIngest`, `Pre/PostResync`, `Pre/PostPhaseChange`, `Pre/PostAddComment`, `Pre/PostAddAttachment`), execution budget diagnostics, artifact-expansion via the same hook pattern (e.g. Slack thread), `LastSyncedVersion`-based conflict detection, additive list-union merge, and dashboard-driven resolution endpoint | 2 weeks | Partial — a single post-mutation `IIssueHook` fire-and-forget hook exists (narrower than the spec'd multi-point `Pre/Post*` contract); no `LastSyncedVersion`-based conflict detection, merge, or resolution endpoint was found in code |
 | M6: Archive & Activity History | `Issues.ArchivedAt` archive/unarchive operations, `includeArchived` filtering, structured `ActivityEvents` with typed references and clickable UI rendering | 1 week | Partial — `Issue.ArchivedAt` and `includeArchived` board-query filtering plus structured `ActivityEvents` are implemented; no dedicated archive/unarchive API endpoint was found |
 | M6.5: Real-Time Dashboard & Plugin Events | `IRealtimeUpdatePublisher` (SignalR), workspace-group authorization, bounded/non-blocking delivery, reconnect re-fetch behavior, `IPluginEventPublisher` | 2 weeks | **Implemented** — `IRealtimeUpdatePublisher` + bounded coalescing dispatcher in `Anvilboard.Application/Realtime/`, `WorkspaceRealtimeHub` + `SignalRRealtimeTransport` at `/hubs/workspace` in `Anvilboard.Api/Realtime/`, `RealtimeBoardSyncService` in `anvilboard-web`, and an approval-gated `IPluginEventPublisher` relay (see `realtime-updates.md`) |

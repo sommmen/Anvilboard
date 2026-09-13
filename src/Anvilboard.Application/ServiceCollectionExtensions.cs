@@ -40,8 +40,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkspaceAuthorizationService, WorkspaceAuthorizationService>();
         services.TryAddScoped<IAuditService, AuditService>();
         services.AddScoped<IIdempotencyService, IdempotencyService>();
+        services.AddScoped<IIntegrationHealthService, IntegrationHealthService>();
         services.AddScoped<IBackupService, BackupService>();
         services.AddSingleton<IRestoreCoordinator, RestoreCoordinator>();
+
+        // Health derivation is time-dependent ("has this gone stale?"), so the clock is injected
+        // rather than read from DateTimeOffset.UtcNow: a test must be able to advance time without
+        // sleeping. TryAdd leaves a test host free to substitute a FakeTimeProvider.
+        services.TryAddSingleton(TimeProvider.System);
 
         // A host that never calls AddAnvilboardRealtime still resolves a publisher, so mutations
         // have one code path whether or not a transport exists. TryAdd keeps AddAnvilboardRealtime

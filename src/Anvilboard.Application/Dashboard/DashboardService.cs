@@ -1,4 +1,5 @@
 using Anvilboard.Application.Issues;
+using Anvilboard.Application.Sync;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +12,7 @@ namespace Anvilboard.Application.Dashboard;
 /// project targets, that keeps the "low-resource" story intact instead of adding a reporting
 /// pipeline.
 /// </summary>
-public sealed class DashboardService(AnvilboardDbContext db)
+public sealed class DashboardService(AnvilboardDbContext db, IIntegrationHealthService health)
 {
     public async Task<DashboardSummary> GetSummaryAsync(
         WorkspaceId workspaceId,
@@ -47,7 +48,23 @@ public sealed class DashboardService(AnvilboardDbContext db)
             .Select(g => new AssigneeLoad(g.Key, g.Count()))
             .ToList();
 
-        return new DashboardSummary(byStatus, bySource, createdLast7Days, completedLast7Days, byAssignee);
+        // Counts above are only trustworthy if the data behind them is current, so the summary
+        // carries its own freshness caveat rather than leaving a reader to assume a stale board is
+        // simply a quiet one.
+        var integrationHealth = await health.GetHealthAsync(workspaceId, ct);
+        var freshness = new IntegrationFreshness(
+            integrationHealth.Count(dto => dto.Condition == SyncCondition.Fresh),
+            integrationHealth.Count(dto => dto.Condition == SyncCondition.Stale),
+            integrationHealth.Count(dto => dto.Condition == SyncCondition.Paused),
+            integrationHealth.Count(dto => dto.Condition == SyncCondition.Failed),
+            integrationHealth
+                .Select(dto => dto.LastSuccessAt)
+                .Where(at => at is not null)
+                .DefaultIfEmpty(null)
+                .Min());
+
+        return new DashboardSummary(
+            byStatus, bySource, createdLast7Days, completedLast7Days, byAssignee, freshness);
     }
 }
 
@@ -56,6 +73,26 @@ public sealed record DashboardSummary(
     IReadOnlyDictionary<IntegrationProvider, int> IssuesBySource,
     int CreatedLast7Days,
     int CompletedLast7Days,
-    IReadOnlyList<AssigneeLoad> OpenIssuesByAssignee);
+    IReadOnlyList<AssigneeLoad> OpenIssuesByAssignee,
+    IntegrationFreshness IntegrationFreshness);
+
+/// <summary>
+/// How current the synced portion of the board is.
+/// </summary>
+/// <param name="Fresh">Integrations that synced successfully within their staleness threshold.</param>
+/// <param name="Stale">Integrations with no recent successful sync.</param>
+/// <param name="Paused">Integrations an administrator has paused.</param>
+/// <param name="Failed">Integrations whose last attempt failed.</param>
+/// <param name="OldestSuccessfulSyncAt">
+/// The least recent successful sync across all integrations — the true age of the board's synced
+/// data, since one lagging integration makes the whole picture that old. Null when nothing has
+/// ever synced successfully.
+/// </param>
+public sealed record IntegrationFreshness(
+    int Fresh,
+    int Stale,
+    int Paused,
+    int Failed,
+    DateTimeOffset? OldestSuccessfulSyncAt);
 
 public sealed record AssigneeLoad(MemberId AssigneeId, int OpenIssueCount);

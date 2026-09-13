@@ -5,6 +5,7 @@ using Anvilboard.Application.Automation;
 using Anvilboard.Application.Backup;
 using Anvilboard.Application.Dashboard;
 using Anvilboard.Application.Issues;
+using Anvilboard.Application.Sync;
 using Anvilboard.Application.Workflows;
 using Anvilboard.Domain;
 using DotNetAgentSurface.Core;
@@ -40,6 +41,7 @@ public sealed class BoardAgentService(
     DashboardService dashboard,
     IBackupService backups,
     IWorkflowService workflow,
+    IIntegrationHealthService integrationHealth,
     AgentActorAccessor actors,
     AgentWorkspaceScope scope,
     AgentIdempotency idempotency,
@@ -183,6 +185,21 @@ public sealed class BoardAgentService(
             cancellationToken);
         return Ok(summary);
     }
+
+    /// <summary>
+    /// Lets an agent check whether the board it is about to reason over is actually current.
+    /// </summary>
+    /// <remarks>
+    /// Gated on <see cref="Permission.ReadIntegrationHealth"/> rather than
+    /// <see cref="Permission.ManageIntegrations"/>: an agent should be able to notice that GitHub
+    /// has not synced in a day without also being able to read or rewrite the credentials that
+    /// sync uses.
+    /// </remarks>
+    [AgentOperation("list-integration-health", "Lists each integration's sync condition (fresh, stale, paused, failed) and last successful sync", Category = "integrations", IsIdempotent = true)]
+    [RequiresAgentPermission(Permission.ReadIntegrationHealth)]
+    public async Task<AgentResponse<IReadOnlyList<IntegrationHealthDto>>> ListIntegrationHealthAsync(
+        CancellationToken cancellationToken = default) =>
+        Ok(await integrationHealth.GetHealthAsync(scope.WorkspaceId, cancellationToken));
 
     [AgentOperation("list-issue-links", "Lists links involving an issue, in either direction", Category = "issues", IsIdempotent = true)]
     [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues, Permission.ReadBoard)]
