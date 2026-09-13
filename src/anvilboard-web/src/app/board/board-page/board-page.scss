@@ -24,6 +24,69 @@
   }
 }
 
+.board-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.board-count {
+  font-size: 12px;
+  color: var(--ab-text-faint);
+}
+
+.board-loading {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--ab-text-faint);
+}
+
+.board-empty {
+  color: var(--ab-text-faint);
+  font-size: 12px;
+  padding: 10px 2px;
+}
+
+.board-list {
+  flex: 1 1 auto;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  overflow-y: auto;
+  display: block;
+
+  th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ab-text-muted);
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--ab-border-subtle);
+  }
+
+  td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--ab-border-subtle);
+    color: var(--ab-text);
+  }
+}
+
+.board-list-row {
+  cursor: pointer;
+
+  &:hover {
+    background: var(--ab-bg-hover);
+  }
+}
+
+.board-list-key {
+  color: var(--ab-text-faint);
+  font-family: var(--ab-font-mono, monospace);
+  white-space: nowrap;
+}
+
 .columns {
   flex: 1 1 auto;
   display: flex;

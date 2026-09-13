@@ -8,8 +8,8 @@
 |-------|-------|
 | Component | issue-linking |
 | Priority | P2 |
-| Status | Partial — `CreateLinkAsync`/`ListLinksAsync`/`RemoveLinkAsync` are implemented and directional exposure/zero-cascade behavior matches spec; a link-update endpoint is missing, and the web issue-detail view suggests link types but does not enforce them server-side. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
+| Status | Implemented — `CreateLinkAsync`/`ListLinksAsync`/`UpdateLinkAsync`/`RemoveLinkAsync` are exposed over REST (`POST`/`PATCH`/`DELETE /api/issues/{id}/links…`) and the agent surface, directional exposure and zero-cascade behavior match spec, and the canonical link-type vocabulary is served by `GET /api/issue-link-types` so the web issue-detail form no longer carries a hardcoded list. |
+| Last verified | 2026-09-12 against commit `e3e03a5` + the board-experience-parity change set — six populated .NET test projects 521 passing, `npm test` 44 passing |
 | SRS Refs | FR-LNK-001 |
 | Tech Design Ref | §8.1 — Issue Linking row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `IssueLinks` table |
 | Depends On | issue-board-service, workspace-authorization |
@@ -42,18 +42,20 @@ Issue Linking lets an authorized actor or automation record a directional relati
 2. **Bidirectional exposure** — surface every link from both the source and target issue's perspective, regardless of which issue the link was created "from," with `direction` letting callers render type-appropriate inverse phrasing (e.g. `PARENT`/`incoming` → "child of", `BLOCKS`/`incoming` → "blocked by").
 3. **Duplicate prevention** — enforce the `(SourceIssueId, TargetIssueId, Type)` unique constraint, rejecting an exact-duplicate link attempt with a clear conflict error rather than silently creating a second row.
 4. **Zero cascade guarantee** — ensure no code path in this component (or any caller of it) derives workflow, ownership, or notification behavior from a link's `Type` — including the `BLOCKS` dependency marker, which is never enforced or gated; this is enforced by design (no such hooks exist) and verified by acceptance tests.
-5. **Audit emission** — emit an activity/audit event for every link creation and removal, routed through the same audit path as any other issue mutation.
+5. **Audit emission** — emit an activity/audit event for every link creation, update, and removal, routed through the same audit path as any other issue mutation.
 
 ## Interfaces
 
 ### Inputs
 - **`CreateLinkAsync(sourceIssueId, targetIssueId, type, description?, actorId?)`** — via `POST /api/issues/{id}/links` and equivalent CLI/MCP operations; `description` defaults to an empty string when omitted; `actorId` is omitted when created by an automation/hook.
 - **`ListLinksAsync(issueId)`** — via `GET /api/issues/{id}/links`; returns links where the given issue is either the source or the target.
+- **`UpdateLinkAsync(issueId, linkId, type?, description?, actorId?)`** — via `PATCH /api/issues/{id}/links/{linkId}`; at least one of `type`/`description` must be supplied, a retype re-applies the same directional-uniqueness rule the create path enforces, and the link's identity, direction, and `CreatedAt`/`CreatedById` are preserved.
 - **`RemoveLinkAsync(issueId, linkId, actorId)`** — via `DELETE /api/issues/{id}/links/{linkId}`.
+- **`ListLinkTypesAsync()`** — via `GET /api/issue-link-types`; returns the canonical suggestion vocabulary so clients need not hardcode it. The vocabulary is advisory: `type` remains free-text and is validated only for non-emptiness (`FR-LNK-001` AC1).
 
 ### Outputs
 - **`IssueLink` DTO** — `(id, sourceIssueId, targetIssueId, type, description, createdById, createdAt, direction)`, where `direction` is a response-shaping field (`outgoing`/`incoming`) computed relative to the issue the list request was scoped to, so callers can render "this issue is a `PARENT` of that issue" (outgoing) versus "this issue is a child of that issue" (incoming, same row) correctly without re-deriving direction client-side.
-- **Audit/activity events** — `IssueLinkCreated`/`IssueLinkRemoved`, consumed by `audit-and-recovery`, carrying actor (or automation key), both issue IDs, the `type`, and the `description`. These events also feed the rich activity-history templating in `issue-board-service` (e.g. rendering "arjen linked COM-234 (`RELATED`)" with a clickable reference to `COM-234`).
+- **Audit/activity events** — `IssueLinkCreated`/`IssueLinkUpdated`/`IssueLinkRemoved`, consumed by `audit-and-recovery`, carrying actor (or automation key), both issue IDs, the `type`, and the `description`. These events also feed the rich activity-history templating in `issue-board-service` (e.g. rendering "arjen linked COM-234 (`RELATED`)" with a clickable reference to `COM-234`).
 
 ### Dependencies
 - **`issue-board-service`** — supplies issue existence/workspace-scoping/authorization context for both the source and target issue.
@@ -102,6 +104,14 @@ sequenceDiagram
 3. For each result, compute `direction`: `outgoing` when `issueId == SourceIssueId`, `incoming` when `issueId == TargetIssueId` — this is how bidirectional exposure is implemented without duplicating storage (FR-LNK-001 AC4). Clients combine `type` + `direction` to render type-appropriate inverse phrasing (e.g. `PARENT`/`outgoing` → "parent of", `PARENT`/`incoming` → "child of"; `BLOCKS`/`outgoing` → "blocks", `BLOCKS`/`incoming` → "blocked by") — this component does not maintain separate inverse-phrase strings server-side.
 4. Return the list ordered by `CreatedAt` ascending.
 
+### `UpdateLinkAsync(issueId, linkId, type?, description?, actorId?)` (implemented)
+
+1. Reject the call with `VALIDATION_FAILED` when neither `type` nor `description` is supplied, and when a supplied `type` is empty or whitespace.
+2. Validate the link exists and has `issueId` as either its `SourceIssueId` or `TargetIssueId` — `REFERENCED_ENTITY_NOT_FOUND` otherwise (an update can be initiated from either linked issue, consistent with bidirectional exposure).
+3. When the trimmed `type` differs from the stored one, re-apply the create path's directional-uniqueness rule against `(SourceIssueId, TargetIssueId, type)`, excluding the link being edited — `RESOURCE_ALREADY_EXISTS` otherwise, so a retype cannot be a back door to a duplicate `CreateLinkAsync` would have rejected.
+4. Persist the supplied fields only; `Id`, `SourceIssueId`, `TargetIssueId`, `CreatedById`, and `CreatedAt` are never rewritten, which is the whole point of having an update path rather than delete-and-recreate.
+5. Emit an `IssueLinkUpdated` audit/activity event.
+
 ### `RemoveLinkAsync(issueId, linkId, actorId)` (implemented)
 
 1. Validate the link exists and has `issueId` as either its `SourceIssueId` or `TargetIssueId` — `REFERENCED_ENTITY_NOT_FOUND` otherwise (removal can be initiated from either linked issue, consistent with bidirectional exposure).
@@ -131,6 +141,10 @@ sequenceDiagram
 | AC-LNK-107 | P2 | Given a link-creation request where `targetIssueId` belongs to a different workspace than the caller's authorized workspace. | `REFERENCED_ENTITY_NOT_FOUND` is returned; no link is created; no cross-workspace issue existence is disclosed. | Negative — `IssueLinkServiceTests.CrossWorkspaceTarget_NotFound` (FR-LNK-001 boundary / workspace isolation). |
 | AC-LNK-108 | P2 | Given a link `(A, B, "RELATED")`, when `RemoveLinkAsync` is called scoped to issue B (the target, not the source). | The link is removed successfully; an `IssueLinkRemoved` audit event is emitted; issue A and issue B are otherwise unaffected. | Integration — `IssueLinkServiceTests.RemoveLink_CallableFromEitherLinkedIssue` (FR-LNK-001 AC2/AC4). |
 | AC-LNK-109 | P2 | Given issue A and issue B with a link `(A, B, "BLOCKS")` recorded, when issue B's workflow phase is changed to any phase (including a phase that would normally imply "in progress" or "done"). | The phase change succeeds unconditionally — the `BLOCKS` link has no gating effect and no `Pre*PhaseChange` hook check is performed against it; the link remains purely informational/displayable. | Negative — `IssueLinkServiceTests.BlocksType_NeverGatesPhaseTransition` (explicit no-enforcement guarantee for the dependency marker). |
+| AC-LNK-110 | P2 | Given a link `(A, B, "RELATED", "same parent")`, when `UpdateLinkAsync` supplies only a new `type`. | The type changes, the `description`, `CreatedAt`, and `CreatedById` are preserved, and an `IssueLinkUpdated` activity event is recorded on both issues. | Integration — `IssueLinkServiceTests.UpdateLinkAsync_TypeOnly_PreservesDescriptionAndCreatedAt`, `…_DescriptionOnly_PreservesType`, `…_RecordsActivityOnBothIssues` (FR-LNK-001 AC2). |
+| AC-LNK-111 | P2 | Given links `(A, B, "RELATED")` and `(A, B, "BLOCKS")`, when `UpdateLinkAsync` retypes the first to `"BLOCKS"`. | `RESOURCE_ALREADY_EXISTS` is returned and neither row changes — a retype cannot produce a pair the create path would have rejected. Re-supplying a link's existing type is a no-op success, not a self-conflict. | Negative — `IssueLinkServiceTests.UpdateLinkAsync_RetypeOntoExistingPair_ThrowsResourceAlreadyExists`, `…_SameTypeAgain_Succeeds`. |
+| AC-LNK-112 | P2 | Given an update request supplying neither `type` nor `description`, or supplying a whitespace-only `type`. | `VALIDATION_FAILED` is returned; the link is unchanged. | Negative — `IssueLinkServiceTests.UpdateLinkAsync_NoFieldsSupplied_ThrowsValidationFailed`, `…_WhitespaceType_ThrowsValidationFailed`. |
+| AC-LNK-113 | P2 | Given a link `(A, B, "RELATED")`, when `UpdateLinkAsync` is called scoped to issue B, or scoped to an issue in another workspace, or naming a link that belongs to a different issue. | The B-scoped call succeeds and returns `direction = "incoming"`; the foreign-workspace and unassociated-link calls both return `REFERENCED_ENTITY_NOT_FOUND` without mutating anything. | Integration/negative — `IssueLinkServiceTests.UpdateLinkAsync_FromTargetSide_ReturnsIncomingDirection`, `…_OtherWorkspaceIssue_ThrowsReferencedEntityNotFound`, `…_LinkNotAssociatedWithIssue_ThrowsReferencedEntityNotFound` (FR-LNK-001 AC4, `NFR-SEC-002`). |
 
 ## Error Handling
 
@@ -142,7 +156,8 @@ Every anticipated failure resolves to a §7.7 catalog code; no raw EF Core excep
 | `sourceIssueId == targetIssueId` | `VALIDATION_FAILED` | 400 | An issue cannot link to itself. |
 | `type` missing/empty | `VALIDATION_FAILED` | 400 | Names the missing field; any non-empty value is otherwise accepted. `description` has no missing/empty error case — it is optional and defaults to `""`. |
 | Duplicate `(SourceIssueId, TargetIssueId, Type)` | `RESOURCE_ALREADY_EXISTS` | 409 | Names the conflicting link (tech-design §7.7 UNIQUE-constraint translation pattern); a differing `description` on the new request does not avoid the conflict. |
-| `linkId` does not belong to the given `issueId` (neither source nor target) | `REFERENCED_ENTITY_NOT_FOUND` | 404 | Applies on removal. |
+| `linkId` does not belong to the given `issueId` (neither source nor target) | `REFERENCED_ENTITY_NOT_FOUND` | 404 | Applies on update and on removal. |
+| Update request supplies neither `type` nor `description` | `VALIDATION_FAILED` | 400 | A no-op `PATCH` is treated as a malformed request rather than a silent success. |
 | Actor lacks permission for the issue's workspace | `WORKSPACE_ACCESS_DENIED` | 403 | Enforced by `workspace-authorization` upstream; this component never re-derives it. |
 
 ## File Structure
@@ -150,23 +165,26 @@ Every anticipated failure resolves to a §7.7 catalog code; no raw EF Core excep
 ```
 src/
 ├── Anvilboard.Domain/
-│   └── IssueLink.cs                      # Planned: Id/SourceIssueId/TargetIssueId/Type/Description/CreatedById/CreatedAt entity
+│   └── IssueLink.cs                      # Id/SourceIssueId/TargetIssueId/Type/Description/CreatedById/CreatedAt entity
 ├── Anvilboard.Application/
-│   └── IssueLinks/
-│       ├── IIssueLinkService.cs          # Planned: CreateLinkAsync/ListLinksAsync/RemoveLinkAsync contract
-│       └── IssueLinkService.cs           # Planned: implementation, calls IIssueService for existence/workspace checks
+│   └── Issues/
+│       ├── IssueLinkService.cs           # Create/List/Update/RemoveLinkAsync + ListLinkTypesAsync; resolves issues via the DbContext under a workspace guard
+│       └── IssueLinkException.cs         # Carries the §7.7 catalog code the endpoint layer maps to a status
 └── Anvilboard.Api/
     └── Endpoints/
-        └── IssueLinkEndpoints.cs         # Planned: GET/POST /api/v1/issues/{id}/links, DELETE .../{linkId}
+        ├── IssueEndpoints.cs             # GET/POST /api/issues/{id}/links, PATCH and DELETE .../{linkId}
+        └── TaxonomyEndpoints.cs          # GET /api/issue-link-types (canonical suggestion vocabulary)
 ```
 
 ## Test Module
 
-**Test file**: `src/Anvilboard.Application.Tests/IssueLinks/IssueLinkServiceTests.cs`
+**Test files**: `src/Anvilboard.Application.Tests/Issues/IssueLinkServiceTests.cs` (service behaviour),
+`src/Anvilboard.Api.Tests/Issues/IssueLinkEndpointTests.cs` (REST contract),
+`src/Anvilboard.Api.Tests/Issues/TaxonomyEndpointTests.cs` (link-type vocabulary)
 
 **Test scope**:
-- **Unit**: `type` non-empty validation, self-link rejection, unlisted-type acceptance (explicit non-rejection assertion), `description` defaulting to `""` when omitted, direction computation logic for a given `issueId`.
-- **Integration**: create → list (from both sides) → remove round-trip against a seeded `AnvilboardDbContext`; unique-constraint conflict on duplicate `(source, target, type)` regardless of differing `description`; cross-workspace target rejection; audit-event emission assertions for both create and remove.
+- **Unit**: `type` non-empty validation, self-link rejection, unlisted-type acceptance (explicit non-rejection assertion), `description` defaulting to `""` when omitted, direction computation logic for a given `issueId`, and update-request field validation.
+- **Integration**: create → list (from both sides) → update → remove round-trip against a seeded `AnvilboardDbContext`; unique-constraint conflict on duplicate `(source, target, type)` regardless of differing `description` and on a retype onto an existing pair; cross-workspace target rejection; audit-event emission assertions for create, update, and remove.
 - **Negative / zero-cascade**: a dedicated test seeding a `PARENT`/`DUPLICATE` link and asserting no workflow transition, owner reassignment, or notification occurs on either linked issue as a *side effect* of any operation on the other — this guards the product's explicit "no sub-issue hierarchy" boundary against accidental future coupling.
 - **Negative / no-enforcement (`BLOCKS`)**: a dedicated test seeding a `BLOCKS` link and asserting a phase change on the blocked issue succeeds unconditionally with no `Pre*PhaseChange` hook veto or gating check attributable to this component — guards the explicit "marker only, never a gate" boundary.
 - **Fixtures / Mocks**: seeded `Issue` rows across two workspaces (for cross-workspace negative tests); at least one pair of issues linked with each suggested vocabulary type (`RELATED`, `PARENT`, `DUPLICATE`, `MENTIONED_IN`, `BLOCKS`), each with a representative `description`, to exercise DTO/list rendering.

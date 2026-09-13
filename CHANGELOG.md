@@ -9,8 +9,32 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ### Added
 
+- **Board experience parity** (closing audit findings `MAJ-007`, `MAJ-008`, `MAJ-010`, and `MAJ-011`),
+  designed in [`docs/plans/board-experience-parity.md`](docs/plans/board-experience-parity.md).
+  `IBoardQueryService` existed but nothing called it, activity events were written and never read,
+  issue links could be created and deleted but not retyped, and the Angular board fetched every issue
+  and grouped them client-side with no filtering.
+  - New `GET /api/board` serves grouped, filtered, ordered, paged board data, plus
+    `GET /api/issue-link-types`, `GET /api/issues/{id}/activity` (cursor-paged), and
+    `GET /api/issues/{id}/comments`.
+  - New `PATCH /api/issues/{issueId}/links/{linkId}` changes a link's type, enforcing the same
+    workspace scope, self-link, and duplicate-pair rules as creation.
+  - Four matching agent operations (`query-board`, `list-issue-activity`, `list-issue-comments`,
+    `list-issue-link-types`) and the idempotency-keyed `update-issue-link` mirror the REST surface on
+    the CLI and MCP transports.
+  - The Angular board gained a filter bar (team, assignee, priority, type, search, group-by,
+    order-by) that drives the server-side query, and the issue detail pane gained an activity feed
+    with cursor-based "load more" and a comment thread.
+  - Fixed two production bugs found while wiring the read paths: SQLite cannot `ORDER BY` a
+    `DateTimeOffset`, which silently mis-ordered activity and comment listings.
 - Added workspace-scoped workflow-state and workflow-transition administration through seven REST routes and seven CLI/MCP operations, including permissions, mutation idempotency, and success/rejection audit events.
 - Issue transitions now target configured workflow-state IDs across the application, REST, agent, and Angular issue-detail surfaces, enabling transitions into custom states while retaining the deprecated six-state status projection for compatibility.
+
+### Deprecated
+
+- `GET /api/issues` and the agent `list-issues` operation return every issue in the workspace with no
+  filtering, grouping, ordering, or paging. Both are superseded by `GET /api/board` / `query-board`
+  and are retained only for compatibility; the Angular client no longer uses them.
 
 ### Security
 

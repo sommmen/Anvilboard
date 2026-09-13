@@ -9,7 +9,7 @@
 | Component | integration-and-plugin-platform |
 | Priority | P0 |
 | Status | Partial — integration lifecycle, write-only secret handling, webhook signature verification, reflection-based plugin loading, approval-gated outbound plugin events (FR-INT-006, via `IPluginEventPublisher`/`PluginEventRelay`), paused-webhook rejection (audit `MAJ-012`), and sync health tracking with categorized exponential backoff (audit `MAJ-013`) are implemented; the core does not dispatch events *to* plugins (audit `MAJ-014`), and plugin manifest validation is weaker than spec'd. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + the integration sync-health change set — six populated .NET test projects 443 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + the documentation-alignment change set — six populated .NET test projects 521 passing, `npm test` 44 passing |
 | SRS Refs | FR-INT-001, FR-INT-002, FR-INT-003, FR-INT-004, FR-INT-005, FR-INT-006, FR-INT-007, FR-INT-009, NFR-REL-002, NFR-SEC-001 |
 | Tech Design Ref | §8.1 — Integration & Plugin Platform row; also §7.6 Retry & Circuit Breaker Configuration, §7.7 Error Catalog, §11.3 Data Encryption |
 | Implementation Plan | [`docs/plans/integration-sync-health.md`](../plans/integration-sync-health.md) — implemented: sync health, backoff, and paused-webhook rejection (audit `MAJ-012`, `MAJ-013`) |
@@ -64,7 +64,7 @@ The Integration & Plugin Platform owns the lifecycle of external connectors (Git
 ## Interfaces
 
 ### Inputs
-- **Integration lifecycle requests** (`configure`, `validate`, `enable`, `pause`, `test`, `remove`) via `POST /api/v1/integrations/{id}/sync` and equivalent administrator-only CLI/MCP operations (tech-design §9.1).
+- **Integration lifecycle requests** (`configure`, `validate`, `enable`, `pause`, `test`, `remove`) via `POST /api/integrations/{id}/sync` (planned; tech-design §9.1) and equivalent administrator-only CLI/MCP operations (tech-design §9.1).
 - **Provider polling responses** — raw HTTP/GraphQL payloads fetched by `GitHubIngestionSource`/`LinearIngestionSource` on each `SyncAsync(SyncCursor, ct)` invocation.
 - **Inbound webhook deliveries** — `WebhookRequest(Headers, RawBody)` routed by the host from `POST /webhooks/{provider}` to the matching `IWebhookReceiver.RoutePrefix`.
 - **Plugin assemblies** — reflection-loaded from `PluginHostOptions.AssemblyPaths`, or DI-registered `IAnvilboardPlugin` instances from in-repo integrations.
@@ -134,7 +134,7 @@ sequenceDiagram
     else Local Version (non-additive fields) changed since last sync (concurrent local edit)
         IP->>IBS: Raise SYNC_CONFLICT(issueId, localVersion, remotePayload) — non-additive fields only
         IBS-->>IP: Conflict recorded; remote payload preserved, not applied
-        Note over IP,IBS: Resolvable from the dashboard via POST /api/v1/issues/{id}/sync-conflicts/{conflictId}/resolve<br/>(keep-local / apply-remote / merge)
+        Note over IP,IBS: Resolvable from the dashboard via POST /api/issues/{id}/sync-conflicts/{conflictId}/resolve (planned)<br/>(keep-local / apply-remote / merge)
     end
 ```
 
@@ -255,7 +255,7 @@ On every resync of an already-linked issue (an `ExternalLink` already exists for
 4. If changed (a local edit — e.g., a workflow transition or field edit — occurred since the last sync), do **not** silently overwrite. Instead:
    - Persist the incoming remote payload as a pending conflict record (fields: `issueId`, `provider`, `remotePayloadSnapshot`, `detectedAt`).
    - Return/raise `SYNC_CONFLICT` rather than a normal upsert result; the local issue's non-additive fields are left untouched (the additive merge from step 1 has already applied regardless).
-   - The conflict is surfaced on the dashboard (a visible "resolve conflict" affordance on the issue) and resolved via `POST /api/v1/issues/{id}/sync-conflicts/{conflictId}/resolve` (tech-design §9.1), which lets the resolving actor choose `keep-local`, `apply-remote`, or `merge` (field-by-field); resolution advances `LastSyncedVersion` and clears the pending conflict.
+   - The conflict is surfaced on the dashboard (a visible "resolve conflict" affordance on the issue) and resolved via `POST /api/issues/{id}/sync-conflicts/{conflictId}/resolve` (planned; tech-design §9.1), which lets the resolving actor choose `keep-local`, `apply-remote`, or `merge` (field-by-field); resolution advances `LastSyncedVersion` and clears the pending conflict.
 5. A local-only edit that never conflicts with a remote change (e.g., editing `SessionState`, which bypasses `Issue.Version`, or adding a comment/artifact/link, which always merges per step 1) does not by itself trigger a conflict — only edits to non-additive fields that advance `Issue.Version` are considered for conflict comparison, consistent with `issue-board-service`'s optimistic-concurrency design.
 
 ### Outbound plugin event publishing (implemented, FR-INT-006)
@@ -322,7 +322,7 @@ The GitHub plugin correlates a pull request to an issue (via a recognized issue 
 | AC-IPP-108 | P2 | Given an issue description containing a recognized Slack-thread URL, when a `PostAddComment`/`PostIngest` hook realization processes it. | An `Artifact` of kind Link/File is attached to the issue via `IArtifactService`; a second occurrence of the same source URL updates rather than duplicates the artifact. | Integration — `ArtifactExpansionHookTests.SlackThreadUrl_ExpandsToIdempotentArtifact`. |
 | AC-IPP-109 | P0 | Given an `ExternalLink`-backed issue with no local edits since the last successful sync, when a resync delivers an updated remote payload. | The update is applied normally and `ExternalLink.LastSyncedVersion` advances to match the issue's new `Version`. | Integration — `SyncConflictTests.NoLocalEdit_AppliesRemoteUpdateCleanly` (FR-INT-005). |
 | AC-IPP-110 | P0 | Given an `ExternalLink`-backed issue with a local edit made to a non-additive field (e.g. title) after the last successful sync (advancing `Issue.Version`), when a resync delivers a remote payload. | The local issue is left untouched, a pending conflict record is created, and `SYNC_CONFLICT` is raised instead of a silent overwrite. | Integration — `SyncConflictTests.ConcurrentLocalEdit_RaisesConflictInsteadOfOverwriting` (negative, boundary for FR-INT-005). |
-| AC-IPP-111 | P2 | Given a pending sync conflict, when the resolving actor calls `POST /api/v1/issues/{id}/sync-conflicts/{conflictId}/resolve` choosing "apply remote". | The remote payload is applied, `LastSyncedVersion` advances, and the conflict record is cleared. | Integration — `SyncConflictTests.ResolveApplyRemote_ClearsConflictAndAdvancesVersion`. |
+| AC-IPP-111 | P2 | Given a pending sync conflict, when the resolving actor calls `POST /api/issues/{id}/sync-conflicts/{conflictId}/resolve` choosing "apply remote". | The remote payload is applied, `LastSyncedVersion` advances, and the conflict record is cleared. | Integration — `SyncConflictTests.ResolveApplyRemote_ClearsConflictAndAdvancesVersion`. |
 | AC-IPP-112 | P1 | Given a remote-added comment and a local-added comment on the same `ExternalLink`-backed issue since the last sync, when a resync runs. | Both comments are present after resync (list-union merge); no `SYNC_CONFLICT` is raised for the additive comment set. | Integration — `SyncConflictTests.AdditiveComments_MergeWithoutConflict` (FR-INT-005). |
 | AC-IPP-113 | P2 | Given a plugin calling `IPluginEventPublisher.Publish`, when `realtime-updates` is temporarily unavailable. | The publish call still returns successfully to the plugin (fire-and-forget); the relay failure is logged but never surfaces as an error to the publishing plugin. | Unit — `PluginEventRelayTests.Publish_PublisherThrows_SurfacesNothingToThePlugin` (FR-INT-006). |
 | AC-IPP-114 | P1 | Given a plugin event whose type is not listed in `Realtime:RelayedPluginEventTypes`, when the plugin publishes it. | The event is dropped before reaching any client and no lifecycle hook runs; an empty configuration relays nothing at all (negative — approval is opt-in). | Unit — `PluginEventRelayTests.Publish_UnapprovedEventType_DropsEvent`, `Publish_NoApprovedEventTypesConfigured_DropsEverything` (FR-INT-006). |

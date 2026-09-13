@@ -4,50 +4,101 @@
       <h1>Board</h1>
       <p class="tagline">Ship the work. Skip the ceremony.</p>
     </div>
-    <button class="ab-btn" (click)="refresh()">Refresh</button>
+    <div class="board-toolbar-actions">
+      <span class="board-count">{{ totalCount() }} issues</span>
+      <button class="ab-btn" (click)="refresh()">Refresh</button>
+    </div>
   </header>
 
-  <div class="columns">
-    @for (column of columns(); track column.status) {
-      <section class="column">
-        <header class="column-header">
-          <span class="column-title">{{ column.label }}</span>
-          <span class="column-count">{{ column.issues.length }}</span>
-          <button class="column-add" (click)="startCreating(column.status)">+</button>
-        </header>
+  <app-board-filters
+    [query]="query()"
+    [workflowStates]="workflowStates()"
+    [members]="members()"
+    [projects]="projects()"
+    [labels]="labels()"
+    [view]="view()"
+    (queryChanged)="applyQuery($event)"
+    (viewChanged)="setView($event)"
+  />
 
-        @if (creatingForStatus() === column.status) {
-          <div class="quick-create">
-            <input
-              type="text"
-              placeholder="Issue title"
-              [value]="newIssueTitle()"
-              (input)="newIssueTitle.set($any($event.target).value)"
-              (keydown.enter)="submitCreate()"
-              (keydown.escape)="cancelCreating()"
-              autofocus
-            />
-            <div class="quick-create-actions">
-              <button class="ab-btn ab-btn-primary" (click)="submitCreate()">Add</button>
-              <button class="ab-btn" (click)="cancelCreating()">Cancel</button>
+  @if (loading()) {
+    <p class="board-loading">Loading…</p>
+  }
+
+  @if (view() === 'kanban') {
+    <div class="columns">
+      @for (group of groups(); track group.key) {
+        <section class="column">
+          <header class="column-header">
+            <span class="column-title">{{ group.displayName }}</span>
+            <span class="column-count">{{ group.issues.length }}</span>
+            <button class="column-add" (click)="startCreating(group.key)">+</button>
+          </header>
+
+          @if (creatingForGroup() === group.key) {
+            <div class="quick-create">
+              <input
+                type="text"
+                placeholder="Issue title"
+                [value]="newIssueTitle()"
+                (input)="newIssueTitle.set($any($event.target).value)"
+                (keydown.enter)="submitCreate()"
+                (keydown.escape)="cancelCreating()"
+                autofocus
+              />
+              <div class="quick-create-actions">
+                <button class="ab-btn ab-btn-primary" (click)="submitCreate()">Add</button>
+                <button class="ab-btn" (click)="cancelCreating()">Cancel</button>
+              </div>
             </div>
-          </div>
-        }
-
-        <div class="column-body">
-          @for (issue of column.issues; track issue.id) {
-            <app-issue-card [issue]="issue" (open)="openIssue($event)" />
-          } @empty {
-            @if (creatingForStatus() !== column.status) {
-              <p class="column-empty">Nothing here.</p>
-            }
           }
-        </div>
-      </section>
-    }
-  </div>
+
+          <div class="column-body">
+            @for (issue of group.issues; track issue.id) {
+              <app-issue-card [issue]="issue" (open)="openIssue($event)" />
+            } @empty {
+              @if (creatingForGroup() !== group.key) {
+                <p class="column-empty">Nothing here.</p>
+              }
+            }
+          </div>
+        </section>
+      } @empty {
+        <p class="board-empty">No issues match the current filters.</p>
+      }
+    </div>
+  } @else {
+    <table class="board-list">
+      <thead>
+        <tr>
+          <th scope="col">Key</th>
+          <th scope="col">Title</th>
+          <th scope="col">Group</th>
+          <th scope="col">Priority</th>
+          <th scope="col">Assignee</th>
+          <th scope="col">Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of listRows(); track row.issue.id) {
+          <tr class="board-list-row" (click)="openIssue(row.issue)">
+            <td class="board-list-key">{{ row.issue.key }}</td>
+            <td>{{ row.issue.title }}</td>
+            <td>{{ row.group.displayName }}</td>
+            <td>{{ row.issue.priority }}</td>
+            <td>{{ row.issue.assigneeId ?? '—' }}</td>
+            <td>{{ row.issue.provider }}</td>
+          </tr>
+        } @empty {
+          <tr>
+            <td class="board-empty" colspan="6">No issues match the current filters.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
 </div>
 
 @if (selectedIssue(); as issue) {
-  <app-issue-detail [issue]="issue" (closed)="closeDetail()" (changed)="onStatusChanged()" />
+  <app-issue-detail [issue]="issue" (closed)="closeDetail()" (changed)="onIssueChanged()" />
 }

@@ -1,0 +1,60 @@
+.activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-entry {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.activity-glyph {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ab-text-faint);
+}
+
+.activity-body {
+  min-width: 0;
+}
+
+.activity-text {
+  margin: 0;
+  color: var(--ab-text);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.activity-meta {
+  display: flex;
+  gap: 6px;
+  margin: 2px 0 0;
+  color: var(--ab-text-faint);
+  font-size: 11px;
+}
+
+.activity-actor {
+  color: var(--ab-text-muted);
+}
+
+.activity-empty,
+.activity-loading {
+  margin: 0;
+  color: var(--ab-text-faint);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.activity-more {
+  margin-top: 10px;
+  font-size: 11px;
+}

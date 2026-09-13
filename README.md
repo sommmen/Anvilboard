@@ -33,8 +33,11 @@ up ownership of the data or standing up infrastructure to get it.
 - **Local-first storage.** One SQLite file. Back it up by copying a file; move it by copying a
   file.
 - **Kanban board + dashboard.** Ships with a default Backlog → Todo → In Progress → In Review →
-  Done/Cancelled workflow, fully configurable per workspace. Plus quick-create, an issue detail
-  panel, and a dashboard with throughput, status/source breakdowns, and open-load-by-assignee.
+  Done/Cancelled workflow, fully configurable per workspace. Filter the board by team, assignee,
+  priority, type, or free text and regroup it by status, assignee, priority, or team — the grouping,
+  ordering, and paging all happen server-side, so the browser is not holding every issue in memory.
+  Plus quick-create, an issue detail panel with the issue's activity history and comment thread, and
+  a dashboard with throughput, status/source breakdowns, and open-load-by-assignee.
 - **Live board updates.** Open boards patch themselves over SignalR when anyone — a teammate, an
   agent, or an integration — changes an issue, so you are not refreshing to find out what moved.
   A connection only ever receives its own workspace's changes, and a dropped connection re-fetches

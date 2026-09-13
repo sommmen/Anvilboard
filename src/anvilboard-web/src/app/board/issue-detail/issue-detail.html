@@ -35,16 +35,47 @@
     <div class="panel-links">
       <span class="panel-label">Links</span>
       @for (link of links(); track link.id) {
-        <div class="issue-link">
-          <span class="issue-link-type">{{ link.type }}</span>
-          <span class="issue-link-target">{{ linkedIssueLabel(link) }}</span>
-          @if (link.description) {
-            <span class="issue-link-description">{{ link.description }}</span>
-          }
-          <button class="issue-link-remove" (click)="removeLink(link)" title="Remove link">
-            ✕
-          </button>
-        </div>
+        @if (editingLinkId() === link.id) {
+          <div class="issue-link-editor">
+            <input
+              type="text"
+              class="link-type-input"
+              list="link-type-suggestions"
+              placeholder="Type"
+              [value]="editLinkType()"
+              (input)="editLinkType.set($any($event.target).value)"
+              (keydown.enter)="submitLinkEdit(link)"
+              (keydown.escape)="cancelEditingLink()"
+            />
+            <input
+              type="text"
+              class="link-description-input"
+              placeholder="Description (optional)"
+              [value]="editLinkDescription()"
+              (input)="editLinkDescription.set($any($event.target).value)"
+              (keydown.enter)="submitLinkEdit(link)"
+              (keydown.escape)="cancelEditingLink()"
+            />
+            <div class="issue-link-editor-actions">
+              <button class="ab-btn ab-btn-primary" (click)="submitLinkEdit(link)">Save</button>
+              <button class="ab-btn" (click)="cancelEditingLink()">Cancel</button>
+            </div>
+          </div>
+        } @else {
+          <div class="issue-link">
+            <span class="issue-link-type">{{ link.type }}</span>
+            <span class="issue-link-target">{{ linkedIssueLabel(link) }}</span>
+            @if (link.description) {
+              <span class="issue-link-description">{{ link.description }}</span>
+            }
+            <button class="issue-link-edit" (click)="startEditingLink(link)" title="Edit link">
+              ✎
+            </button>
+            <button class="issue-link-remove" (click)="removeLink(link)" title="Remove link">
+              ✕
+            </button>
+          </div>
+        }
       } @empty {
         <p class="panel-empty">No links yet.</p>
       }
@@ -66,7 +97,7 @@
           (input)="linkType.set($any($event.target).value)"
         />
         <datalist id="link-type-suggestions">
-          @for (type of suggestedLinkTypes; track type) {
+          @for (type of suggestedLinkTypes(); track type) {
             <option [value]="type"></option>
           }
         </datalist>
@@ -89,7 +120,11 @@
       @for (comment of comments(); track comment.id) {
         <div class="comment">{{ comment.body }}</div>
       } @empty {
-        <p class="panel-empty">No comments yet.</p>
+        @if (commentsLoading()) {
+          <p class="panel-empty">Loading comments…</p>
+        } @else {
+          <p class="panel-empty">No comments yet.</p>
+        }
       }
 
       <div class="comment-composer">
@@ -101,6 +136,16 @@
         ></textarea>
         <button class="ab-btn ab-btn-primary" (click)="submitComment()">Comment</button>
       </div>
+    </div>
+
+    <div class="panel-activity">
+      <span class="panel-label">Activity</span>
+      <app-activity-feed
+        [entries]="activity()"
+        [loading]="activityLoading()"
+        [hasMore]="activityCursor() !== null"
+        (loadMore)="loadMoreActivity()"
+      />
     </div>
   </aside>
 </div>

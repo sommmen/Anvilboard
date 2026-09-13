@@ -16,7 +16,7 @@ not structure but **currency**: several of the most-read documents (`docs/anvilb
 target-state / pre-implementation documents and were never updated as real code landed. Before this
 audit, `tech-design.md` §16 marked **every** milestone "Not Started" even though M1–M4.5 and parts of
 M5–M6.7 are substantially implemented and covered by passing automated tests across 6 populated
-xUnit test projects (114 at the time of the first pass, **443** as of the latest re-verification);
+xUnit test projects (114 at the time of the first pass, **521** as of the latest re-verification);
 `test-cases.md` claimed there were **zero** automated test projects at all.
 
 The audit updated the doc/implementation-status claims across all 9 feature docs, the
@@ -36,13 +36,22 @@ also have real, evidenced gaps relative to their specs. These are enumerated bel
 findings for a future implementation pass; per this task's instructions they were **flagged, not
 fixed**.
 
+A later documentation-alignment pass re-derived the REST surface directly from
+`src/Anvilboard.Api/Endpoints/` and found a third class of drift, distinct from the currency problem
+above: the documentation described an API **shape** that had never been built. All routes were
+documented under a `/api/v1/...` prefix that no code has ever served, six endpoints were listed with
+no implementation behind them, and roughly twenty shipped routes were missing from the tech-design
+endpoint table entirely. Those corrections are recorded as MIN-008, MIN-009, and MIN-010, and the
+tech-design §9.1/§9.2 API sections were rebuilt from the endpoint sources rather than edited in
+place.
+
 ## Findings Summary
 
 | Severity | Count | Categories |
 |----------|-------|------------|
-| Critical |   3   | audit-and-recovery (backup/restore missing — **since resolved**), realtime-updates (entire feature unimplemented — **since resolved**), artifacts (no ArtifactService) |
-| Major    |  22   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap (**resolved**: MAJ-001, MAJ-002 audit correction, MAJ-012, MAJ-013, MAJ-015–MAJ-017, MAJ-019, MAJ-021, MAJ-022 REST/application workspace scoping) |
-| Minor    |   7   | PLUGINS.md staleness, workflow-engine API versioning, manifest validation (**open**); README Kanban-column wording, extra undocumented agent tools, IArtifactStore sole-caller claim, post-implementation doc drift (**resolved**: MIN-001, MIN-005, MIN-006, MIN-007) |
+| Critical |   3   | **All resolved.** audit-and-recovery (backup/restore missing), realtime-updates (entire feature unimplemented), artifacts (no `ArtifactService`) |
+| Major    |  22   | **Open (5)**: MAJ-006 threaded comments, MAJ-009 optimistic concurrency, MAJ-014 outbound plugin events, MAJ-018 audit `QueryAsync`, MAJ-020 artifact lifecycle hooks. **Resolved (17)**: MAJ-001–MAJ-005, MAJ-007, MAJ-008, MAJ-010–MAJ-013, MAJ-015–MAJ-017, MAJ-019, MAJ-021, MAJ-022 |
+| Minor    |  10   | **Open (2)**: MIN-004 plugin manifest validation, MIN-010 enum casing inconsistent between live enums and `.ToString()`-flattened fields. **Resolved (8)**: MIN-001, MIN-002, MIN-003, MIN-005, MIN-006, MIN-007, MIN-008 (`/api/v1` documented but never implemented), MIN-009 (phantom + missing endpoints in tech-design §9.1) |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
 
 ## Document Health Matrix
@@ -51,7 +60,7 @@ fixed**.
 |----------|-------------|----------|---------|----------|---------|
 | `docs/anvilboard/prd.md` | B | C — checklists/status labels predate most implementation | A | D | C |
 | `docs/anvilboard/srs.md` | A | B | A | C | B |
-| `docs/anvilboard/tech-design.md` | A | B (body) / D (§16 table, now corrected) | A | C (now corrected to B) | B |
+| `docs/anvilboard/tech-design.md` | A | B (body) / D (§16 table and the §9 API surface, both now corrected) | A | C (now corrected to B) | B |
 | `docs/anvilboard/test-cases.md` | B | D — claimed zero test projects (now corrected) | B | D (now corrected to B) | C |
 | `docs/features/*.md` (9 component specs + `overview.md`) | A | C — several overstated "Implemented" claims (now corrected) | A | C (now corrected to B) | B |
 | `README.md` / `AGENTS.md` | A | A (one Minor wording nuance) | A | A | A |
@@ -195,14 +204,30 @@ fixed**.
 - **Impact**: Discussion UX described in the spec (nested replies) cannot be built without a data-model change.
 - **Fix**: Either add a parent-comment reference to the domain model, or re-scope the spec to flat comments until threading is implemented.
 
-### MAJ-007: Web UI only groups by status; backend filtering is richer than the UI exposes
+### MAJ-007: Web UI only groups by status; backend filtering is richer than the UI exposes — **RESOLVED**
+
+> **Resolved.** `BoardQueryService` is now reachable end-to-end. `GET /api/board`
+> (`src/Anvilboard.Api/Endpoints/BoardEndpoints.cs`) exposes every filter dimension the service
+> supports, and the Angular board renders them through a dedicated filter stack
+> (`src/anvilboard-web/src/app/board/board-filters/`) with kanban and list presentations plus
+> URL-mirrored state. The five server-side groupings (workflow state, type, priority, assignee,
+> label) are selectable from the UI. See
+> [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md).
+
 - **Location**: `docs/features/issue-board-service.md`
 - **Issue**: `BoardQueryService` supports multi-dimension filtering (team, workflow state, assignee, priority, project, label, source, sync condition per PRD US-HUM-002), but the Angular board view only groups/filters by status.
 - **Evidence**: Frontend board component inspection shows a single status-based grouping; no UI controls for the other filter dimensions the backend supports.
 - **Impact**: Backend capability is not reachable by end users, understating the gap between "backend done" and "feature usable."
 - **Fix**: Extend the board UI to expose the already-implemented backend filter dimensions, or note the UI gap explicitly in the feature doc (done by this audit's Status row).
 
-### MAJ-008: Issue-detail activity feed missing from the frontend
+### MAJ-008: Issue-detail activity feed missing from the frontend — **RESOLVED**
+
+> **Resolved.** `GET /api/issues/{id}/activity` (cursor-paged, server-rendered `text` per entry)
+> backs a new `app-activity-feed` component wired into the issue-detail panel, refreshed on the
+> `activity.added` realtime event. The same pass added `GET /api/issues/{id}/comments`, so the
+> comment thread now loads persisted history instead of only comments added in the current
+> session. See [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md).
+
 - **Location**: `docs/features/issue-board-service.md`
 - **Issue**: Activity events are recorded server-side, but the issue-detail Angular view does not render an activity/history feed.
 - **Evidence**: No activity-feed component found wired to the issue-detail route; `ActivityEvent` data is not fetched/displayed there.
@@ -216,14 +241,28 @@ fixed**.
 - **Impact**: Conflicting concurrent edits may silently overwrite each other on the paths that skip the check, contradicting the PRD's "conflicting edits show what changed" requirement (US-HUM-003).
 - **Fix**: Audit all issue-mutation entry points for consistent version-check enforcement.
 
-### MAJ-010: Link-update endpoint missing
+### MAJ-010: Link-update endpoint missing — **RESOLVED**
+
+> **Resolved.** `PATCH /api/issues/{id}/links/{linkId}` and the `update-issue-link` agent
+> operation now correct a link's type or description in place, writing an
+> `ActivityEventType.IssueLinkUpdated` entry rather than discarding the link's history. The
+> issue-detail panel edits a link inline. See
+> [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md).
+
 - **Location**: `docs/features/issue-linking.md`
 - **Issue**: Spec implies links can be updated (e.g., change link type) in addition to created/removed. No update endpoint was found; only create/delete.
 - **Evidence**: `IssueLinkService`/controller inspection shows create and delete operations, no update.
 - **Impact**: Users must delete and recreate a link to change its type, losing any metadata/history tied to the original link.
 - **Fix**: Add a link-update endpoint, or clarify the spec to state links are immutable except for delete/recreate.
 
-### MAJ-011: Web issue-detail does not enforce link types server-side in the UI layer
+### MAJ-011: Web issue-detail does not enforce link types server-side in the UI layer — **RESOLVED**
+
+> **Resolved.** `GET /api/issue-link-types` serves the canonical vocabulary and the issue-detail
+> form sources its suggestions from it, so the client no longer carries a hardcoded list that can
+> drift from the server's. The type remains a free-text field by design (`FR-LNK-001` AC1 validates
+> only non-empty), so this is a suggestion surface rather than client-side rejection. See
+> [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md).
+
 - **Location**: `docs/features/issue-linking.md`
 - **Issue**: The set of valid link types is enforced by the backend service, but the Angular issue-detail UI does not mirror/validate this, allowing potentially confusing UI states before a server rejection.
 - **Evidence**: Frontend link-creation form inspection shows no client-side type-list validation sourced from the backend's canonical set.
@@ -407,7 +446,7 @@ fixed**.
 - **Impact**: Low — document is already marked "Superseded," so readers are warned, but the specific stale details could still confuse a reader skimming for historical context.
 - **Fix**: No action required given its self-declared historical status; optionally add a pointer to `docs/features/integration-and-plugin-platform.md` for current behavior.
 
-### MIN-003: Workflow API surface is still legacy enum-based rather than the documented configurable model — Resolved
+### MIN-003: Workflow API surface is still legacy enum-based rather than the documented configurable model — **RESOLVED**
 - **Location**: `docs/features/workflow-engine.md`
 - **Issue**: Public issue-transition entry points previously accepted only the six-value legacy `IssueStatus` enum, making configured custom workflow states unreachable.
 - **Evidence**: `IssueService.ChangeStatusAsync`, `PATCH /api/issues/{id}/status`, and `change-issue-status` now accept workspace-scoped workflow-state IDs. Application, REST, and agent tests exercise a transition to a custom `qa_review` state, and the Angular issue-detail selector loads configured workflow states.
@@ -462,6 +501,91 @@ fixed**.
 - **Evidence**: Individual runs of the six populated .NET test projects → 394 passing / 0 failing (Application 221, Infrastructure 41, Agent 52, API 63, GitHub 12, Linear 5); `npm test -- --watch=false` in `src/anvilboard-web` → 21 passing across 3 spec files; `npm run build` → successful production bundle; direct inspection of `src/Anvilboard.Application/Backup/` (12 files including `BackupService.cs`, `RestoreCoordinator.cs`) and the 20 `[RequiresAgentPermission]` operations on `BoardAgentService`.
 - **Impact**: Medium-low but corrosive — a contributor reading `CONTRIBUTING.md` would skip running tests, and the MAJ-021/MAJ-022 confusion could cause an already-fixed bug to be "re-fixed" while the real open gap stayed unaddressed.
 - **Fix**: Applied. All affected documents were corrected in place; see INFO-005 for the drift-prevention suggestion.
+
+### MIN-008: Documentation described a `/api/v1/...` REST surface that has never existed — **RESOLVED**
+
+> **Resolved.** All route references were corrected to the shipped unversioned `/api/...` prefix, and
+> tech-design §9.1 now carries an explicit note recording versioning as a deferred decision rather
+> than an implemented one.
+
+- **Location**: `docs/anvilboard/tech-design.md` §7 conventions table, §9.1, §9.2, §9 sequence
+  diagram; `docs/features/agent-and-automation-surface.md` §1, §2, §3, §9; plus
+  `integration-and-plugin-platform.md`, `issue-board-service.md`, and three plan documents — 41
+  mentions across 8 files.
+- **Issue**: Every document described REST routes as versioned under `/api/v1/...`, and
+  `agent-and-automation-surface.md` §9 stated as a live constraint that "a breaking contract change
+  requires a new version segment". No route in `src/` has ever carried a `/v1` segment:
+  `Program.cs` maps eleven endpoint groups, all directly under `/api/...`, and the only first-party
+  client (`board-api.service.ts`) calls `/api/teams`, `/api/board`, `/api/issues` to match. A search
+  for `v1` across `src/**/*.cs` returns only `.NETCoreApp,Version=v10.0` assembly attributes.
+- **Evidence**: `src/Anvilboard.Api/Program.cs:91-101`; `src/anvilboard-web/src/app/core/board-api.service.ts`.
+  The discrepancy had already been noticed twice at the feature level —
+  `backup-and-restore.md` §17 OQ-P1 and `workspace-query-scoping.md` NG5 both resolved it locally as
+  "use `/api/`, the `/v1` gap is pre-existing and cross-cutting" — but nothing ever propagated that
+  resolution up to the tech design, so each new plan re-discovered the same conflict.
+- **Impact**: Medium. Any reader wiring an automation client from the tech design would have
+  produced 404s on every call. More subtly, the versioning claim gave a false sense of contract
+  safety: a breaking REST change today has no compatibility escape hatch at all, which is the
+  opposite of what NFR-MNT-001 was being read to guarantee.
+- **Fix**: Applied. Routes corrected throughout; tech-design §9.1 gained a "Versioning status
+  (deferred)" note that preserves `/api/v1` as a legitimate future decision rather than silently
+  dropping the aspiration, and `agent-and-automation-surface.md` §9 now points automation clients at
+  the agent envelope's `apiVersion` field, which is the versioning signal that actually ships.
+
+### MIN-009: Six documented REST endpoints have no implementation and were not marked as planned — **RESOLVED**
+
+> **Resolved.** Unimplemented routes are now explicitly labelled **Planned** in the tech-design
+> §9.1 table, each naming the finding or feature spec that still owns it; one route documented at
+> the wrong path was corrected.
+
+- **Location**: `docs/anvilboard/tech-design.md` §9.1, §9.2
+- **Issue**: The endpoint table listed six routes indistinguishably from shipped ones:
+  `POST /issues/{id}/archive`, `POST /issues/{id}/unarchive`, `POST /issues/{id}/transition`,
+  `POST /integrations/{id}/sync`, `POST /issues/{id}/sync-conflicts/{conflictId}/resolve`, and
+  `POST /workspaces/{id}/restore`. Conversely, roughly twenty shipped routes were absent from the
+  table entirely — all of `/api/auth/*`, `/api/teams`, `/api/members`, `/api/workflow/*`,
+  `/api/dashboard/summary`, `/api/integrations/health`, `/api/backups/*`, `/api/projects`,
+  `/api/labels`, and `/webhooks/{provider}`.
+- **Evidence**: `ArchiveAsync` and `unarchive` return zero hits across `src/`; `ArchivedAt` exists
+  and `includeArchived` filters the board, but no code path ever sets the field, so the column is
+  permanently null. `IntegrationEndpoints.cs` maps only `GET /health`. No `SyncConflict` entity is
+  persisted. The transition route's real equivalent is `PATCH /api/issues/{id}/status` (MIN-003).
+  The restore route's real path is `POST /api/backups/{backupId}/restore`.
+- **Impact**: Medium. §9.1 is the document a contributor consults to answer "does this exist yet",
+  and it answered incorrectly in both directions.
+- **Fix**: Applied. The table was rebuilt from the endpoint sources and now lists all 31 shipped
+  routes with their real methods, permissions, and error codes. The planned routes were **kept**
+  rather than deleted, because downstream acceptance criteria depend on them —
+  `integration-and-plugin-platform.md` AC-IPP-111 specifies conflict-resolution behaviour against
+  one of them — and deleting the row would orphan the criterion. They are now marked **Planned**.
+  §9.2's two detailed specs, which documented a `workspaceId` query parameter and a
+  `data`/`pagination` envelope that the code does not produce, were replaced with the real
+  `GET /api/board` and `PATCH /api/issues/{id}/status` contracts.
+
+### MIN-010: Enum casing on the wire is inconsistent between live enums and `.ToString()`-flattened fields
+
+- **Location**: `docs/anvilboard/tech-design.md` §5.4, §9; `src/Anvilboard.Application/Activity/ActivityQueryService.cs:93`;
+  `src/Anvilboard.Api/Endpoints/BoardEndpoints.cs:171,174,199,204-206`
+- **Issue**: The documented convention is that enumerated values cross the wire in
+  `UPPER_SNAKE_CASE`, and `Program.cs` registers an `UpperSnakeCaseEnumJsonConverterFactory` that
+  delivers exactly that — but only for properties whose declared type is still the enum. Several
+  DTOs call `.ToString()` before assignment, producing a plain `string` the converter never sees, so
+  those fields ship as PascalCase: activity `type`, board `priority`, board `provider`, and the
+  `groupBy`/`orderBy` members echoed in `appliedQuery`.
+- **Evidence**: `BoardEndpointTests` asserts `"Local"`, `"WorkflowState"`, and `"CreatedAt"` — the
+  PascalCase forms — so the behaviour is pinned by tests, not accidental. Note the input side is
+  more permissive than the output side: the board query parser strips underscores and compares
+  case-insensitively, so `workflow_state` and `WorkflowState` are both accepted, but the echo is
+  always PascalCase.
+- **Impact**: Low, but a trap for automation clients. A client that reads `appliedQuery.groupBy` and
+  feeds it straight back into a follow-up request will work; a client that pattern-matches an
+  `UPPER_SNAKE_CASE` value against activity `type` will silently never match.
+- **Fix**: Not applied — this is a code-versus-convention inconsistency, not a documentation error,
+  and resolving it means choosing between two breaking changes: drop the `.ToString()` calls so the
+  converter applies (changes the wire format for existing clients, including the SPA), or accept
+  PascalCase for flattened fields and narrow the documented convention. §9.2 now documents the
+  actual behaviour and flags the asymmetry so nobody is surprised; the decision itself belongs to a
+  deliberate contract change.
 
 ## Observations & Suggestions
 
@@ -536,6 +660,15 @@ graph TD
 5. ~~**Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations**~~ — MAJ-003, MAJ-004, and MAJ-005 closed with workspace-scoped REST and CLI/MCP operations, idempotent agent mutations, audit emission, and integration coverage — done: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md)
 6. ~~**Wire agent-surface authorization, idempotency, and an `apiVersion` contract field**~~ — MAJ-015, MAJ-016, and MAJ-017 closed with SQLite-backed integration coverage — done
 7. ~~**Add sync-health/backoff tracking and enforce paused-integration webhook rejection**~~ — MAJ-012 and MAJ-013 closed with the `IntegrationHealth` table, a single sync-condition derivation reused by the board filter and dashboard, categorized exponential backoff honouring `Retry-After`, paused-webhook rejection after signature verification, and REST plus agent read surfaces — done: [`docs/plans/integration-sync-health.md`](./plans/integration-sync-health.md)
-8. **Close remaining UI/UX gaps (board filter parity, issue-detail activity feed, link-update endpoint)** — fixes MAJ-007, MAJ-008, MAJ-010, MAJ-011 — medium
+8. ~~**Close remaining UI/UX gaps (board filter parity, issue-detail activity feed, link-update endpoint)**~~ — MAJ-007, MAJ-008, MAJ-010, and MAJ-011 closed with `GET /api/board` wiring the orphaned `IBoardQueryService` to REST and agent callers, cursor-paged activity and comment read paths, `PATCH …/links/{linkId}`, a server-owned link-type vocabulary, and the Angular filter stack plus activity feed — done: [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md)
 9. **Add a generic filterable audit-query method (`QueryAsync`-equivalent)** — fixes MAJ-018 — small
 10. ~~**Reword the README Kanban-column description and add missing agent tools to the documented catalog**~~ — MIN-001 and MIN-005 both closed during the documentation-currency pass (see MIN-007) — done
+11. **Decide the wire casing for `.ToString()`-flattened enum fields** — fixes MIN-010 — small, but a
+    breaking contract change either way. Today activity `type`, board `priority`/`provider`, and the
+    `appliedQuery` echo ship as PascalCase because the DTOs stringify before the
+    `UpperSnakeCaseEnumJsonConverterFactory` can apply, contradicting the documented
+    `UPPER_SNAKE_CASE` convention for enumerated values. Either drop the `.ToString()` calls (and
+    update the SPA plus `BoardEndpointTests`) or narrow the documented convention to cover only live
+    enum properties. Documentation now describes the actual behaviour, so this is a correctness
+    decision rather than a drift fix.
+12. **Tighten plugin manifest validation** — fixes MIN-004 — small; still open from the original pass.

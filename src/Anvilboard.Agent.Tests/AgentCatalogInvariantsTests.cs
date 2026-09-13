@@ -23,6 +23,7 @@ public sealed class AgentCatalogInvariantsTests
     private static readonly HashSet<string> OperationsWithoutIdempotencyKey =
     [
         "list-issues", "get-issue", "dashboard-summary", "list-issue-links",
+        "query-board", "list-issue-activity", "list-issue-comments", "list-link-types",
         "create-backup", "list-backups", "verify-backup",
         "list-workflow-states", "list-workflow-transitions",
         "list-integration-health",

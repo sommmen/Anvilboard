@@ -9,7 +9,7 @@
 | Component | agent-and-automation-surface |
 | Priority | P0 |
 | Status | Partial — CLI/MCP authentication, workspace authorization, actor attribution, mutation idempotency, per-invocation correlation, response contract versioning, and stdio isolation are implemented. REST/application queries are now workspace-bound on every surface (MAJ-022). REST still lacks the common `{ apiVersion, correlationId, data }` body envelope and shared idempotency contract. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + the documentation-alignment change set — six populated .NET test projects 521 passing, `npm test` 44 passing |
 | SRS Refs | FR-AUT-001, FR-AUT-002, FR-AUT-003, NFR-MNT-001 |
 | Tech Design Ref | §8.1 Component Overview — Automation Surface (REST/CLI/MCP) row; §7.3 Parameter Validation; §7.6 Error Handling Strategy; §9 API Design; §10.1 `IdempotencyRecords` |
 | Depends On | workspace-authorization, workflow-engine, issue-board-service, integration-and-plugin-platform |
@@ -17,12 +17,12 @@
 
 ## Purpose
 
-The Automation Surface is the single place where every externally callable operation — versioned REST (`/api/v1/...`), CLI, and MCP stdio — is defined once and rendered identically across channels. It exists so that a human using `anvilboard-web` and an automation agent calling REST/CLI/MCP never observe diverging symbolic values, error codes, or idempotency semantics, closing the numeric-vs-symbolic serialization gap the PoC review identified (see [`../anvilboard/tech-design.md`](../anvilboard/tech-design.md) §5.4, §6). It is the channel-facing shell around `Anvilboard.Application`; it does not itself decide authorization, workflow legality, or provider sync outcomes.
+The Automation Surface is the single place where every externally callable operation — REST (`/api/...`), CLI, and MCP stdio — is defined once and rendered identically across channels. It exists so that a human using `anvilboard-web` and an automation agent calling REST/CLI/MCP never observe diverging symbolic values, error codes, or idempotency semantics, closing the numeric-vs-symbolic serialization gap the PoC review identified (see [`../anvilboard/tech-design.md`](../anvilboard/tech-design.md) §5.4, §6). It is the channel-facing shell around `Anvilboard.Application`; it does not itself decide authorization, workflow legality, or provider sync outcomes.
 
 ## Scope
 
 **Included:**
-- Versioned REST endpoint contracts under `/api/v1/...` (issues, transition, integration sync, workspace restore) as documented in tech-design §9
+- REST endpoint contracts under `/api/...` (issues, status transition, board, backups) as documented in tech-design §9.1. Routes are unversioned; see the versioning note in tech-design §9.1 for why a `/v1` segment was deferred.
 - CLI commands and MCP stdio tool operations exposed through the existing `dotnet-agent-surface`-based host (`Anvilboard.Agent`)
 - `Idempotency-Key` enforcement and `IdempotencyRecords` persistence for every supported automation mutation (FR-AUT-002)
 - Correlation ID generation, propagation, and inclusion in every response and the corresponding audit context (FR-AUT-001 criterion 3)
@@ -39,7 +39,7 @@ The Automation Surface is the single place where every externally callable opera
 
 ## Core Responsibilities
 
-1. **Versioned Contract Definition** — define and enforce the `/api/v1` REST route contracts and the mirrored CLI/MCP operation catalog so all three transports share one DTO shape.
+1. **Contract Definition** — define and enforce the `/api/...` REST route contracts and the mirrored CLI/MCP operation catalog so all three transports share one DTO shape.
 2. **Idempotency Enforcement** — validate and persist `Idempotency-Key` + canonical request hash per actor/workspace/operation; replay committed results and reject conflicting reuse.
 3. **Correlation & Channel Context** — generate or propagate a correlation ID per call and attach channel identity (`REST`/`CLI`/`MCP`) to every downstream call, including the audit context handed to `audit-and-recovery`.
 4. **Error Translation** — catch `Anvilboard.Application` exceptions/anticipated-failure results and translate them into the stable §7.7 catalog codes, never letting a raw exception or stack trace reach a caller.
@@ -194,7 +194,7 @@ public static class ErrorCatalogTranslator
 - **Protocol isolation**: MCP stdout is reserved exclusively for JSON-RPC responses; all logs/diagnostics go to stderr (existing invariant preserved, not renegotiated by this feature).
 - **Idempotency retention**: retain terminal outcomes for 30 days, then purge them through maintenance. A reused key with a changed canonical payload (same `WorkspaceId`/`ActorId`/`Operation`/`Key` tuple) is rejected as `IDEMPOTENCY_KEY_REUSED`; a changed actor produces a distinct key tuple entirely (a `New` outcome), never a reuse rejection.
 - **Error surface discipline**: `500 INTERNAL_ERROR` is reserved exclusively for unanticipated faults and is never a documented contract response; every anticipated failure has a stable §7.7 code.
-- **Versioning**: REST routes are versioned under `/api/v1`; a breaking contract change requires a new version segment, not an in-place change (NFR-MNT-001).
+- **Versioning**: REST routes are currently unversioned under `/api/...`. The agent surface carries its own `apiVersion` field in the response envelope, which is what automation clients should branch on. A route-level version segment remains deferred (tech-design §9.1); until it exists, a breaking REST contract change has no compatibility escape hatch, which is the practical constraint behind NFR-MNT-001.
 - **Rate limiting**: `RATE_LIMITED` (429) responses must supply `Retry-After`; exact limit thresholds are deployment-configurable and out of scope for this spec.
 
 ## Acceptance Criteria
@@ -238,8 +238,8 @@ src/
 │   ├── Program.cs                              # existing; wires versioned endpoint groups + JSON options
 │   └── Endpoints/
 │       ├── V1/
-│       │   ├── IssueEndpointsV1.cs             # planned: /api/v1/issues, /api/v1/issues/{id}/transition
-│       │   └── IntegrationEndpointsV1.cs       # planned: /api/v1/integrations/{id}/sync
+│       │   ├── IssueEndpoints.cs               # /api/issues, /api/issues/{id}/status
+│       │   └── IntegrationEndpoints.cs         # /api/integrations/health (manual sync: planned)
 │       ├── IssueEndpoints.cs                   # existing unversioned /api/issues (superseded by V1)
 │       ├── TeamEndpoints.cs                    # existing
 │       ├── DashboardEndpoints.cs               # existing
@@ -260,6 +260,6 @@ src/
 
 **Test scope**:
 - **Unit**: `IdempotencyService.TryBeginAsync()` (new key, replay-same-hash, reuse-different-hash outcomes), `ErrorCatalogTranslator.Translate()` (one case per exception type mapped to its §7.7 code), `CorrelationContext.FromHeaderOrNew()`.
-- **Integration**: `src/Anvilboard.Api.Tests/V1/AutomationSurfaceContractTests.cs` — REST `/api/v1/issues/{id}/transition` idempotency replay/reuse (AC-007, AC-008, AC-101), correlation ID round-trip (AC-103); `src/Anvilboard.Agent.Tests/ContractEquivalenceTests.cs` — CLI vs. MCP vs. REST symbolic-value equivalence for the same logical operation (AC-102) and MCP stdout protocol-purity (AC-104).
+- **Integration**: REST-side idempotency replay/reuse (AC-007, AC-008, AC-101) and correlation ID round-trip (AC-103) are **not yet covered** — no `AutomationSurfaceContractTests` exists, because REST does not yet enforce `Idempotency-Key` or emit the envelope (see §17). Existing REST coverage lives in `src/Anvilboard.Api.Tests/Board/BoardEndpointTests.cs` and `src/Anvilboard.Api.Tests/Issues/`; `src/Anvilboard.Agent.Tests/ContractEquivalenceTests.cs` — CLI vs. MCP vs. REST symbolic-value equivalence for the same logical operation (AC-102) and MCP stdout protocol-purity (AC-104).
 - **Fixtures / Mocks**: seeded workspace with an active workflow and one issue; a fake clock for `IdempotencyRecords.ExpiresAt` assertions; an MCP stdio test harness that captures raw stdout bytes for AC-104.
 

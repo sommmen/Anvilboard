@@ -3,7 +3,7 @@
 > **Status:** This document originally described a target-state QA specification for a proof of
 > concept with no automated test projects. That is now **stale** — the solution has 6 populated
 > xUnit test projects (plus 1 empty `Anvilboard.IntegrationTests` scaffold) with real, passing
-> coverage: the six populated .NET test projects report **443 passing, 0 failing**. The tables below have
+> coverage: the six populated .NET test projects report **521 passing, 0 failing**. The tables below have
 > been updated to reflect actual existing tests; see [`docs/audit-report.md`](../audit-report.md)
 > for the audit that surfaced this and the remaining gaps (no dedicated
 > `DashboardService`/`IssueService`/`SyncCoordinator` test file, and no CLI/MCP
@@ -20,9 +20,9 @@
 | **Project** | Anvilboard |
 | **Project Type** | Multi-workspace issue-management web application with REST, CLI, MCP, provider integration, and plugin surfaces |
 | **Tech Stack** | .NET 10 / ASP.NET Core, Angular, EF Core, SQLite for supported single-host deployment |
-| **Test Framework** | xUnit across 6 populated test projects (`Application.Tests`, `Api.Tests`, `Infrastructure.Tests`, `Agent.Tests`, `Integrations.GitHub.Tests`, `Integrations.Linear.Tests`) plus an empty `IntegrationTests` scaffold, spanning 43 test files; Angular/Vitest (`ng test`) covers a handful of components and services (`app.spec.ts`, `board-page.spec.ts`, `realtime-board-sync.service.spec.ts`) but no dedicated CLI/MCP contract-equivalence test project exists yet |
+| **Test Framework** | xUnit across 6 populated test projects (`Application.Tests`, `Api.Tests`, `Infrastructure.Tests`, `Agent.Tests`, `Integrations.GitHub.Tests`, `Integrations.Linear.Tests`) plus an empty `IntegrationTests` scaffold, spanning 56 test files; Angular/Vitest (`ng test`) covers the board surfaces and services (`app.spec.ts`, `board-page.spec.ts`, `board-filters.spec.ts`, `activity-feed.spec.ts`, `issue-detail.spec.ts`, `realtime-board-sync.service.spec.ts`) but no dedicated CLI/MCP contract-equivalence test project exists yet |
 | **Scan Date** | Updated by doc/implementation audit — see `docs/audit-report.md` |
-| **Input Mode** | Code Mode — verified against the individual runs of the six populated .NET test projects (443 passing, 0 failing) |
+| **Input Mode** | Code Mode — verified against the individual runs of the six populated .NET test projects (521 passing, 0 failing) |
 
 ### 1.2 Testable Units
 
@@ -31,7 +31,9 @@
 | 1 | `WorkspaceAuthorizationService` | application service | `Anvilboard.Application.Tests/Authorization/WorkspaceAuthorizationServiceTests.cs` | Yes | Covered |
 | 2 | protected REST endpoints | API boundary | `Anvilboard.Api.Tests/Authorization/WorkspaceAuthorizationEndpointTests.cs` | Yes | Covered |
 | 3 | `WorkflowEngine` and legacy-status migration | domain service / migration | `Anvilboard.Application.Tests/Workflows/WorkflowEngineTests.cs`; `Anvilboard.Infrastructure.Tests/Migrations/LegacyStatusMigrationTests.cs` | Yes | Covered |
-| 4 | `BoardQueryService`, `IssueLinkService` | application services | `Anvilboard.Application.Tests/Issues/BoardQueryServiceTests.cs`; `Anvilboard.Application.Tests/Issues/IssueLinkServiceTests.cs` | Yes | Covered — no `DashboardService`/`IssueService` test file exists; see `docs/audit-report.md` |
+| 4 | `BoardQueryService`, `IssueLinkService`, `ActivityQueryService` | application services | `Anvilboard.Application.Tests/Issues/BoardQueryServiceTests.cs`; `Anvilboard.Application.Tests/Issues/IssueLinkServiceTests.cs`; `Anvilboard.Application.Tests/Activity/ActivityQueryServiceTests.cs` | Yes | Covered — no `DashboardService`/`IssueService` test file exists; see `docs/audit-report.md` |
+| 4a | board, activity, comment, link, and taxonomy REST surfaces | API boundary | `Anvilboard.Api.Tests/Board/BoardEndpointTests.cs`; `Anvilboard.Api.Tests/Issues/IssueActivityEndpointTests.cs`; `Anvilboard.Api.Tests/Issues/IssueLinkEndpointTests.cs`; `Anvilboard.Api.Tests/Issues/TaxonomyEndpointTests.cs`; `Anvilboard.Api.Tests/Authorization/CrossWorkspaceIsolationEndpointTests.cs` | Yes | Covered |
+| 4b | Angular board filter stack, activity feed, issue detail | web UI components | `src/anvilboard-web/src/app/board/board-page/board-page.spec.ts`; `board-filters/board-filters.spec.ts`; `activity-feed/activity-feed.spec.ts`; `issue-detail/issue-detail.spec.ts` | Yes | Covered |
 | 5 | webhook receivers, plugin registry, plugin config/state store | integration boundary | `Anvilboard.Integrations.GitHub.Tests/GitHubWebhookReceiverTests.cs`; `Anvilboard.Integrations.Linear.Tests/LinearWebhookReceiverTests.cs`; `Anvilboard.Infrastructure.Tests/Plugins/PluginRegistryTests.cs`; `Anvilboard.Infrastructure.Tests/Plugins/PluginConfigStateStoreTests.cs`; `Anvilboard.Api.Tests/Realtime/WebhookEndpointsTests.cs` | Yes | Covered — no dedicated `SyncCoordinator` test file exists |
 | 6 | idempotency, correlation context, error-catalog translation, agent board surface | application / transport | `Anvilboard.Application.Tests/Automation/IdempotencyServiceTests.cs`; `Anvilboard.Application.Tests/Automation/CorrelationContextTests.cs`; `Anvilboard.Application.Tests/Automation/ErrorCatalogTranslatorTests.cs`; `Anvilboard.Agent.Tests/BoardAgentServiceTests.cs`; `Anvilboard.Agent.Tests/AgentAuthorizationIntegrationTests.cs`; `Anvilboard.Agent.Tests/AgentCatalogInvariantsTests.cs`; `Anvilboard.Agent.Tests/AgentRequestGuardTests.cs`; `Anvilboard.Agent.Tests/Hosting/McpStdoutTests.cs` | Yes | Covered — agent authentication, permission enforcement, workspace isolation, catalog invariants, and MCP stdout isolation are tested; a dedicated CLI/MCP contract-*equivalence* project still does not exist |
 | 7 | audit redaction, backup and restore | operations services | `Anvilboard.Application.Tests/Audit/AuditServiceTests.cs`; `Anvilboard.Application.Tests/Backup/*` (`BackupServiceTests`, `BackupRoundTripTests`, `BackupSecretScanTests`, `RestoreCoordinatorTests`); `Anvilboard.Infrastructure.Tests/Persistence/Backup/*` (`SqliteBackupArchiverTests`, `FileSystemBackupArchiveStoreTests`, `AnvilboardDbOptionsBackupTests`); `Anvilboard.Api.Tests/Backup/BackupEndpointTests.cs` | Yes | Covered — backup/restore shipped (CRIT-001, MAJ-019 RESOLVED in `docs/audit-report.md`) |
@@ -44,8 +46,8 @@
 | Metric | Value |
 |---|---:|
 | Test projects | 6 `*.Tests` unit/integration projects with tests + 1 empty `Anvilboard.IntegrationTests` scaffold (no `.cs` test files yet) |
-| Testable boundaries with an existing test file | 9 of 10 listed above have at least one test file |
-| Total automated tests (last run) | 464 total: 443 .NET (Application 257, API 73, Agent 55, Infrastructure 41, GitHub 12, Linear 5) plus 21 Angular (`npm test -- --watch=false`, 3 spec files), all passing |
+| Testable boundaries with an existing test file | 11 of 12 listed above have at least one test file |
+| Total automated tests (last run) | 565 total: 521 .NET (Application 283, API 115, Agent 65, Infrastructure 41, GitHub 12, Linear 5) plus 44 Angular (`npm test -- --watch=false`, 6 spec files), all passing |
 | Test result | All passing, 0 failures |
 | Known coverage gaps | No dedicated `DashboardService`, `IssueService`, or `SyncCoordinator` test file; no CLI/MCP contract-equivalence test project (though `Anvilboard.Agent.Tests` now covers authorization, the operation catalog, request guards, and MCP stdout isolation); `Anvilboard.IntegrationTests` project exists but is empty |
 
@@ -123,8 +125,12 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 | TC-ISSUE-003 | Issue | Duplicate workspace issue key is rejected | duplicate key | `409 RESOURCE_ALREADY_EXISTS`; only the original issue remains. | P0 | SQLite fixture | Planned |
 | TC-ISSUE-004 | Issue | Stale expected version cannot overwrite a concurrent update | stale version | `409 CONCURRENCY_CONFLICT`; persisted newer content and version remain intact. | P0 | SQLite fixture | Planned |
 | TC-ISSUE-005 | Issue | Assignment and comment mutation preserve actor, time, and workspace activity | mutation | Correct activity records and audit intent are produced with no cross-workspace relation. | P1 | SQLite fixture | Planned |
-| TC-BOARD-001 | Board query | Workspace-scoped filter and cursor pagination return stable page boundaries | query, cursor | Results contain only authorized workspace items; next cursor neither duplicates nor skips items. | P0 | seeded SQLite fixture | Planned |
-| TC-BOARD-002 | Board query | Invalid pagination or filter input returns validation contract | boundary | `400 VALIDATION_FAILED`; server does not silently coerce malformed input. | P1 | API fixture | Planned |
+| TC-BOARD-001 | Board query | Workspace-scoped filter and cursor pagination return stable page boundaries | query, cursor | Results contain only authorized workspace items; next cursor neither duplicates nor skips items. | P0 | seeded SQLite fixture | Automated — `BoardEndpointTests.Query_WithoutFilters_ReturnsGroupedIssuesAndEchoesDefaults`, `…_GroupByAssignee_ReturnsAssigneeGroups`, `…_ForeignWorkflowStateId_IsDenied` |
+| TC-BOARD-002 | Board query | Invalid pagination or filter input returns validation contract | boundary | `400 VALIDATION_FAILED`; server does not silently coerce malformed input. Note the deliberate asymmetry: a *closed* vocabulary token (`groupBy`, `orderBy`, `syncCondition`) is rejected, whereas an unknown free-text `priority`/`type` value is a legitimate filter that simply matches nothing. | P1 | API fixture | Automated — `BoardEndpointTests.Query_UnknownClosedVocabularyToken_ReturnsBadRequest`, `…_UnknownPriorityValue_MatchesNothingRatherThanFailing`, `…_LimitAboveMaximum_ReturnsProblem`, `…_PageBelowOne_ReturnsProblem` |
+| TC-BOARD-003 | Board query | Vocabulary tokens bind from either casing | contract | `snake_case` and PascalCase spellings of `groupBy`/`orderBy`/`syncCondition` bind to the same enum member, so a client need not know the server's .NET naming. | P2 | API fixture | Automated — `BoardEndpointTests.Query_SnakeCaseVocabulary_BindsToEnumMember` |
+| TC-ACT-001 | Activity | Issue activity is returned newest-first and rendered server-side | query | Each entry carries a display-ready `text` string; the feed reflects every mutation in reverse-chronological order. | P1 | seeded SQLite fixture | Automated — `IssueActivityEndpointTests.Activity_AfterMutations_ReturnsRenderedNewestFirstFeed` |
+| TC-ACT-002 | Activity | Cursor paging walks the whole history exactly once | cursor, boundary | Repeated `limit=1` requests visit every entry with no duplicate or skip; the final page returns `nextCursor: null`; a malformed cursor or an over-maximum limit returns `400 VALIDATION_FAILED`. | P1 | API fixture | Automated — `IssueActivityEndpointTests.Activity_LimitOne_PagesThroughCursor`, `…_MalformedCursor_ReturnsProblem`, `…_LimitAboveMaximum_ReturnsProblem` |
+| TC-CMT-001 | Comments | Persisted comment history survives a client reload | query | `GET /api/issues/{id}/comments` returns the full thread in creation order for a fresh client; an issue with no comments returns `[]` rather than an error. | P1 | seeded SQLite fixture | Automated — `IssueActivityEndpointTests.Comments_AfterReload_ReturnsPersistedThreadInOrder`, `…_NoComments_ReturnsEmptyArray` |
 | TC-DASH-001 | Dashboard | Summary counts reconcile with the same authorized board-query result set | query, workspace | Counts by state/assignee equal independently queried board results for the same filters. | P0 | seeded SQLite fixture | Planned |
 
 ### 3.3 Integration and plugin platform
@@ -158,6 +164,8 @@ Tests use IDs in this document as the stable planning identifier. Test names sho
 | TC-AUTO-006 | MCP | MCP stdout remains protocol-pure under successful and failing requests | MCP | stdout contains only protocol messages; diagnostics/logs go to the approved diagnostic sink. | P0 | MCP process harness | Planned |
 | TC-AUTO-007 | Rate limiter | Exceeded channel limit returns retryable catalog contract | rate limited | `429 RATE_LIMITED` includes `Retry-After`; no raw middleware response replaces catalog envelope. | P1 | fake clock | Planned |
 | TC-AUTO-008 | Idempotency | Terminal idempotency outcomes expire only after the documented retention window | retention | A replay within 30 days returns the stored outcome; an expired record is purged and a new request may execute with a new outcome. | P1 | deterministic clock + SQLite | Planned |
+| TC-AUTO-009 | Agent board surface | New read operations mirror their REST counterparts, including the workspace boundary | REST, CLI, MCP | `query-board`, `list-issue-activity`, `list-issue-comments`, and `list-issue-link-types` return the same shapes as their REST equivalents, bind the same dual-cased vocabulary, reject unknown closed-vocabulary tokens, and deny a foreign-workspace issue or a caller lacking `read-board`. | P0 | agent harness | Automated — `BoardQueryOperationTests.QueryBoard_*`, `…ListIssueActivity_*`, `…ListIssueComments_ReturnsPersistedThread`, `…ListLinkTypes_ReturnsSuggestedVocabulary` |
+| TC-AUTO-010 | Agent link update | `update-issue-link` is idempotency-key protected and replay-safe | replay | A replayed `update-issue-link` call with the same key returns the stored outcome without applying the change twice; the operation appears in the catalog invariants list alongside the other keyed mutations. | P1 | agent harness | Automated — `BoardQueryOperationTests.UpdateIssueLink_ChangesTypeAndIsReplaySafe`, `AgentCatalogInvariantsTests`, `BoardAgentServiceTests.Discover_ExposesExpectedOperations` |
 
 ### 3.5 Audit and recovery
 
@@ -259,12 +267,14 @@ AC identifiers are intentionally qualified with their source document because se
 |---|---|---|---|
 | [workspace-authorization.md](../features/workspace-authorization.md) | AC-001–012, AC-101–108 | TC-AUTH-001–006, TC-COMBO-001 | Covered |
 | [workflow-engine.md](../features/workflow-engine.md) | AC-003–004, AC-201–208 | TC-WF-001–004, TC-COMBO-001 | Covered |
-| [issue-board-service.md](../features/issue-board-service.md) | AC-004–006, AC-011, AC-IBS-101–103 | TC-ISSUE-001–005, TC-BOARD-001–002, TC-DASH-001, TC-COMBO-001–002 | Covered |
+| [issue-board-service.md](../features/issue-board-service.md) | AC-004–006, AC-011, AC-IBS-101–103 | TC-ISSUE-001–005, TC-BOARD-001–003, TC-ACT-001–002, TC-CMT-001, TC-DASH-001, TC-COMBO-001–002 | Covered |
 | [integration-and-plugin-platform.md](../features/integration-and-plugin-platform.md) | AC-009–010, AC-IPP-101–105 | TC-SYNC-001–005, TC-WEBHOOK-001, TC-PLUGIN-001–002, TC-COMBO-002, TC-COMBO-005 | Covered |
-| [agent-and-automation-surface.md](../features/agent-and-automation-surface.md) | AC-007–008, AC-101–105 | TC-AUTO-001–007, TC-COMBO-003 | Covered |
+| [agent-and-automation-surface.md](../features/agent-and-automation-surface.md) | AC-007–008, AC-101–105 | TC-AUTO-001–010, TC-COMBO-003 | Covered |
 | [audit-and-recovery.md](../features/audit-and-recovery.md) | AC-011–012, AC-201–204 | TC-AUDIT-001–003, TC-BACKUP-001–003, TC-COMBO-004 | Covered |
 | [realtime-updates.md](../features/realtime-updates.md) | AC-RT-001–005 | TC-RT-001–005 | Covered |
 | [realtime-updates.md](../features/realtime-updates.md) | AC-RT-006 | TC-RT-006 | Covered |
+| [issue-linking.md](../features/issue-linking.md) | AC-LNK-101–113 | TC-AUTO-010 plus the service/endpoint suites named in the feature spec's Test Module section | Covered |
+| [board-experience-parity.md](../plans/board-experience-parity.md) | AC-BXP-001–017 | TC-BOARD-001–003, TC-ACT-001–002, TC-CMT-001, TC-AUTO-009–010 | Covered — every AC maps to at least one automated .NET or Vitest test; see the plan's §13 verification checklist for the per-AC mapping |
 
 ### 5.4 Error-catalog coverage
 
@@ -286,7 +296,7 @@ AC identifiers are intentionally qualified with their source document because se
 | No `IssueService` test file | `IssueService` exists in `Anvilboard.Application` but has no dedicated unit test file yet. | Add the planned unit test cases for this service. |
 | Sync health and backoff coverage (`MAJ-012`, `MAJ-013`) | Closed — `DeriveConditionTests`, `SyncBackoffTests`, `IntegrationHealthServiceTests`, `DashboardFreshnessTests`, `WebhookPauseGateTests`, `IntegrationHealthEndpointTests`, and `IntegrationHealthOperationTests` cover derivation, categorized backoff, transition auditing, dashboard freshness, paused-webhook rejection, and both read surfaces. | None. |
 | No CLI/MCP contract-equivalence tests | `Anvilboard.Agent.Tests` covers authorization, catalog invariants, request guards, and MCP stdout isolation, but nothing asserts that the CLI and MCP transports produce identical envelopes and error codes for the same operation. | Add a CLI/MCP contract-equivalence test project. |
-| Thin Angular component coverage | `ng test` runs 21 tests across 3 spec files (`app`, `board-page`, `realtime-board-sync.service`); the remaining components and services are untested. | Add Angular component tests as the frontend interaction design is decomposed. |
+| Thin Angular component coverage | Partially closed — `ng test` now runs 44 tests across 6 spec files (`app`, `board-page`, `board-filters`, `activity-feed`, `issue-detail`, `realtime-board-sync.service`). `issue-card`, `dashboard`, and the remaining services are still untested. | Add Angular component tests for the remaining components as the frontend interaction design is decomposed. |
 | Plugin-event relay coverage (`FR-INT-006`, `AC-RT-006`) | Closed — `PluginEventRelayTests` covers approval filtering and mapping, `GitHubWebhookReceiverTests` covers event reporting, and `WorkspaceRealtimeHubTests` drives a webhook delivery through to a connected hub client in both the approved and unapproved cases. | None. |
 | Deployability coverage (`NFR-PRT-001`) | The technical design defines supported deployment but does not yet provide executable deployment/upgrade detail. | Add deployment acceptance criteria and an environment smoke/upgrade test specification before packaging work. |
 | Explicit not-found contract exercise | The catalog defines `REFERENCED_ENTITY_NOT_FOUND`, but the feature test modules do not name a concrete endpoint case. | Add endpoint-level missing workflow state/member/reference tests when routes are finalized. |
@@ -296,11 +306,15 @@ AC identifiers are intentionally qualified with their source document because se
 
 | Metric | Value |
 |---|---:|
-| Total planned test cases | 58 |
-| P0 critical cases | 41 |
-| P1 important cases | 17 |
-| Unit/boundary cases | 53 |
+| Total specified test cases | 71 |
+| P0 critical cases | 49 |
+| P1 important cases | 21 |
+| P2 cases | 1 |
+| Unit/boundary cases | 66 |
 | Combination cases | 5 |
 | Security-focused cases | 13 |
 | Persistence/recovery integrity cases | 11 |
 | Open traceability gaps | 4 |
+| Automated .NET tests (`dotnet test Anvilboard.slnx`) | 521 |
+| Automated Angular tests (`npm test`) | 44 |
+| Automated tests, total | 565 |

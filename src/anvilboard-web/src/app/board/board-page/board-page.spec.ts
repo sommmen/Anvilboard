@@ -1,10 +1,32 @@
 import { TestBed } from '@angular/core/testing';
-import { Subject } from 'rxjs';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
 import { BoardApiService } from '../../core/board-api.service';
-import { Issue, IssuePriority, IssueStatus, RealtimeChangeEnvelope } from '../../core/models';
+import {
+  BoardIssue,
+  BoardQuery,
+  BoardResult,
+  Issue,
+  IssuePriority,
+  IssueStatus,
+  RealtimeChangeEnvelope,
+} from '../../core/models';
 import { RealtimeBoardSyncService } from '../../core/realtime-board-sync.service';
 import { BoardPage } from './board-page';
+
+function boardIssue(overrides: Partial<BoardIssue> = {}): BoardIssue {
+  return {
+    id: 'issue-1',
+    key: 'RT-1',
+    title: 'Original title',
+    workflowStateId: 'workflow-state-backlog',
+    priority: 'None',
+    provider: 'Local',
+    labelIds: [],
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
 
 function issue(overrides: Partial<Issue> = {}): Issue {
   return {
@@ -50,21 +72,50 @@ class FakeRealtimeBoardSyncService {
 }
 
 class FakeBoardApiService {
-  listIssuesCalls = 0;
+  queryBoardCalls: BoardQuery[] = [];
   getIssueCalls: string[] = [];
-  issues: Issue[] = [issue()];
+  issues: BoardIssue[] = [boardIssue()];
   nextIssue: Issue = issue({ title: 'Updated title', version: 2 });
 
+  queryBoard(query: BoardQuery = {}) {
+    this.queryBoardCalls.push(query);
+    const result: BoardResult = {
+      groups: [{ key: 'workflow-state-backlog', displayName: 'Backlog', issues: this.issues }],
+      totalCount: this.issues.length,
+      page: 1,
+      limit: 25,
+      appliedQuery: {
+        groupBy: 'WorkflowState',
+        orderBy: 'CreatedAt',
+        page: 1,
+        limit: 25,
+        includeArchived: false,
+      },
+    };
+    return of(result);
+  }
+
   listIssues() {
-    this.listIssuesCalls++;
-    return of(this.issues);
+    return of([]);
   }
 
   listTeams() {
     return of([]);
   }
 
+  listMembers() {
+    return of([]);
+  }
+
   listWorkflowStates() {
+    return of([]);
+  }
+
+  listProjects() {
+    return of([]);
+  }
+
+  listLabels() {
     return of([]);
   }
 
@@ -74,7 +125,7 @@ class FakeBoardApiService {
   }
 }
 
-describe('BoardPage realtime reconciliation', () => {
+describe('BoardPage', () => {
   let api: FakeBoardApiService;
   let realtime: FakeRealtimeBoardSyncService;
 
@@ -93,20 +144,74 @@ describe('BoardPage realtime reconciliation', () => {
     });
   });
 
-  it('patches the changed issue in place instead of re-listing the board', () => {
+  it('loads the board through the query endpoint', () => {
     const page = createPage();
-    const listCallsAfterLoad = api.listIssuesCalls;
+
+    expect(api.queryBoardCalls.length).toBe(1);
+    expect(page.groups().map((group) => group.displayName)).toEqual(['Backlog']);
+    expect(page.totalCount()).toBe(1);
+  });
+
+  it('re-runs the query when a filter changes so the server decides membership', () => {
+    const page = createPage();
+    const callsAfterLoad = api.queryBoardCalls.length;
+
+    page.applyQuery({ priority: 'Urgent', page: 1 });
+
+    expect(api.queryBoardCalls.length).toBe(callsAfterLoad + 1);
+    expect(api.queryBoardCalls.at(-1)).toEqual({ priority: 'Urgent', page: 1 });
+    expect(page.query().priority).toBe('Urgent');
+  });
+
+  it('re-runs the query for an issue change, because the issue may no longer match', () => {
+    createPage();
+    const callsAfterLoad = api.queryBoardCalls.length;
 
     realtime.changesSubject.next(envelope());
 
+    expect(api.queryBoardCalls.length).toBe(callsAfterLoad + 1);
+  });
+
+  it('does not refresh the board for an activity event', () => {
+    createPage();
+    const callsAfterLoad = api.queryBoardCalls.length;
+
+    realtime.changesSubject.next(envelope({ eventType: 'activity.added' }));
+
+    expect(api.queryBoardCalls.length).toBe(callsAfterLoad);
+    expect(api.getIssueCalls).toEqual([]);
+  });
+
+  it('re-fetches the board exactly once for an unknown event type', () => {
+    createPage();
+    const callsAfterLoad = api.queryBoardCalls.length;
+
+    realtime.changesSubject.next(envelope({ eventType: 'something.new' }));
+
+    expect(api.queryBoardCalls.length).toBe(callsAfterLoad + 1);
+  });
+
+  it('re-fetches exactly once on reconnect, since the server never replays', () => {
+    createPage();
+    const callsAfterLoad = api.queryBoardCalls.length;
+
+    realtime.resyncSubject.next();
+
+    expect(api.queryBoardCalls.length).toBe(callsAfterLoad + 1);
+  });
+
+  it('fetches the full issue when a card is opened', () => {
+    const page = createPage();
+
+    page.openIssue(page.groups()[0].issues[0]);
+
     expect(api.getIssueCalls).toEqual(['issue-1']);
-    expect(api.listIssuesCalls).toBe(listCallsAfterLoad);
-    expect(page.issues().map((entry) => entry.title)).toEqual(['Updated title']);
+    expect(page.selectedIssue()?.title).toBe('Updated title');
   });
 
   it('keeps a selected issue selected and updates it to the new version', () => {
     const page = createPage();
-    page.openIssue(page.issues()[0]);
+    page.openIssue(page.groups()[0].issues[0]);
 
     realtime.changesSubject.next(envelope());
 
@@ -114,66 +219,32 @@ describe('BoardPage realtime reconciliation', () => {
     expect(page.selectedIssue()?.title).toBe('Updated title');
   });
 
-  it('does not refresh the board for an activity event', () => {
-    const page = createPage();
-    const listCallsAfterLoad = api.listIssuesCalls;
-
-    realtime.changesSubject.next(envelope({ eventType: 'activity.added' }));
-
-    expect(api.listIssuesCalls).toBe(listCallsAfterLoad);
-    expect(api.getIssueCalls).toEqual([]);
-    expect(page).toBeTruthy();
-  });
-
-  it('re-fetches the whole board exactly once for an unknown event type', () => {
-    const page = createPage();
-    const listCallsAfterLoad = api.listIssuesCalls;
-
-    realtime.changesSubject.next(envelope({ eventType: 'something.new' }));
-
-    expect(api.listIssuesCalls).toBe(listCallsAfterLoad + 1);
-    expect(api.getIssueCalls).toEqual([]);
-    expect(page).toBeTruthy();
-  });
-
-  it('re-fetches the whole board for a change to an issue it has never seen', () => {
-    const page = createPage();
-    const listCallsAfterLoad = api.listIssuesCalls;
-
-    realtime.changesSubject.next(envelope({ issueId: 'issue-unknown' }));
-
-    expect(api.listIssuesCalls).toBe(listCallsAfterLoad + 1);
-    expect(api.getIssueCalls).toEqual([]);
-    expect(page).toBeTruthy();
-  });
-
-  it('re-fetches exactly once on reconnect, since the server never replays', () => {
-    const page = createPage();
-    const listCallsAfterLoad = api.listIssuesCalls;
-
-    realtime.resyncSubject.next();
-
-    expect(api.listIssuesCalls).toBe(listCallsAfterLoad + 1);
-    expect(page).toBeTruthy();
-  });
-
-  it('ignores a stale re-fetch that would undo a newer version', () => {
-    const page = createPage();
-    api.nextIssue = issue({ title: 'Stale title', version: 0 });
-
-    realtime.changesSubject.next(envelope());
-
-    expect(page.issues()[0].title).toBe('Original title');
-  });
-
   it('does not replace a selected issue with a stale re-fetch', () => {
     const page = createPage();
-    page.openIssue(page.issues()[0]);
+    page.openIssue(page.groups()[0].issues[0]);
     api.nextIssue = issue({ title: 'Stale title', version: 0 });
 
     realtime.changesSubject.next(envelope());
 
-    expect(page.selectedIssue()?.title).toBe('Original title');
+    expect(page.selectedIssue()?.title).toBe('Updated title');
+  });
+
+  it('does not fetch a detail that is not open', () => {
+    createPage();
+
+    realtime.changesSubject.next(envelope());
+
+    expect(api.getIssueCalls).toEqual([]);
+  });
+
+  it('flattens groups into rows for the list view', () => {
+    const page = createPage();
+
+    const rows = page.listRows();
+
+    expect(rows.length).toBe(1);
+    expect(rows[0].group.displayName).toBe('Backlog');
+    expect(rows[0].issue.id).toBe('issue-1');
   });
 
   it('opens the realtime connection on load', () => {

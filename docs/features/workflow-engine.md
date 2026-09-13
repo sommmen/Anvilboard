@@ -9,7 +9,7 @@
 | Component | workflow-engine |
 | Priority | P0 |
 | Status | Implemented — state-machine validation, legacy `IssueStatus` migration, workspace-scoped workflow state/transition administration over REST and CLI/MCP, arbitrary workflow-state-ID issue transitions, and service-owned mutation/rejection audit events are covered by integration tests. |
-| Last verified | 2026-09-12 — 394 populated .NET tests pass, including application, REST, agent, authorization, idempotency, custom-state, and workspace-isolation coverage; the Angular production build succeeds. |
+| Last verified | 2026-09-12 — 521 populated .NET tests pass, including application, REST, agent, authorization, idempotency, custom-state, and workspace-isolation coverage; `npm test` 44 passing and the Angular production build succeeds. |
 | Implementation Plan | [`../plans/workflow-admin-surface.md`](../plans/workflow-admin-surface.md) — implemented; closes MAJ-003, MAJ-004, MAJ-005 and milestone M2. |
 | SRS Refs | FR-WS-002, FR-WS-003 |
 | Tech Design Ref | §8.1 Workflow Engine; §7.5 State Machine; §10.4 Migration Strategy |

@@ -1,6 +1,7 @@
 using Anvilboard.Agent.Authorization;
 using Anvilboard.Agent.Automation;
 using Anvilboard.Agent.Contracts;
+using Anvilboard.Application.Activity;
 using Anvilboard.Application.Automation;
 using Anvilboard.Application.Backup;
 using Anvilboard.Application.Dashboard;
@@ -38,6 +39,8 @@ namespace Anvilboard.Agent;
 public sealed class BoardAgentService(
     IssueService issues,
     IssueLinkService issueLinks,
+    IActivityQueryService activity,
+    IBoardQueryService board,
     DashboardService dashboard,
     IBackupService backups,
     IWorkflowService workflow,
@@ -224,6 +227,119 @@ public sealed class BoardAgentService(
             cancellationToken);
 
         return Ok(link);
+    }
+
+    [AgentOperation("update-issue-link", "Corrects the type and/or description of an existing issue link", Category = "issues",
+        Examples = ["update-issue-link --issueId \"3f2a...\" --linkId \"7d4e...\" --type \"BLOCKS\" --idempotencyKey \"link-fix-1\""])]
+    [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues)]
+    public async Task<AgentResponse<IssueLinkDto>> UpdateIssueLinkAsync(
+        Guid issueId, Guid linkId, string idempotencyKey,
+        string? type = null, string? description = null, CancellationToken cancellationToken = default)
+    {
+        var link = await idempotency.ExecuteAsync(
+            "update-issue-link", idempotencyKey, [issueId, linkId, type, description],
+            async (actor, ct) =>
+            {
+                var id = await scope.RequireIssueAsync(issueId, ct);
+                return await issueLinks.UpdateLinkAsync(
+                    scope.WorkspaceId, id, new IssueLinkId(linkId), type, description, actor.MemberId, ct);
+            },
+            cancellationToken);
+
+        return Ok(link);
+    }
+
+    /// <summary>
+    /// The advisory link-type vocabulary. Static and workspace-independent, so it neither scopes nor
+    /// reads — it exists so an agent composing a link uses the same suggestions the UI offers rather
+    /// than inventing a synonym that no filter will ever match.
+    /// </summary>
+    [AgentOperation("list-link-types", "Lists the suggested issue-link types", Category = "issues", IsIdempotent = true)]
+    [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues, Permission.ReadBoard)]
+    public Task<AgentResponse<IReadOnlyList<string>>> ListLinkTypesAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(Ok(IssueLinkTypes.Suggested));
+
+    [AgentOperation("list-issue-comments", "Lists an issue's comment thread, oldest first", Category = "issues", IsIdempotent = true)]
+    [RequiresAgentPermission(Permission.ReadWriteComments, Permission.ReadBoard)]
+    public async Task<AgentResponse<IReadOnlyList<CommentDto>>> ListIssueCommentsAsync(
+        Guid issueId, CancellationToken cancellationToken = default) =>
+        Ok(await issues.ListCommentsAsync(
+            scope.WorkspaceId, await scope.RequireIssueAsync(issueId, cancellationToken), cancellationToken));
+
+    [AgentOperation("list-issue-activity", "Lists an issue's activity history, newest first", Category = "issues", IsIdempotent = true)]
+    [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues, Permission.ReadBoard)]
+    public async Task<AgentResponse<ActivityPage>> ListIssueActivityAsync(
+        Guid issueId, int? limit = null, string? cursor = null, CancellationToken cancellationToken = default) =>
+        Ok(await activity.ListForIssueAsync(
+            scope.WorkspaceId,
+            await scope.RequireIssueAsync(issueId, cancellationToken),
+            limit ?? ActivityQueryService.DefaultLimit,
+            cursor,
+            cancellationToken));
+
+    /// <summary>
+    /// The grouped, filtered board an agent should reason over before deciding what to work on.
+    /// Vocabulary parameters are strings rather than enums because the agent surface binds
+    /// parameters from CLI/MCP scalars; unrecognised tokens are rejected rather than defaulted so a
+    /// typo cannot quietly answer a different question.
+    /// </summary>
+    [AgentOperation("query-board", "Queries the board with grouping, ordering, and filters", Category = "board", IsIdempotent = true,
+        Examples = ["query-board --groupBy \"assignee\" --orderBy \"updated_at\" --syncCondition \"stale\""])]
+    [RequiresAgentPermission(Permission.ReadBoard)]
+    public async Task<AgentResponse<BoardQueryResult>> QueryBoardAsync(
+        Guid? workflowStateId = null,
+        Guid? assigneeId = null,
+        string? provider = null,
+        Guid? projectId = null,
+        string? priority = null,
+        string? type = null,
+        Guid? labelId = null,
+        string? syncCondition = null,
+        string? groupBy = null,
+        string? orderBy = null,
+        int? page = null,
+        int? limit = null,
+        string? cursor = null,
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new BoardQuery(
+            scope.WorkspaceId,
+            await scope.RequireWorkflowStateAsync(workflowStateId, cancellationToken),
+            await scope.RequireMemberAsync(assigneeId, cancellationToken),
+            ParseVocabulary<IntegrationProvider>(provider, nameof(provider)),
+            await scope.RequireProjectAsync(projectId, cancellationToken),
+            priority,
+            type,
+            await scope.RequireLabelAsync(labelId, cancellationToken),
+            ParseVocabulary<BoardSyncCondition>(syncCondition, nameof(syncCondition)),
+            ParseVocabulary<BoardGroupBy>(groupBy, nameof(groupBy)) ?? BoardGroupBy.WorkflowState,
+            ParseVocabulary<BoardOrderBy>(orderBy, nameof(orderBy)) ?? BoardOrderBy.CreatedAt,
+            page ?? 1,
+            limit ?? 25,
+            cursor,
+            includeArchived);
+
+        return Ok(await board.QueryAsync(query, cancellationToken));
+    }
+
+    private static TEnum? ParseVocabulary<TEnum>(string? value, string parameterName) where TEnum : struct, Enum
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        // Underscores stripped so an agent may pass either "workflow_state" (matching the REST
+        // route's wire form) or "WorkflowState".
+        var candidate = value.Replace("_", string.Empty, StringComparison.Ordinal);
+
+        return Enum.TryParse<TEnum>(candidate, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed)
+            ? parsed
+            : throw new AgentRequestException(
+                BoardQueryException.ValidationErrorCode,
+                $"'{value}' is not a recognized value for {parameterName}. Expected one of: "
+                + string.Join(", ", Enum.GetNames<TEnum>()) + ".");
     }
 
     [AgentOperation("remove-issue-link", "Removes a link from an issue", Category = "issues")]

@@ -264,6 +264,109 @@ public sealed class CrossWorkspaceIsolationEndpointTests
         await AssertDeniedAsync(response);
     }
 
+    [Fact]
+    public async Task GetIssueActivity_FromAnotherWorkspace_IsDeniedIndistinguishablyFromAnUnknownId()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await CreateCallerClientAsync(factory);
+        var (_, foreignIssueId) = await SeedForeignWorkspaceAsync(factory);
+
+        var foreign = await client.GetAsync($"/api/issues/{foreignIssueId}/activity", CancellationToken.None);
+        var unknown = await client.GetAsync($"/api/issues/{Guid.NewGuid()}/activity", CancellationToken.None);
+
+        await AssertDeniedAsync(foreign);
+        await AssertDeniedAsync(unknown);
+    }
+
+    [Fact]
+    public async Task GetIssueComments_FromAnotherWorkspace_IsDeniedIndistinguishablyFromAnUnknownId()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await CreateCallerClientAsync(factory);
+        var (_, foreignIssueId) = await SeedForeignWorkspaceAsync(factory);
+
+        var foreign = await client.GetAsync($"/api/issues/{foreignIssueId}/comments", CancellationToken.None);
+        var unknown = await client.GetAsync($"/api/issues/{Guid.NewGuid()}/comments", CancellationToken.None);
+
+        await AssertDeniedAsync(foreign);
+        await AssertDeniedAsync(unknown);
+    }
+
+    [Fact]
+    public async Task UpdateIssueLink_OnAnotherWorkspacesIssue_IsDenied()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await CreateCallerClientAsync(factory);
+        var (_, foreignIssueId) = await SeedForeignWorkspaceAsync(factory);
+
+        var response = await client.PatchAsJsonAsync(
+            $"/api/issues/{foreignIssueId}/links/{Guid.NewGuid()}",
+            new { type = "BLOCKS" },
+            CancellationToken.None);
+
+        await AssertDeniedAsync(response);
+    }
+
+    [Fact]
+    public async Task Board_DoesNotLeakAnotherWorkspacesIssues()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await CreateCallerClientAsync(factory);
+        await SeedForeignWorkspaceAsync(factory);
+
+        var response = await client.GetAsync("/api/board", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(CancellationToken.None));
+
+        // The foreign workspace owns exactly one issue, so an unscoped board query would surface it
+        // here even though the caller's own workspace has none.
+        Assert.Equal(0, payload.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.All(
+            payload.RootElement.GetProperty("groups").EnumerateArray(),
+            group => Assert.Empty(group.GetProperty("issues").EnumerateArray()));
+    }
+
+    [Fact]
+    public async Task Board_FilteredByAnotherWorkspacesLabel_IsDenied()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await CreateCallerClientAsync(factory);
+        await SeedForeignWorkspaceAsync(factory);
+
+        var response = await client.GetAsync($"/api/board?labelId={Guid.NewGuid()}", CancellationToken.None);
+
+        await AssertDeniedAsync(response);
+    }
+
+    [Fact]
+    public async Task Projects_DoNotLeakAnotherWorkspacesProjects()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await CreateCallerClientAsync(factory);
+        await SeedForeignWorkspaceAsync(factory);
+
+        var response = await client.GetAsync("/api/projects", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(CancellationToken.None));
+        Assert.Empty(payload.RootElement.EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Labels_DoNotLeakAnotherWorkspacesLabels()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await CreateCallerClientAsync(factory);
+        await SeedForeignWorkspaceAsync(factory);
+
+        var response = await client.GetAsync("/api/labels", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(CancellationToken.None));
+        Assert.Empty(payload.RootElement.EnumerateArray());
+    }
+
     private static async Task<HttpClient> CreateCallerClientAsync(ApiFactory factory)
     {
         var client = factory.CreateClient();
