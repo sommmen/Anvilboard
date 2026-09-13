@@ -53,7 +53,10 @@ public sealed class LinearIngestionSource(HttpClient httpClient, IOptionsMonitor
         request.Headers.Authorization = new AuthenticationHeaderValue(opts.ApiKey);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+
+        // Categorized rather than EnsureSuccessStatusCode: the host backs off very differently for
+        // a rejected API key than for a rate limit, and only the response knows which it is.
+        response.EnsureSuccessOrThrowProviderException("Linear");
 
         var payload = await response.Content.ReadFromJsonAsync(LinearJsonContext.Default.LinearGraphQlResponse, cancellationToken);
         var nodes = payload?.Data?.Issues?.Nodes ?? [];

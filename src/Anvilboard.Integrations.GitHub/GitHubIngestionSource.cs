@@ -55,7 +55,10 @@ public sealed class GitHubIngestionSource(HttpClient httpClient, IOptionsMonitor
         ApplyAuth(request, opts);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+
+        // Categorized rather than EnsureSuccessStatusCode: the host backs off very differently for
+        // a revoked token than for a secondary rate limit, and only the response knows which it is.
+        response.EnsureSuccessOrThrowProviderException("GitHub");
 
         var items = await response.Content.ReadFromJsonAsync(GitHubJsonContext.Default.GitHubIssueDtoArray, cancellationToken)
             ?? [];

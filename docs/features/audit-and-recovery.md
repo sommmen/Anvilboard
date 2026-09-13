@@ -9,7 +9,7 @@
 | Component | audit-and-recovery |
 | Priority | P0 |
 | Status | Partial — append-only audit recording, secret/credential redaction at write time, and backup/restore (FR-OPS-002, NFR-AVL-001) are implemented and tested. Workspace-scoped audit **query** access (FR-OPS-001) remains the residual gap: audit events are written and are readable only via direct database access, with no REST or agent query surface. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + the integration sync-health change set — six populated .NET test projects 443 passing, `npm test` 21 passing |
 | Implementation Plan | [`../plans/backup-and-restore.md`](../plans/backup-and-restore.md) — delivered; closed CRIT-001, the only unresolved Critical audit finding. |
 | SRS Refs | FR-OPS-001, FR-OPS-002, NFR-AVL-001, NFR-REL-001 |
 | Tech Design Ref | §8.1 Component Overview — Audit & Recovery row; §10.1 `AuditEvents`; §11.4 Audit Logging; §14.3 Rollback Strategy |
@@ -126,11 +126,19 @@ Field mapping for the `AuditEvents` table (binding tech-design §10.1 to the imp
 | `WorkspaceId` | `WorkspaceId` | FK, required; existing strongly-typed ID. |
 | `ActorId` | `string` | Member ID or agent-token principal identifier; plain string (not `MemberId`) because agent principals are not always members. |
 | `Channel` | `AuditChannel` enum → `TEXT` | `WEB` / `REST` / `CLI` / `MCP` / `SYSTEM`. |
-| `Action` | `string` | e.g. `"issue.transition"`, `"workspace.restore"`. |
+| `Action` | `string` | e.g. `"issue.transition"`, `"workspace.restore"`, `"integration.sync.failed"`, `"integration.sync.recovered"`, `"integration.webhook.rejected"`. |
 | `TargetType` / `TargetId` | `string` / `string` | Polymorphic target reference (issue, integration, workspace, etc.). |
 | `CorrelationId` | `string` | Matches the correlation ID emitted by `agent-and-automation-surface`. |
 | `OccurredAt` | `DateTimeOffset` → `TEXT` ISO-8601 | Server clock, UTC. |
 | `ResultSummary` | `string` | Redacted before persistence; never contains a raw secret value. |
+
+High-frequency producers are expected to emit on *state transitions* rather than per occurrence, so
+the trail stays readable. `integration.sync.failed` / `integration.sync.recovered`
+([`integration-and-plugin-platform.md`](./integration-and-plugin-platform.md)) are the reference
+case: a provider failing every minute for an hour produces one `failed` row and one `recovered` row,
+not one hundred and twenty. Their `ResultSummary` names the provider, the error category, and the
+consecutive-failure count — never the provider exception message, which is untrusted remote text and
+the most likely place for a credential to surface.
 
 ### Backup Creation
 

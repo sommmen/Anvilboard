@@ -1,4 +1,5 @@
 using Anvilboard.Application.Issues;
+using Anvilboard.Application.Tests.Sync;
 using Anvilboard.Domain;
 using Anvilboard.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
@@ -12,7 +13,7 @@ public sealed class BoardQueryServiceTests
     public async Task QueryAsync_AppliesTypeAndArchiveFiltersAndReturnsCursor()
     {
         await using var fixture = await BoardQueryFixture.CreateAsync();
-        var service = new BoardQueryService(fixture.Db);
+        var service = fixture.Service;
 
         var firstPage = await service.QueryAsync(new BoardQuery(fixture.WorkspaceId, Type: "Bug", GroupBy: BoardGroupBy.Type, Limit: 1));
 
@@ -35,7 +36,7 @@ public sealed class BoardQueryServiceTests
     {
         await using var fixture = await BoardQueryFixture.CreateAsync();
 
-        var exception = await Assert.ThrowsAsync<BoardQueryException>(() => new BoardQueryService(fixture.Db)
+        var exception = await Assert.ThrowsAsync<BoardQueryException>(() => fixture.Service
             .QueryAsync(new BoardQuery(fixture.WorkspaceId, Limit: limit)));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
@@ -46,7 +47,7 @@ public sealed class BoardQueryServiceTests
     {
         await using var fixture = await BoardQueryFixture.CreateAsync();
 
-        var exception = await Assert.ThrowsAsync<BoardQueryException>(() => new BoardQueryService(fixture.Db)
+        var exception = await Assert.ThrowsAsync<BoardQueryException>(() => fixture.Service
             .QueryAsync(new BoardQuery(fixture.WorkspaceId, Cursor: "not-a-cursor")));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
@@ -61,10 +62,12 @@ public sealed class BoardQueryServiceTests
             this.connection = connection;
             Db = db;
             WorkspaceId = workspaceId;
+            Service = new BoardQueryService(db, SyncTestDoubles.HealthService(db));
         }
 
         public AnvilboardDbContext Db { get; }
         public WorkspaceId WorkspaceId { get; }
+        public BoardQueryService Service { get; }
 
         public static async Task<BoardQueryFixture> CreateAsync()
         {

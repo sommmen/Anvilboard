@@ -212,6 +212,45 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncDisposabl
     }
 
     /// <summary>
+    /// Creates an integration row in a chosen status straight through the DbContext, so a webhook
+    /// test can establish a paused provider without driving the (permissioned) admin API.
+    /// </summary>
+    public async Task<Guid> SeedIntegrationAsync(
+        WorkspaceId workspaceId,
+        IntegrationProvider provider,
+        IntegrationStatus status)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
+
+        var integration = new Integration
+        {
+            Id = IntegrationId.New(),
+            WorkspaceId = workspaceId,
+            Provider = provider,
+            SettingsJson = "{}",
+            Status = status,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
+        db.Integrations.Add(integration);
+        await db.SaveChangesAsync();
+        return integration.Id.Value;
+    }
+
+    /// <summary>
+    /// Resolves the workspace a bootstrapped slug created, for tests that need the workspace id
+    /// rather than just a session cookie.
+    /// </summary>
+    public async Task<WorkspaceId> GetWorkspaceIdAsync(string slug)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
+        return (await db.Workspaces.AsNoTracking().SingleAsync(workspace => workspace.Slug == slug)).Id;
+    }
+
+    /// <summary>
     /// Attaches a link between two issues straight through the DbContext. A delete-denial test needs
     /// a link that provably exists inside somebody else's workspace, which no scoped API will create.
     /// </summary>

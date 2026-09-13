@@ -25,6 +25,7 @@ public sealed class AgentCatalogInvariantsTests
         "list-issues", "get-issue", "dashboard-summary", "list-issue-links",
         "create-backup", "list-backups", "verify-backup",
         "list-workflow-states", "list-workflow-transitions",
+        "list-integration-health",
     ];
 
     [Fact]

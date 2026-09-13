@@ -4,7 +4,7 @@
 > Audited: initial full pass, then re-verified against the code after the backup/restore, realtime, artifact, and agent-authorization work landed
 > Scope: Full — `docs/anvilboard/*`, `docs/features/*`, `docs/plans/*`, `docs/project-anvilboard.md`, `ideas/anvilboard/draft.md`, root-level docs (`README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CHANGELOG.md`, `SPEC.md`, `FUNCTIONAL_SPEC.md`, `PLUGINS.md`)
 > Documents reviewed: 29 Markdown documents in the declared scope
-> Code alignment: Yes — cross-referenced against `src/` (.NET 10 solution, `Anvilboard.slnx`) and `src/anvilboard-web` (Angular). Latest verification: **394 populated .NET tests passing, 0 failing** (Application 221, Agent 52, Infrastructure 41, API 63, GitHub 12, Linear 5), plus a successful Angular production build.
+> Code alignment: Yes — cross-referenced against `src/` (.NET 10 solution, `Anvilboard.slnx`) and `src/anvilboard-web` (Angular). Latest verification: **443 populated .NET tests passing, 0 failing** (Application 257, API 73, Agent 55, Infrastructure 41, GitHub 12, Linear 5), plus a successful Angular production build.
 
 ## Executive Summary
 
@@ -16,7 +16,7 @@ not structure but **currency**: several of the most-read documents (`docs/anvilb
 target-state / pre-implementation documents and were never updated as real code landed. Before this
 audit, `tech-design.md` §16 marked **every** milestone "Not Started" even though M1–M4.5 and parts of
 M5–M6.7 are substantially implemented and covered by passing automated tests across 6 populated
-xUnit test projects (114 at the time of the first pass, **394** as of the latest re-verification);
+xUnit test projects (114 at the time of the first pass, **443** as of the latest re-verification);
 `test-cases.md` claimed there were **zero** automated test projects at all.
 
 The audit updated the doc/implementation-status claims across all 9 feature docs, the
@@ -41,7 +41,7 @@ fixed**.
 | Severity | Count | Categories |
 |----------|-------|------------|
 | Critical |   3   | audit-and-recovery (backup/restore missing — **since resolved**), realtime-updates (entire feature unimplemented — **since resolved**), artifacts (no ArtifactService) |
-| Major    |  22   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap (**resolved**: MAJ-001, MAJ-002 audit correction, MAJ-015–MAJ-017, MAJ-019, MAJ-021, MAJ-022 REST/application workspace scoping) |
+| Major    |  22   | workspace-authorization, workflow-engine, issue-board-service/issue-linking, integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, realtime-updates, artifacts, workspace bootstrap (**resolved**: MAJ-001, MAJ-002 audit correction, MAJ-012, MAJ-013, MAJ-015–MAJ-017, MAJ-019, MAJ-021, MAJ-022 REST/application workspace scoping) |
 | Minor    |   7   | PLUGINS.md staleness, workflow-engine API versioning, manifest validation (**open**); README Kanban-column wording, extra undocumented agent tools, IArtifactStore sole-caller claim, post-implementation doc drift (**resolved**: MIN-001, MIN-005, MIN-006, MIN-007) |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
 
@@ -230,19 +230,40 @@ fixed**.
 - **Impact**: Minor UX inconsistency rather than a data-integrity issue (server still enforces correctness).
 - **Fix**: Surface the canonical link-type list to the frontend form for client-side validation/feedback.
 
-### MAJ-012: Paused integrations still accept inbound webhooks
+### MAJ-012: Paused integrations still accept inbound webhooks — **RESOLVED**
+
+> **Resolved.** `src/Anvilboard.Api/Endpoints/WebhookEndpoints.cs` now rejects a delivery with
+> `409 INTEGRATION_PAUSED` when the addressed integration is paused. The check sits *after*
+> HMAC verification so the status code cannot be used as an unauthenticated oracle for which
+> integrations exist, and installs that configure a provider without an `Integration` row still
+> ingest normally. The original finding is kept below for history.
+
 - **Location**: `docs/features/integration-and-plugin-platform.md`
 - **Issue**: Spec states a paused integration should reject/ignore inbound webhook traffic. Webhook handlers were found to still process events for integrations in a paused state.
 - **Evidence**: Webhook controller/handler code path does not check integration pause state before processing.
 - **Impact**: Data may be imported/mutated from a provider the administrator explicitly intended to pause, violating the "paused means paused" expectation.
 - **Fix**: Add a pause-state check at the top of webhook ingestion before any processing occurs.
+- **Plan**: [`docs/plans/integration-sync-health.md`](./plans/integration-sync-health.md)
 
-### MAJ-013: Sync health/backoff not implemented
+### MAJ-013: Sync health/backoff not implemented — **RESOLVED**
+
+> **Resolved.** An `IntegrationHealth` row per integration now records the last attempt, last
+> success, coarse error category, consecutive failure count, and backoff floor.
+> `src/Anvilboard.Application/Sync/IntegrationHealthService.cs` owns the single
+> `Fresh/Stale/Paused/Failed` derivation; `SyncCoordinator` categorizes provider failures
+> (`ProviderThrottledException`, `ProviderAuthenticationException`, transport, protocol) and
+> applies full-jitter exponential backoff, honouring an explicit `Retry-After` when the provider
+> supplies one and quarantining authentication failures at a flat interval rather than hammering
+> a rejected credential. Health is surfaced through `GET /api/integrations/health`, the
+> `list-integration-health` agent operation, the board's sync condition, and the dashboard's
+> freshness summary. The original finding is kept below for history.
+
 - **Location**: `docs/features/integration-and-plugin-platform.md`
 - **Issue**: Spec describes sync health tracking and exponential backoff on repeated provider failures. No health-tracking state machine or backoff logic was found.
 - **Evidence**: No `SyncHealth`/backoff-related types or retry-delay calculation found in the sync coordinator code path (also noted as a missing test target in `test-cases.md`'s gap analysis).
 - **Impact**: Repeated failing syncs will retry at a fixed cadence indefinitely rather than backing off, and there is no way to surface "this integration is unhealthy" to administrators.
 - **Fix**: Implement a sync-health state machine with exponential backoff and expose health status via the API.
+- **Plan**: [`docs/plans/integration-sync-health.md`](./plans/integration-sync-health.md)
 
 ### MAJ-014: FR-INT-006 outbound plugin events not implemented
 - **Location**: `docs/features/integration-and-plugin-platform.md`; `docs/anvilboard/srs.md` FR-INT-006
@@ -435,7 +456,7 @@ fixed**.
 - **Issue**: Five classes of drift accumulated after the backup/restore, artifact, realtime, and agent-authorization work landed:
   1. **Stale status claims** — `workspace-authorization.md` and tech-design §16's M1 row still said CLI/MCP enforcement was outstanding after MAJ-001/MAJ-015 shipped; `docs/plans/backup-and-restore.md` still read `Status | Plan — not yet implemented` after CRIT-001/MAJ-019 were resolved.
   2. **Wrong finding IDs** — three documents cited **MAJ-021** (the resolved bootstrap-seeding finding) where they meant **MAJ-022** (the open REST/application workspace-query scoping gap), making a resolved finding look open and an open finding look absent.
-  3. **Stale test counts** — docs cited a 114- or 189-test suite; the latest figure is **394 populated .NET tests**, across 43 source test files, plus a successful Angular production build.
+  3. **Stale test counts** — docs cited a 114- or 189-test suite; the figure at the time of this fix was **394 populated .NET tests**, across 43 source test files, plus a successful Angular production build. (The suite has since grown to **443**; see the header callout for the current figure.)
   4. **Understated coverage** — `DEVELOPMENT.md` described `Api.Tests` and `Agent.Tests` far more narrowly than their actual contents, and claimed "the agent surface … still has no automated coverage"; `CONTRIBUTING.md` told contributors "there's no automated test suite yet".
   5. **Stale gap lists** — `test-cases.md` §1.3/§6 still listed backup/restore as untestable "because no backup/restore service exists".
 - **Evidence**: Individual runs of the six populated .NET test projects → 394 passing / 0 failing (Application 221, Infrastructure 41, Agent 52, API 63, GitHub 12, Linear 5); `npm test -- --watch=false` in `src/anvilboard-web` → 21 passing across 3 spec files; `npm run build` → successful production bundle; direct inspection of `src/Anvilboard.Application/Backup/` (12 files including `BackupService.cs`, `RestoreCoordinator.cs`) and the 20 `[RequiresAgentPermission]` operations on `BoardAgentService`.
@@ -450,7 +471,7 @@ fixed**.
 
 ### INFO-002: `test-cases.md` forward-looking sections (§2 Test Strategy/Pyramid, §3–5 planned `TC-*` test case tables, §7 Statistics) were left as target-state content
 - **Location**: `docs/anvilboard/test-cases.md` §2 onward
-- **Note**: These sections describe a target test-coverage strategy and a catalog of planned test cases (`TC-AUTH-*`, `TC-WF-*`, etc.) rather than claims about current-state coverage, so they were left in place. Only the current-state claims (header callout, §1.1–1.3 tables, §6 Gap Analysis's "no test projects" line) were corrected to reflect the real passing test suite (114 at the time of the first pass, 394 as of the latest re-verification).
+- **Note**: These sections describe a target test-coverage strategy and a catalog of planned test cases (`TC-AUTH-*`, `TC-WF-*`, etc.) rather than claims about current-state coverage, so they were left in place. Only the current-state claims (header callout, §1.1–1.3 tables, §6 Gap Analysis's "no test projects" line) were corrected to reflect the real passing test suite (114 at the time of the first pass, 443 as of the latest re-verification).
 
 ### INFO-003: `IssueLinkService` directional/zero-cascade design is a positive finding, not a gap
 - **Location**: `docs/features/issue-linking.md`
@@ -514,7 +535,7 @@ graph TD
 4. ~~**Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation**~~ — MAJ-001 closed; MAJ-002 was already implemented and is corrected above — done. ~~**Residual:** enforce authenticated-workspace predicates throughout REST/application reads and mutations (MAJ-022).~~ — MAJ-022 closed; REST and CLI/MCP now enforce the same workspace boundary.
 5. ~~**Add workflow admin transition/config CRUD surface plus audit-event emission on workflow mutations**~~ — MAJ-003, MAJ-004, and MAJ-005 closed with workspace-scoped REST and CLI/MCP operations, idempotent agent mutations, audit emission, and integration coverage — done: [`docs/plans/workflow-admin-surface.md`](./plans/workflow-admin-surface.md)
 6. ~~**Wire agent-surface authorization, idempotency, and an `apiVersion` contract field**~~ — MAJ-015, MAJ-016, and MAJ-017 closed with SQLite-backed integration coverage — done
-7. **Add sync-health/backoff tracking and enforce paused-integration webhook rejection** — fixes MAJ-012, MAJ-013 — medium
+7. ~~**Add sync-health/backoff tracking and enforce paused-integration webhook rejection**~~ — MAJ-012 and MAJ-013 closed with the `IntegrationHealth` table, a single sync-condition derivation reused by the board filter and dashboard, categorized exponential backoff honouring `Retry-After`, paused-webhook rejection after signature verification, and REST plus agent read surfaces — done: [`docs/plans/integration-sync-health.md`](./plans/integration-sync-health.md)
 8. **Close remaining UI/UX gaps (board filter parity, issue-detail activity feed, link-update endpoint)** — fixes MAJ-007, MAJ-008, MAJ-010, MAJ-011 — medium
 9. **Add a generic filterable audit-query method (`QueryAsync`-equivalent)** — fixes MAJ-018 — small
 10. ~~**Reword the README Kanban-column description and add missing agent tools to the documented catalog**~~ — MIN-001 and MIN-005 both closed during the documentation-currency pass (see MIN-007) — done

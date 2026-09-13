@@ -9,7 +9,7 @@
 | Component | issue-board-service |
 | Priority | P0 |
 | Status | Partial — backend CRUD, board/list querying/filtering/grouping, and dashboard aggregation are implemented; the web UI only groups by status (no filter stack), the issue-detail activity feed is not rendered, comments are flat (not threaded), and optimistic concurrency (`Issue.Version`) and the link-update endpoint are incomplete. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + MAJ-022 change set — six populated .NET test projects 394 passing, `npm test` 21 passing |
+| Last verified | 2026-09-12 against commit `e3e03a5` + the integration sync-health change set — six populated .NET test projects 443 passing, `npm test` 21 passing |
 | SRS Refs | FR-WRK-001, FR-WRK-002, FR-WRK-003, FR-WRK-004, FR-WRK-005, FR-WRK-006, FR-WRK-007, FR-WRK-008, FR-WRK-009, FR-WRK-010, FR-WRK-011, FR-WRK-012, FR-WRK-013, FR-WRK-014, NFR-PERF-001, NFR-PERF-002, NFR-USB-001 |
 | Tech Design Ref | §8.1 — Issue & Board Service row; also §7.5 Computation Rules, §9 API Design, §12 Performance Design |
 | Depends On | workflow-engine, workspace-authorization |
@@ -166,7 +166,9 @@ The current `ListAsync(TeamId?, IssueStatus?, MemberId?, ct)` filters only by te
 | `syncCondition` | optional | Derived filter (see below), not a stored column. |
 | `page`, `limit` | optional, default `page=1`, `limit=25`, max `limit=100` | `limit` outside `1..100` or a malformed cursor returns `VALIDATION_FAILED` (tech-design AC-006). |
 
-`syncCondition` (`FRESH`/`STALE`/`PAUSED`/`FAILED`) is not persisted on `Issue`; it is derived at read time from the linked `IntegrationHealth`/`ExternalLink` record's `(lastAttemptAt, lastSuccessAt, integration.isPaused, lastErrorCategory)`, per tech-design §7.5 Computation Rules, to avoid drift between health state and its inputs. A no-result page is a successful response that still echoes the active filters (SRS FR-WRK-001 AC 3).
+`syncCondition` (`FRESH`/`STALE`/`PAUSED`/`FAILED`) is not persisted on `Issue`; it is derived at read time from the `IntegrationHealth` record's `(lastAttemptAt, lastSuccessAt, integration.isPaused, lastErrorCategory)`, per tech-design §7.5 Computation Rules, to avoid drift between health state and its inputs. The derivation lives in `IIntegrationHealthService.DeriveCondition(...)` ([`integration-and-plugin-platform.md`](./integration-and-plugin-platform.md)); this component consumes it rather than reimplementing it, so a board filter and the dashboard's freshness summary can never disagree about the same integration.
+
+Because health is a property of the *integration* rather than of an individual issue, the filter resolves to the set of providers currently in the requested condition (`IIntegrationHealthService.ProvidersInConditionAsync`) and is then applied as an ordinary `Issue.Source` predicate. If no provider is in that condition the result is an empty page, not an unfiltered one — the filter must never silently degrade to "no filter". A no-result page is a successful response that still echoes the active filters (SRS FR-WRK-001 AC 3).
 
 ### `DashboardService.GetSummaryAsync` (existing, `Anvilboard.Application/Dashboard/DashboardService.cs`)
 

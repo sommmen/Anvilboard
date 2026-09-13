@@ -28,6 +28,7 @@ public sealed class AnvilboardDbContext(DbContextOptions<AnvilboardDbContext> op
     public DbSet<WorkflowTransition> WorkflowTransitions => Set<WorkflowTransition>();
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
     public DbSet<Integration> Integrations => Set<Integration>();
+    public DbSet<IntegrationHealth> IntegrationHealth => Set<IntegrationHealth>();
     public DbSet<PluginConfig> PluginConfigs => Set<PluginConfig>();
     public DbSet<PluginState> PluginStates => Set<PluginState>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();

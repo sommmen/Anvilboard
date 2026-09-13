@@ -20,4 +20,14 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!--
+      The sync coordinator's backoff policy (how long a failing provider waits, and when a bad
+      credential is quarantined instead of retried) is a correctness concern worth testing directly,
+      but it is not something callers should be able to invoke. Exposing it to the test assembly
+      keeps it verifiable without widening the public API.
+    -->
+    <InternalsVisibleTo Include="Anvilboard.Application.Tests" />
+  </ItemGroup>
+
 </Project>
