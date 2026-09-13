@@ -75,7 +75,9 @@ export class BoardPage {
     this.api.listTeams().subscribe((teams) => this.teams.set(teams));
     this.api.listMembers().subscribe((members) => this.members.set(members));
     this.api.listWorkflowStates().subscribe((states) => this.workflowStates.set(states));
-    this.api.listProjects().subscribe({ next: (projects) => this.projects.set(projects), error: () => {} });
+    this.api
+      .listProjects()
+      .subscribe({ next: (projects) => this.projects.set(projects), error: () => {} });
     this.api.listLabels().subscribe({ next: (labels) => this.labels.set(labels), error: () => {} });
 
     this.realtime.changes
@@ -84,7 +86,9 @@ export class BoardPage {
 
     // A reconnect means changes were missed while the connection was down and nothing
     // replays them, so one full re-fetch is the documented recovery path.
-    this.realtime.resyncRequired.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.refresh());
+    this.realtime.resyncRequired
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.refresh());
 
     void this.realtime.start();
   }
@@ -196,17 +200,19 @@ export class BoardPage {
         ? this.workflowStates().find((state) => state.id === groupKey)
         : undefined;
 
-    this.api.createIssue({ teamId: team.id, title, priority: IssuePriority.None }).subscribe((issue) => {
-      if (targetState && targetState.id !== issue.workflowStateId) {
-        this.api.changeStatus(issue.id, targetState.id).subscribe({
-          next: () => this.refresh(),
-          error: () => this.refresh(),
-        });
-      } else {
-        this.refresh();
-      }
-      this.creatingForGroup.set(null);
-    });
+    this.api
+      .createIssue({ teamId: team.id, title, priority: IssuePriority.None })
+      .subscribe((issue) => {
+        if (targetState && targetState.id !== issue.workflowStateId) {
+          this.api.changeStatus(issue.id, targetState.id).subscribe({
+            next: () => this.refresh(),
+            error: () => this.refresh(),
+          });
+        } else {
+          this.refresh();
+        }
+        this.creatingForGroup.set(null);
+      });
   }
 
   onIssueChanged(): void {
@@ -256,7 +262,8 @@ export class BoardPage {
     for (const key of URL_QUERY_KEYS) {
       const value = query[key];
       // `null` removes the key from the URL, so a cleared filter leaves no trace to restore.
-      queryParams[key] = value === undefined || value === null || value === '' ? null : String(value);
+      queryParams[key] =
+        value === undefined || value === null || value === '' ? null : String(value);
     }
 
     void this.router.navigate([], {

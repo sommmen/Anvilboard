@@ -67,14 +67,14 @@ export class BoardFilters {
     const query = this.query();
     return Boolean(
       query.workflowStateId ||
-        query.assigneeId ||
-        query.provider ||
-        query.projectId ||
-        query.priority ||
-        query.type ||
-        query.labelId ||
-        query.syncCondition ||
-        query.includeArchived,
+      query.assigneeId ||
+      query.provider ||
+      query.projectId ||
+      query.priority ||
+      query.type ||
+      query.labelId ||
+      query.syncCondition ||
+      query.includeArchived,
     );
   }
 

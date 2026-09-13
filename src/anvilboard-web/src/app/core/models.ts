@@ -191,7 +191,12 @@ export const BOARD_GROUP_BY_LABEL: Record<BoardGroupBy, string> = {
   Label: 'Label',
 };
 
-export const BOARD_ORDER_BY_OPTIONS: BoardOrderBy[] = ['CreatedAt', 'UpdatedAt', 'Priority', 'Manual'];
+export const BOARD_ORDER_BY_OPTIONS: BoardOrderBy[] = [
+  'CreatedAt',
+  'UpdatedAt',
+  'Priority',
+  'Manual',
+];
 
 export const BOARD_ORDER_BY_LABEL: Record<BoardOrderBy, string> = {
   CreatedAt: 'Created',
@@ -200,7 +205,12 @@ export const BOARD_ORDER_BY_LABEL: Record<BoardOrderBy, string> = {
   Manual: 'Manual',
 };
 
-export const BOARD_SYNC_CONDITION_OPTIONS: BoardSyncCondition[] = ['Fresh', 'Stale', 'Paused', 'Failed'];
+export const BOARD_SYNC_CONDITION_OPTIONS: BoardSyncCondition[] = [
+  'Fresh',
+  'Stale',
+  'Paused',
+  'Failed',
+];
 
 export const BOARD_SYNC_CONDITION_LABEL: Record<BoardSyncCondition, string> = {
   Fresh: 'Fresh',

@@ -145,7 +145,10 @@ export class BoardApiService {
     return this.http.get<Comment[]>(`/api/issues/${issueId}/comments`);
   }
 
-  listIssueActivity(issueId: string, options?: { limit?: number; cursor?: string }): Observable<ActivityPage> {
+  listIssueActivity(
+    issueId: string,
+    options?: { limit?: number; cursor?: string },
+  ): Observable<ActivityPage> {
     const params: Record<string, string> = {};
     if (options?.limit !== undefined) params['limit'] = String(options.limit);
     if (options?.cursor) params['cursor'] = options.cursor;

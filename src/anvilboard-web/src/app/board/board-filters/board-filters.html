@@ -92,7 +92,10 @@
 
   <label class="filter">
     <span>Group by</span>
-    <select [value]="query().groupBy ?? 'WorkflowState'" (change)="setGroupBy($any($event.target).value)">
+    <select
+      [value]="query().groupBy ?? 'WorkflowState'"
+      (change)="setGroupBy($any($event.target).value)"
+    >
       @for (option of groupByOptions; track option) {
         <option [value]="option">{{ groupByLabels[option] }}</option>
       }
@@ -101,7 +104,10 @@
 
   <label class="filter">
     <span>Order by</span>
-    <select [value]="query().orderBy ?? 'CreatedAt'" (change)="setOrderBy($any($event.target).value)">
+    <select
+      [value]="query().orderBy ?? 'CreatedAt'"
+      (change)="setOrderBy($any($event.target).value)"
+    >
       @for (option of orderByOptions; track option) {
         <option [value]="option">{{ orderByLabels[option] }}</option>
       }
