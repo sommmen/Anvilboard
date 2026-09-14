@@ -37,6 +37,21 @@ public sealed class IssueService(
     };
 
     /// <summary>
+    /// Rejects a conditional mutation whose <paramref name="expectedVersion"/> does not match what
+    /// is persisted. Called before any field is touched, so a conflict leaves no trace: no write,
+    /// no version increment, no activity event, no hook dispatch, no realtime publication. A null
+    /// <paramref name="expectedVersion"/> opts out, preserving last-writer-wins for callers that
+    /// do not participate.
+    /// </summary>
+    private static void ThrowIfVersionStale(Issue issue, int? expectedVersion)
+    {
+        if (expectedVersion is int expected && expected != issue.Version)
+        {
+            throw new ConcurrencyConflictException(expected, issue.Version);
+        }
+    }
+
+    /// <summary>
     /// Reads a single issue, scoped to <paramref name="workspaceId"/>. An issue outside that
     /// workspace is reported as absent rather than denied, so callers cannot use this method as an
     /// existence oracle for other tenants' ids.
@@ -104,6 +119,7 @@ public sealed class IssueService(
             AssigneeId = assigneeId,
             CreatedById = createdById,
             Source = IntegrationProvider.Local,
+            Version = 1,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -133,11 +149,25 @@ public sealed class IssueService(
     /// The requested transition was denied by <see cref="IWorkflowService"/> (e.g. no configured
     /// transition rule, or a referenced workflow state is archived/missing).
     /// </exception>
+    /// <exception cref="ConcurrencyConflictException">
+    /// <paramref name="expectedVersion"/> was supplied and did not match the persisted version,
+    /// meaning the caller read the issue before a concurrent write landed.
+    /// </exception>
     public async Task<Issue> ChangeStatusAsync(
-        WorkspaceId workspaceId, IssueId id, WorkflowStateId targetStateId, MemberId? actorId = null, CancellationToken ct = default)
+        WorkspaceId workspaceId,
+        IssueId id,
+        WorkflowStateId targetStateId,
+        MemberId? actorId = null,
+        int? expectedVersion = null,
+        CancellationToken ct = default)
     {
         var issue = await db.Issues.InWorkspace(db, workspaceId).FirstOrDefaultAsync(i => i.Id == id, ct)
             ?? throw new InvalidOperationException($"Issue {id} does not exist.");
+
+        // Deliberately ahead of both the no-op short circuit and transition validation: a stale
+        // caller must be told to refetch rather than handed a vacuous success (when it happens to
+        // request the state a concurrent writer already applied) or a misleading transition error.
+        ThrowIfVersionStale(issue, expectedVersion);
 
         if (issue.WorkflowStateId == targetStateId)
         {
@@ -186,11 +216,21 @@ public sealed class IssueService(
         return issue;
     }
 
+    /// <exception cref="ConcurrencyConflictException">
+    /// <paramref name="expectedVersion"/> was supplied and did not match the persisted version.
+    /// </exception>
     public async Task<Issue> AssignAsync(
-        WorkspaceId workspaceId, IssueId id, MemberId? assigneeId, MemberId? actorId = null, CancellationToken ct = default)
+        WorkspaceId workspaceId,
+        IssueId id,
+        MemberId? assigneeId,
+        MemberId? actorId = null,
+        int? expectedVersion = null,
+        CancellationToken ct = default)
     {
         var issue = await db.Issues.InWorkspace(db, workspaceId).FirstOrDefaultAsync(i => i.Id == id, ct)
             ?? throw new InvalidOperationException($"Issue {id} does not exist.");
+
+        ThrowIfVersionStale(issue, expectedVersion);
 
         issue.AssigneeId = assigneeId;
         issue.Version++;

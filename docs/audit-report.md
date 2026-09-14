@@ -50,7 +50,7 @@ place.
 | Severity | Count | Categories |
 |----------|-------|------------|
 | Critical |   3   | **All resolved.** audit-and-recovery (backup/restore missing), realtime-updates (entire feature unimplemented), artifacts (no `ArtifactService`) |
-| Major    |  22   | **Open (5)**: MAJ-006 threaded comments, MAJ-009 optimistic concurrency, MAJ-014 outbound plugin events, MAJ-018 audit `QueryAsync`, MAJ-020 artifact lifecycle hooks. **Resolved (17)**: MAJ-001–MAJ-005, MAJ-007, MAJ-008, MAJ-010–MAJ-013, MAJ-015–MAJ-017, MAJ-019, MAJ-021, MAJ-022 |
+| Major    |  22   | **Open (3)**: MAJ-006 threaded comments, MAJ-014 outbound plugin events, MAJ-020 artifact lifecycle hooks. **Resolved (19)**: MAJ-001–MAJ-005, MAJ-007–MAJ-013, MAJ-015–MAJ-019, MAJ-021, MAJ-022 |
 | Minor    |  10   | **Open (2)**: MIN-004 plugin manifest validation, MIN-010 enum casing inconsistent between live enums and `.ToString()`-flattened fields. **Resolved (8)**: MIN-001, MIN-002, MIN-003, MIN-005, MIN-006, MIN-007, MIN-008 (`/api/v1` documented but never implemented), MIN-009 (phantom + missing endpoints in tech-design §9.1) |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
 
@@ -234,10 +234,21 @@ place.
 - **Impact**: Users cannot see the audit trail for an issue from the UI, even though the data exists.
 - **Fix**: Add an activity feed panel to the issue-detail view consuming existing `ActivityEvent` data.
 
-### MAJ-009: Optimistic concurrency (`Issue.Version`) only partially enforced
+### MAJ-009: Optimistic concurrency (`Issue.Version`) only partially enforced — **RESOLVED**
+
+> **Resolved.** `ChangeStatusAsync` and `AssignAsync` accept an optional `expectedVersion` and
+> reject a stale write with `CONCURRENCY_CONFLICT` (409), carrying `currentVersion` so the caller
+> can refetch and retry. The check runs immediately after the load — before transition validation
+> and before the same-state no-op short circuit — so a stale caller cannot succeed vacuously.
+> `CreateAsync` now seeds `Version = 1`. REST, CLI/MCP, and the web client all pass the version they
+> read; a reflection test (`IssueMutationContractTests`) fails the build if a future field-level
+> mutation is added without the parameter. Adding a comment and the external-ingestion upsert are
+> deliberately exempt. See
+> [`docs/plans/optimistic-concurrency-enforcement.md`](./plans/optimistic-concurrency-enforcement.md).
+
 - **Location**: `docs/features/issue-board-service.md`
 - **Issue**: `Issue.Version` exists as a concurrency token, but not all mutation paths validate/increment it consistently (some code paths bypass the check).
-- **Evidence**: Version-check logic present in some but not all issue-mutation service methods (verified by direct inspection during the earlier agent pass).
+- **Evidence (corrected)**: The original evidence said the check was "present in some but not all" methods. It was present in **none** — `Version` was incremented at three sites and compared at zero, so `CONCURRENCY_CONFLICT` had a catalog entry and no production throw site.
 - **Impact**: Conflicting concurrent edits may silently overwrite each other on the paths that skip the check, contradicting the PRD's "conflicting edits show what changed" requirement (US-HUM-003).
 - **Fix**: Audit all issue-mutation entry points for consistent version-check enforcement.
 

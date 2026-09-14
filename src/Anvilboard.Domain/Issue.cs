@@ -28,7 +28,14 @@ public sealed class Issue
     /// <summary>The required, workspace-configured workflow state for this issue.</summary>
     public WorkflowStateId WorkflowStateId { get; set; }
 
-    /// <summary>Optimistic-concurrency version incremented by the future Issue &amp; Board Service.</summary>
+    /// <summary>
+    /// Optimistic-concurrency token. Starts at <c>1</c> on create and is incremented by every
+    /// field-level mutation, so a caller can pass the value it read as <c>expectedVersion</c> and
+    /// have a stale write rejected with <c>CONCURRENCY_CONFLICT</c> rather than silently applied.
+    /// Two paths are deliberately exempt and leave it untouched: adding a comment (which does not
+    /// change a field anyone conditions a write on) and the external-ingestion upsert (whose
+    /// authority is the upstream provider, not a local read).
+    /// </summary>
     public int Version { get; set; }
 
     public IssuePriority Priority { get; set; } = IssuePriority.None;

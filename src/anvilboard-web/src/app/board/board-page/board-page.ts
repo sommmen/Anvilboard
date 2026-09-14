@@ -204,7 +204,9 @@ export class BoardPage {
       .createIssue({ teamId: team.id, title, priority: IssuePriority.None })
       .subscribe((issue) => {
         if (targetState && targetState.id !== issue.workflowStateId) {
-          this.api.changeStatus(issue.id, targetState.id).subscribe({
+          // The version comes straight from the create response, so this follow-up move is
+          // conditional on the issue nobody else has touched yet.
+          this.api.changeStatus(issue.id, targetState.id, issue.version).subscribe({
             next: () => this.refresh(),
             error: () => this.refresh(),
           });

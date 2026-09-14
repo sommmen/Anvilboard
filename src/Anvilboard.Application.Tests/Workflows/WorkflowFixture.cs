@@ -123,6 +123,13 @@ internal sealed class WorkflowFixture : IAsyncDisposable
         UpdatedAt = DateTimeOffset.UtcNow,
     };
 
+    /// <summary>
+    /// A second context over the same in-memory database, so a test can assert what was actually
+    /// persisted rather than what the fixture's change tracker happens to be holding.
+    /// </summary>
+    public AnvilboardDbContext CreateFreshContext() => new(
+        new DbContextOptionsBuilder<AnvilboardDbContext>().UseSqlite(connection).Options);
+
     public async ValueTask DisposeAsync()
     {
         await Db.DisposeAsync();

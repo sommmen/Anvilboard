@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { Subject, of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { BoardApiService } from '../../core/board-api.service';
 import {
   ActivityPage,
@@ -58,6 +58,8 @@ class FakeBoardApiService {
   listCommentCalls: string[] = [];
   listActivityCalls: { issueId: string; cursor?: string }[] = [];
   updateLinkCalls: { linkId: string; changes: { type?: string; description?: string } }[] = [];
+  changeStatusCalls: { issueId: string; workflowStateId: string; expectedVersion?: number }[] = [];
+  changeStatusError: unknown = null;
 
   comments: Comment[] = [{ id: 'comment-1', issueId: 'issue-1', body: 'Persisted' } as Comment];
   activityPages: ActivityPage[] = [
@@ -119,6 +121,11 @@ class FakeBoardApiService {
 
   listWorkflowStates() {
     return of([]);
+  }
+
+  changeStatus(issueId: string, workflowStateId: string, expectedVersion?: number) {
+    this.changeStatusCalls.push({ issueId, workflowStateId, expectedVersion });
+    return this.changeStatusError ? throwError(() => this.changeStatusError) : of(issue());
   }
 }
 
@@ -235,5 +242,49 @@ describe('IssueDetail', () => {
     const detail = createDetail();
 
     expect(detail.suggestedLinkTypes()).toEqual(['RELATED', 'BLOCKS']);
+  });
+
+  it('sends the version it is rendering so a stale panel cannot overwrite a newer write', () => {
+    const detail = createDetail(issue({ version: 7 }));
+
+    detail.changeStatus('workflow-state-done');
+
+    expect(api.changeStatusCalls).toEqual([
+      { issueId: 'issue-1', workflowStateId: 'workflow-state-done', expectedVersion: 7 },
+    ]);
+  });
+
+  it('explains a rejected status change instead of leaving the panel silently wrong', () => {
+    const detail = createDetail();
+    api.changeStatusError = { status: 409, error: { title: 'CONCURRENCY_CONFLICT' } };
+    let refreshes = 0;
+    detail.changed.subscribe(() => refreshes++);
+
+    detail.changeStatus('workflow-state-done');
+
+    expect(detail.statusError()).toContain('changed while you were viewing it');
+    // The refresh is what makes the advice actionable: the retry uses the winning version.
+    expect(refreshes).toBe(1);
+  });
+
+  it('does not blame concurrency for a workflow denial that shares the 409', () => {
+    const detail = createDetail();
+    api.changeStatusError = { status: 409, error: { title: 'INVALID_WORKFLOW_TRANSITION' } };
+
+    detail.changeStatus('workflow-state-done');
+
+    expect(detail.statusError()).toBe('');
+  });
+
+  it('clears a previous conflict message when a later change succeeds', () => {
+    const detail = createDetail();
+    api.changeStatusError = { status: 409, error: { title: 'CONCURRENCY_CONFLICT' } };
+    detail.changeStatus('workflow-state-done');
+    expect(detail.statusError()).not.toBe('');
+
+    api.changeStatusError = null;
+    detail.changeStatus('workflow-state-done');
+
+    expect(detail.statusError()).toBe('');
   });
 });

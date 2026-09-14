@@ -67,7 +67,8 @@ public sealed class IssueServiceRealtimePublicationTests
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
         Assert.Equal(RealtimeIssueChangeKind.Updated, change.ChangeKind);
         Assert.Equal(updated.Version, change.Version);
-        Assert.Equal(1, change.Version);
+        // CreateAsync seeds version 1, so the first mutation publishes 2.
+        Assert.Equal(2, change.Version);
     }
 
     [Fact]
@@ -82,7 +83,8 @@ public sealed class IssueServiceRealtimePublicationTests
         var updated = await service.AssignAsync(fixture.WorkspaceId, issue.Id, MemberId.New());
 
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
-        Assert.Equal(1, updated.Version);
+        // CreateAsync seeds version 1, so the first mutation lands on 2.
+        Assert.Equal(2, updated.Version);
         Assert.Equal(updated.Version, change.Version);
     }
 

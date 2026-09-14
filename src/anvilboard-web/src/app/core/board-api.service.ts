@@ -73,12 +73,17 @@ export class BoardApiService {
     return this.http.get<WorkflowState[]>('/api/workflow/states');
   }
 
-  changeStatus(issueId: string, workflowStateId: string): Observable<Issue> {
-    return this.http.patch<Issue>(`/api/issues/${issueId}/status`, { workflowStateId });
+  /**
+   * Passing `expectedVersion` makes the write conditional: the server rejects it with 409
+   * `CONCURRENCY_CONFLICT` when the issue moved since it was rendered, instead of silently
+   * overwriting whatever a concurrent writer did. Omit it to keep last-writer-wins.
+   */
+  changeStatus(issueId: string, workflowStateId: string, expectedVersion?: number): Observable<Issue> {
+    return this.http.patch<Issue>(`/api/issues/${issueId}/status`, { workflowStateId, expectedVersion });
   }
 
-  assign(issueId: string, assigneeId: string | null): Observable<Issue> {
-    return this.http.patch<Issue>(`/api/issues/${issueId}/assignee`, { assigneeId });
+  assign(issueId: string, assigneeId: string | null, expectedVersion?: number): Observable<Issue> {
+    return this.http.patch<Issue>(`/api/issues/${issueId}/assignee`, { assigneeId, expectedVersion });
   }
 
   addComment(issueId: string, body: string, authorId?: string): Observable<Comment> {

@@ -9,6 +9,27 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ### Added
 
+- **Optimistic concurrency enforcement on issue mutations** (closing audit finding `MAJ-009`),
+  designed in
+  [`docs/plans/optimistic-concurrency-enforcement.md`](docs/plans/optimistic-concurrency-enforcement.md).
+  `Issue.Version` was incremented on every write but compared on none, so two clients editing the
+  same issue silently overwrote each other and the `CONCURRENCY_CONFLICT` error code had no
+  production throw site.
+  - `IssueService.ChangeStatusAsync` and `AssignAsync` accept an optional `expectedVersion`. When
+    supplied and stale, the write is rejected with `CONCURRENCY_CONFLICT` (HTTP 409) carrying the
+    current version so the caller can refetch and retry; when omitted, the write is unconditional
+    and existing callers are unaffected.
+  - The check runs immediately after the issue loads — before transition validation and before the
+    same-state no-op short circuit — so a stale caller asking for the state a concurrent writer
+    already applied gets a conflict instead of a vacuous success.
+  - `CreateAsync` now seeds `Version = 1`, so a freshly created issue hands out a usable token.
+  - REST (`PATCH /api/issues/{id}/status`, `/assignee`), the `change-issue-status` and
+    `assign-issue` agent operations, and the Angular board and issue-detail panes all round-trip the
+    version they read; issue payloads expose `version`. A failed agent call does **not** consume its
+    idempotency key.
+  - A reflection-driven contract test fails the build if a future field-level issue mutation is
+    added without an `expectedVersion` parameter. Adding a comment and the external-ingestion upsert
+    are deliberately exempt.
 - **Board experience parity** (closing audit findings `MAJ-007`, `MAJ-008`, `MAJ-010`, and `MAJ-011`),
   designed in [`docs/plans/board-experience-parity.md`](docs/plans/board-experience-parity.md).
   `IBoardQueryService` existed but nothing called it, activity events were written and never read,
