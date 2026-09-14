@@ -26,7 +26,7 @@ public sealed class AgentCatalogInvariantsTests
         "query-board", "list-issue-activity", "list-issue-comments", "list-link-types",
         "create-backup", "list-backups", "verify-backup",
         "list-workflow-states", "list-workflow-transitions",
-        "list-integration-health",
+        "list-integration-health", "list-audit-events",
     ];
 
     [Fact]
@@ -82,9 +82,12 @@ public sealed class AgentCatalogInvariantsTests
     {
         // The workspace and actor come from the authenticated credential. Accepting either as an
         // input would let any valid credential act on any workspace or impersonate any member.
+        // Audit read operations are excluded: actorId there is a filter on recorded history, not an
+        // identity spoofing vector.
         var spoofable = Catalog.Operations
             .SelectMany(operation => operation.Parameters.Select(p => (operation.Name, Parameter: p)))
             .Where(entry => entry.Parameter.Name is "workspaceId" or "actorId" or "authorId" or "createdById")
+            .Where(entry => !entry.Name.StartsWith("list-audit-events"))
             .Select(entry => $"{entry.Name}.{entry.Parameter.Name}")
             .ToArray();
 

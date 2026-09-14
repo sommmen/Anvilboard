@@ -23,6 +23,7 @@ public sealed class BoardAgentServiceTests
                 "create-workflow-transition",
                 "dashboard-summary",
                 "get-issue",
+                "list-audit-events",
                 "list-backups",
                 "list-integration-health",
                 "list-issue-activity",
