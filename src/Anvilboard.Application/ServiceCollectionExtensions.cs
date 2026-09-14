@@ -35,6 +35,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IBoardQueryService, BoardQueryService>();
         services.AddScoped<IssueLinkService>();
         services.AddScoped<IActivityQueryService, ActivityQueryService>();
+        services.AddScoped<IAuditQueryService, AuditQueryService>();
         services.AddScoped<IArtifactService, ArtifactService>();
         services.AddScoped<IIntegrationService, IntegrationService>();
         services.AddScoped<DashboardService>();

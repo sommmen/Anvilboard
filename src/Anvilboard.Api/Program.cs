@@ -89,6 +89,7 @@ app.UseMiddleware<WorkspaceAuthorizationMiddleware>();
 app.UseMiddleware<DatabaseOperationMiddleware>();
 
 app.MapAuthEndpoints();
+app.MapAuditEndpoints();
 app.MapIssueEndpoints();
 app.MapBoardEndpoints();
 app.MapTaxonomyEndpoints();

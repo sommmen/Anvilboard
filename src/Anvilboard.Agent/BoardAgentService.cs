@@ -2,6 +2,7 @@ using Anvilboard.Agent.Authorization;
 using Anvilboard.Agent.Automation;
 using Anvilboard.Agent.Contracts;
 using Anvilboard.Application.Activity;
+using Anvilboard.Application.Auditing;
 using Anvilboard.Application.Automation;
 using Anvilboard.Application.Backup;
 using Anvilboard.Application.Dashboard;
@@ -40,6 +41,7 @@ public sealed class BoardAgentService(
     IssueService issues,
     IssueLinkService issueLinks,
     IActivityQueryService activity,
+    IAuditQueryService audit,
     IBoardQueryService board,
     DashboardService dashboard,
     IBackupService backups,
@@ -187,6 +189,37 @@ public sealed class BoardAgentService(
             teamId is { } t ? await scope.RequireTeamAsync(t, cancellationToken) : null,
             cancellationToken);
         return Ok(summary);
+    }
+
+    [AgentOperation("list-audit-events", "Lists audit trail events for the workspace, filtered and paged", Category = "audit", IsIdempotent = true)]
+    [RequiresAgentPermission(Permission.ReadAudit)]
+    public async Task<AgentResponse<AuditQueryResult>> ListAuditEventsAsync(
+        string? actorId = null, DateTimeOffset? occurredAfter = null, DateTimeOffset? occurredBefore = null,
+        string? targetType = null, string? targetId = null, string? action = null, string? channel = null,
+        int? limit = null, string? cursor = null, CancellationToken cancellationToken = default)
+    {
+        var parsedChannel = channel != null
+            ? (Enum.TryParse<AuditChannel>(channel, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed)
+                ? (AuditChannel?)parsed
+                : throw new AgentRequestException(
+                    "VALIDATION_FAILED",
+                    $"'{channel}' is not a recognized value for channel. Expected one of: "
+                    + string.Join(", ", Enum.GetNames<AuditChannel>()) + "."))
+            : null;
+
+        var query = new AuditQuery(
+            actorId, occurredAfter, occurredBefore, targetType, targetId, action,
+            parsedChannel, limit, cursor);
+        
+        try
+        {
+            var result = await audit.QueryAsync(scope.WorkspaceId, query, cancellationToken);
+            return Ok(result);
+        }
+        catch (AuditQueryException ex)
+        {
+            throw new AgentRequestException(ex.ErrorCode, ex.Message);
+        }
     }
 
     /// <summary>
