@@ -9,7 +9,7 @@
 | Component | integration-and-plugin-platform |
 | Priority | P0 |
 | Status | Partial — integration lifecycle, write-only secret handling, webhook signature verification, reflection-based plugin loading, approval-gated outbound plugin events (FR-INT-006, via `IPluginEventPublisher`/`PluginEventRelay`), paused-webhook rejection (audit `MAJ-012`), and sync health tracking with categorized exponential backoff (audit `MAJ-013`) are implemented; the core does not dispatch events *to* plugins (audit `MAJ-014`), and plugin manifest validation is weaker than spec'd. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + the documentation-alignment change set — six populated .NET test projects 521 passing, `npm test` 44 passing |
+| Last verified | 2026-09-14 against commit `93e866a` + the documentation-currency update — six populated .NET test projects 581 passing, `npm test` 49 passing |
 | SRS Refs | FR-INT-001, FR-INT-002, FR-INT-003, FR-INT-004, FR-INT-005, FR-INT-006, FR-INT-007, FR-INT-009, NFR-REL-002, NFR-SEC-001 |
 | Tech Design Ref | §8.1 — Integration & Plugin Platform row; also §7.6 Retry & Circuit Breaker Configuration, §7.7 Error Catalog, §11.3 Data Encryption |
 | Implementation Plan | [`docs/plans/integration-sync-health.md`](../plans/integration-sync-health.md) — implemented: sync health, backoff, and paused-webhook rejection (audit `MAJ-012`, `MAJ-013`) |

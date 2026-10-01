@@ -9,6 +9,15 @@ will adhere to [Semantic Versioning](https://semver.org/) once it has its first 
 
 ### Added
 
+- **Workspace-scoped audit event queries** (closing audit finding `MAJ-018`), designed in
+  [`docs/plans/audit-query-surface.md`](docs/plans/audit-query-surface.md).
+  - `IAuditQueryService.QueryAsync` filters the immutable audit trail by actor, time, target,
+    action, and channel with bounded cursor pagination.
+  - `GET /api/audit-events` and the idempotent agent `list-audit-events` operation expose the same
+    query capability, derive workspace scope from the authenticated principal, and require
+    `Permission.ReadAudit`.
+  - Application, API, and agent tests cover filtering, pagination, authorization, and workspace
+    isolation.
 - **Optimistic concurrency enforcement on issue mutations** (closing audit finding `MAJ-009`),
   designed in
   [`docs/plans/optimistic-concurrency-enforcement.md`](docs/plans/optimistic-concurrency-enforcement.md).

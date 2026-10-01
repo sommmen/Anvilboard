@@ -9,7 +9,7 @@
 | Component | issue-linking |
 | Priority | P2 |
 | Status | Implemented — `CreateLinkAsync`/`ListLinksAsync`/`UpdateLinkAsync`/`RemoveLinkAsync` are exposed over REST (`POST`/`PATCH`/`DELETE /api/issues/{id}/links…`) and the agent surface, directional exposure and zero-cascade behavior match spec, and the canonical link-type vocabulary is served by `GET /api/issue-link-types` so the web issue-detail form no longer carries a hardcoded list. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + the board-experience-parity change set — six populated .NET test projects 521 passing, `npm test` 44 passing |
+| Last verified | 2026-09-14 against commit `93e866a` + the documentation-currency update — six populated .NET test projects 581 passing, `npm test` 49 passing |
 | SRS Refs | FR-LNK-001 |
 | Tech Design Ref | §8.1 — Issue Linking row; also §7.7 Error Catalog, §9.1 API Design, §10.1 `IssueLinks` table |
 | Depends On | issue-board-service, workspace-authorization |

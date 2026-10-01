@@ -8,9 +8,9 @@
 |-------|-------|
 | Component | audit-and-recovery |
 | Priority | P0 |
-| Status | Partial — append-only audit recording, secret/credential redaction at write time, and backup/restore (FR-OPS-002, NFR-AVL-001) are implemented and tested. Workspace-scoped audit **query** access (FR-OPS-001) remains the residual gap: audit events are written and are readable only via direct database access, with no REST or agent query surface. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + the documentation-alignment change set — six populated .NET test projects 521 passing, `npm test` 44 passing |
-| Implementation Plan | [`../plans/backup-and-restore.md`](../plans/backup-and-restore.md) — delivered; closed CRIT-001, the only unresolved Critical audit finding. |
+| Status | Implemented — append-only audit recording, secret/credential redaction at write time, workspace-scoped and permission-gated audit queries over REST and the agent surface (FR-OPS-001), and verified backup/restore (FR-OPS-002, NFR-AVL-001) are implemented and tested. |
+| Last verified | 2026-09-14 against commit `93e866a` + the documentation-currency update — six populated .NET test projects 581 passing, `npm test` 49 passing |
+| Implementation Plans | [`../plans/backup-and-restore.md`](../plans/backup-and-restore.md) — delivered CRIT-001 and FR-OPS-002; [`../plans/audit-query-surface.md`](../plans/audit-query-surface.md) — delivered MAJ-018 and completed FR-OPS-001. |
 | SRS Refs | FR-OPS-001, FR-OPS-002, NFR-AVL-001, NFR-REL-001 |
 | Tech Design Ref | §8.1 Component Overview — Audit & Recovery row; §10.1 `AuditEvents`; §11.4 Audit Logging; §14.3 Rollback Strategy |
 | Depends On | workspace-authorization, workflow-engine, issue-board-service, integration-and-plugin-platform, agent-and-automation-surface |
@@ -26,7 +26,7 @@ Audit & Recovery is the append-only accountability layer for every mutating comp
 
 **Included:**
 - `IAuditService.RecordAsync` accepting a normalized audit context from every mutating component/channel (workspace-authorization, workflow-engine, issue-board-service, integration-and-plugin-platform, agent-and-automation-surface)
-- `AuditEvents` persistence, workspace-scoped and permission-gated query access (`IAuditService.QueryAsync`)
+- `AuditEvents` persistence, workspace-scoped and permission-gated query access (`IAuditQueryService.QueryAsync`)
 - Secret/credential redaction of `ResultSummary` at write time (zero exposure target, NFR-SEC-001)
 - `IBackupService.CreateBackupAsync` producing a backup artifact plus integrity/compatibility manifest (workspace, timestamp, product/schema version, checksum)
 - `IBackupService.RestoreAsync` validating integrity and compatibility before activation, with elevated authorization and explicit target confirmation, fail-closed on any invalid artifact
@@ -100,9 +100,12 @@ sequenceDiagram
 public interface IAuditService
 {
     Task RecordAsync(AuditEventRequest request, CancellationToken ct = default);
+}
 
-    Task<IReadOnlyList<AuditEvent>> QueryAsync(
-        WorkspaceId workspaceId, AuditQuery query, MemberId requestingActorId, CancellationToken ct = default);
+public interface IAuditQueryService
+{
+    Task<AuditQueryResult> QueryAsync(
+        WorkspaceId workspaceId, AuditQuery query, CancellationToken ct = default);
 }
 
 public sealed record AuditEventRequest(
@@ -116,7 +119,7 @@ Logic steps for `RecordAsync`:
 1. Redact `ResultSummary` via `SecretRedactor.Scrub(text)` — strips values keyed by a documented deny-list of field names (`secret`, `token`, `password`, `apiKey`, `credential`) plus a regex heuristic for long opaque base64/hex-shaped values, replacing each match with `"***REDACTED***"`.
 2. Construct an `AuditEvent` with a newly minted `AuditEventId` and `OccurredAt = DateTimeOffset.UtcNow`.
 3. Insert via `AnvilboardDbContext.AuditEvents.Add(...)` + `SaveChangesAsync` — extending the existing [`../../src/Anvilboard.Infrastructure/Persistence/AnvilboardDbContext.cs`](../../src/Anvilboard.Infrastructure/Persistence/AnvilboardDbContext.cs) with a new `DbSet<AuditEvent>`; the repository exposes no `Update`/`Remove` member for this aggregate, enforcing append-only at the code boundary rather than relying only on permissions or UI omission (FR-OPS-001 criterion 2).
-4. `QueryAsync` filters by `WorkspaceId` first (a query can never span workspaces) and requires the requesting actor to hold an auditor/administrator permission, delegated to workspace-authorization's authorization check (FR-OPS-001 criterion 3).
+4. `IAuditQueryService.QueryAsync` filters by `WorkspaceId` first (a query can never span workspaces). The REST and agent adapters derive that workspace from authenticated scope and require `Permission.ReadAudit` before dispatch (FR-OPS-001 criterion 3).
 
 Field mapping for the `AuditEvents` table (binding tech-design §10.1 to the implementation):
 
