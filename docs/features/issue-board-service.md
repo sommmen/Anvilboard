@@ -8,10 +8,11 @@
 |-------|-------|
 | Component | issue-board-service |
 | Priority | P0 |
-| Status | Partial — backend CRUD, board/list querying/filtering/grouping, and dashboard aggregation are implemented and now reachable from REST (`GET /api/board`), the agent surface (`query-board`), and the web UI's filter stack; activity and comment history have cursor-paged read paths rendered by the issue-detail panel. Comments are still flat (not threaded) and optimistic concurrency (`Issue.Version`) is not enforced on every mutation path. See `docs/audit-report.md` for details. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + the board-experience-parity change set — six populated .NET test projects 521 passing, `npm test` 44 passing |
+| Status | Partial — backend CRUD, board/list querying/filtering/grouping, and dashboard aggregation are implemented and now reachable from REST (`GET /api/board`), the agent surface (`query-board`), and the web UI's filter stack; activity and comment history have cursor-paged read paths rendered by the issue-detail panel. Optimistic concurrency is enforced on every field-level mutation via an optional `expectedVersion`. Comments are still flat (not threaded). See `docs/audit-report.md` for details. |
+| Last verified | 2026-09-14 against the optimistic-concurrency-enforcement change set — six populated .NET test projects 581 passing, `npm test` 49 passing |
 | SRS Refs | FR-WRK-001, FR-WRK-002, FR-WRK-003, FR-WRK-004, FR-WRK-005, FR-WRK-006, FR-WRK-007, FR-WRK-008, FR-WRK-009, FR-WRK-010, FR-WRK-011, FR-WRK-012, FR-WRK-013, FR-WRK-014, NFR-PERF-001, NFR-PERF-002, NFR-USB-001 |
 | Tech Design Ref | §8.1 — Issue & Board Service row; also §7.5 Computation Rules, §9 API Design, §12 Performance Design |
+| Implementation Plan | [`../plans/optimistic-concurrency-enforcement.md`](../plans/optimistic-concurrency-enforcement.md) |
 | Depends On | workflow-engine, workspace-authorization |
 | Blocks | integration-and-plugin-platform, agent-and-automation-surface, audit-and-recovery, artifacts, issue-linking, realtime-updates |
 
@@ -144,8 +145,12 @@ Current implementation (`Anvilboard.Application/Issues/IssueService.cs`) validat
 > to `IWorkflowService.ValidateTransitionAsync`, and updates the authoritative `WorkflowStateId` and
 > `Version` on success. REST, CLI/MCP, and the issue-detail UI submit configured state IDs. The legacy
 > `IssueStatus` field remains a compatibility projection for the six seeded states, and
-> `PrePhaseChange`/`PostPhaseChange` hooks plus caller-supplied `expectedVersion` remain planned as
-> described below. Post-commit real-time publication *is* implemented (see step 8).
+> `PrePhaseChange`/`PostPhaseChange` hooks remain planned as described below. Caller-supplied
+> `expectedVersion` *is* implemented on `ChangeStatusAsync` and `AssignAsync` (optional; omitting it
+> writes unconditionally). The check runs immediately after the issue load — deliberately **before**
+> transition validation and **before** the same-state no-op short circuit, so a stale caller asking
+> for the state a concurrent writer already applied gets `CONCURRENCY_CONFLICT` rather than a
+> vacuous success. Post-commit real-time publication *is* implemented (see step 8).
 
 The target transition contract uses `WorkflowStateId` per tech-design §7.5/§8.3:
 
@@ -257,7 +262,7 @@ Within each group, `orderBy` accepts `createdAt` (default: newest first), `updat
 |-------|----------|-----------|-----------------|---------------------|
 | AC-005 | P0 | Given a workspace with issues across multiple teams/states/providers, when a board query supplies team, workflow state, assignee, priority, project, label, provider, and sync-condition filters, the returned page contains only matching issues. | Result set matches the filter predicate exactly; identical symbolic filter values are accepted across UI, REST, CLI, and MCP fixtures. | Integration — `BoardQueryServiceTests`, cross-channel contract fixture comparison. |
 | AC-006 | P0 | Given `limit` values of 0, 1, 100, and 101, and a malformed opaque cursor, when a board query is issued. | `limit` 1 and 100 return a stable ordered page with a valid cursor; `limit` 0, `limit` 101, and the malformed cursor each return `VALIDATION_FAILED` naming the field. | Integration — boundary tests at 0/1/100/101 plus malformed-cursor test. |
-| AC-004 | P0 | Given an issue whose current workflow state has no allowed transition to the requested target state, when a transition is requested. | Response is `INVALID_WORKFLOW_TRANSITION` naming current state, requested state, and violated rule; `Issue.Version` is unchanged. | Integration — `IssueServiceTests.RequestTransition_DisallowedTarget_ReturnsInvalidTransition`, asserting error payload and unchanged persisted version. |
+| AC-004 | P0 | Given an issue whose current workflow state has no allowed transition to the requested target state, when a transition is requested. | Response is `INVALID_WORKFLOW_TRANSITION` naming current state, requested state, and violated rule; `Issue.Version` is unchanged. | Integration — `WorkflowEngineTests.ChangeStatusAsync_DisallowedTransition_ThrowsWorkflowTransitionDeniedAndLeavesIssueUnchanged`, asserting error payload and unchanged persisted version. |
 | AC-007 | P0 | Given a create or transition mutation submitted with a valid idempotency key, when the identical request is replayed by the same actor. | Exactly one `Issue`/`ActivityEvent` pair exists after both calls; the replay returns the original result and correlation ID. | Integration — `IssueServiceTests.Create_ReplayedWithSameKey_ProducesNoDuplicate`. |
 | AC-011 | P0 | Given any successful create, transition, assignment, or comment mutation, when the mutation completes. | Exactly one `ActivityEvent` is recorded with actor, action, timestamp, target, and a before/after summary containing no secret values. | Unit — `IssueServiceTests.Mutate_RecordsSingleActivityEvent`. |
 | AC-IBS-111 | P0 | Given a valid phase transition and a registered `PrePhaseChange` hook that allows it, when the transition commits. | The hook receives typed from/to metadata before persistence; one templated activity and one post-commit real-time delta are emitted, and `PostPhaseChange` failure cannot change the response. | Integration — hook ordering and failure-isolation tests. |

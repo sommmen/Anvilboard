@@ -404,7 +404,7 @@ graph TD
 | Priority | P0 |
 | Source | PRD-ANV-008 |
 | Description | The system shall append an immutable audit record for authentication-relevant decisions, configuration changes, integrations, secrets metadata changes, issue mutations, automation mutations, backup, and restore operations. |
-| Acceptance criteria | (1) Audit records include workspace, actor/principal, channel, action, target, timestamp, result, correlation ID, and safe contextual summary. (2) Normal users cannot edit or delete audit history. (3) Audit queries are workspace-scoped and permission-gated. (4) Secret values and authentication material are redacted. |
+| Acceptance criteria | (1) Audit records include workspace, actor/principal, channel, action, target, timestamp, result, correlation ID, and safe contextual summary. (2) Normal users cannot edit or delete audit history. (3) `IAuditQueryService.QueryAsync`, `GET /api/audit-events`, and agent `list-audit-events` derive workspace scope from the authenticated principal, require `Permission.ReadAudit`, and support bounded filtering/pagination. (4) Secret values and authentication material are redacted. |
 
 #### FR-OPS-002: Backup and restore
 
@@ -750,7 +750,7 @@ No special hardware interface is required. Supported deployment hardware is a ho
 | FR-WRK-002, FR-WRK-003 | PRD-ANV-004 | Domain/API/UI mutation tests | `tech-design.md` issue aggregate |
 | FR-INT-001, FR-INT-002 | PRD-ANV-005, PRD-ANV-006 | Provider-adapter, secret-redaction, and health tests | `integration-and-plugin-platform.md` |
 | FR-AUT-001, FR-AUT-002, FR-AUT-003 | PRD-ANV-007 | REST/MCP contract and idempotency tests | `agent-and-automation-surface.md` |
-| FR-OPS-001, FR-OPS-002 | PRD-ANV-008 | Audit and backup/restore drills | `tech-design.md` operations |
+| FR-OPS-001, FR-OPS-002 | PRD-ANV-008 | Audit query authorization/filter/pagination tests and backup/restore drills | `IAuditQueryService.QueryAsync`, `GET /api/audit-events`, agent `list-audit-events`; `tech-design.md` operations |
 | FR-WRK-004 | PRD-ANV-009 | Aggregate reconciliation and UI drill-down tests | `tech-design.md` dashboard/read model |
 | FR-INT-003 | PRD-ANV-010 | Plugin lifecycle and fault-isolation tests | `integration-and-plugin-platform.md` |
 | Future write-back policy | PRD-ANV-011 | Deferred | Future feature specification |

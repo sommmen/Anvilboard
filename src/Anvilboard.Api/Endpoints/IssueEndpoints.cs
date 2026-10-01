@@ -83,12 +83,17 @@ public static class IssueEndpoints
             {
                 var issueId = await scope.RequireIssueAsync(id, ct);
                 var targetStateId = await scope.RequireWorkflowStateAsync(request.WorkflowStateId, ct);
-                var issue = await service.ChangeStatusAsync(scope.WorkspaceId, issueId, targetStateId, ct: ct);
+                var issue = await service.ChangeStatusAsync(
+                    scope.WorkspaceId, issueId, targetStateId, expectedVersion: request.ExpectedVersion, ct: ct);
                 return Results.Ok(issue);
             }
             catch (WorkspaceScopeDeniedException)
             {
                 return WorkspaceScopeResults.Denied();
+            }
+            catch (ConcurrencyConflictException ex)
+            {
+                return ConcurrencyConflictProblem(ex);
             }
             catch (WorkflowTransitionDeniedException ex)
             {
@@ -105,12 +110,17 @@ public static class IssueEndpoints
             {
                 var issueId = await scope.RequireIssueAsync(id, ct);
                 var assigneeId = await scope.RequireMemberAsync(request.AssigneeId, ct);
-                var issue = await service.AssignAsync(scope.WorkspaceId, issueId, assigneeId, ct: ct);
+                var issue = await service.AssignAsync(
+                    scope.WorkspaceId, issueId, assigneeId, expectedVersion: request.ExpectedVersion, ct: ct);
                 return Results.Ok(issue);
             }
             catch (WorkspaceScopeDeniedException)
             {
                 return WorkspaceScopeResults.Denied();
+            }
+            catch (ConcurrencyConflictException ex)
+            {
+                return ConcurrencyConflictProblem(ex);
             }
         }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
 
@@ -267,11 +277,23 @@ public static class IssueEndpoints
             }
         }).RequirePermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues);
     }
+
+    /// <summary>
+    /// Renders a stale conditional write as a 409 carrying the authoritative version as a
+    /// problem-details extension, so the client can refetch and retry without a second round trip
+    /// to discover what it should have sent.
+    /// </summary>
+    private static IResult ConcurrencyConflictProblem(ConcurrencyConflictException ex) =>
+        Results.Problem(
+            title: ex.ErrorCode,
+            detail: ex.Message,
+            statusCode: ErrorCodeCatalog.HttpStatusFor(ex.ErrorCode),
+            extensions: new Dictionary<string, object?> { ["currentVersion"] = ex.CurrentVersion });
 }
 
 public sealed record CreateIssueRequest(Guid TeamId, string Title, string? Description, IssuePriority? Priority, Guid? ProjectId, Guid? AssigneeId);
-public sealed record ChangeStatusRequest(Guid WorkflowStateId);
-public sealed record AssignRequest(Guid? AssigneeId);
+public sealed record ChangeStatusRequest(Guid WorkflowStateId, int? ExpectedVersion = null);
+public sealed record AssignRequest(Guid? AssigneeId, int? ExpectedVersion = null);
 public sealed record AddCommentRequest(string Body, Guid? AuthorId = null);
 public sealed record CreateIssueLinkRequest(Guid TargetIssueId, string Type, string? Description = null, Guid? ActorId = null);
 

@@ -74,8 +74,15 @@ class FakeRealtimeBoardSyncService {
 class FakeBoardApiService {
   queryBoardCalls: BoardQuery[] = [];
   getIssueCalls: string[] = [];
+  createIssueCalls: { teamId: string; title: string }[] = [];
+  changeStatusCalls: { issueId: string; workflowStateId: string; expectedVersion?: number }[] = [];
   issues: BoardIssue[] = [boardIssue()];
   nextIssue: Issue = issue({ title: 'Updated title', version: 2 });
+  teams = [{ id: 'team-1', name: 'Team', key: 'TM' }];
+  workflowStates = [
+    { id: 'workflow-state-backlog', key: 'backlog', displayName: 'Backlog', order: 0 },
+    { id: 'workflow-state-todo', key: 'todo', displayName: 'Todo', order: 1 },
+  ];
 
   queryBoard(query: BoardQuery = {}) {
     this.queryBoardCalls.push(query);
@@ -100,7 +107,7 @@ class FakeBoardApiService {
   }
 
   listTeams() {
-    return of([]);
+    return of(this.teams);
   }
 
   listMembers() {
@@ -108,7 +115,7 @@ class FakeBoardApiService {
   }
 
   listWorkflowStates() {
-    return of([]);
+    return of(this.workflowStates);
   }
 
   listProjects() {
@@ -122,6 +129,18 @@ class FakeBoardApiService {
   getIssue(id: string) {
     this.getIssueCalls.push(id);
     return of(this.nextIssue);
+  }
+
+  createIssue(request: { teamId: string; title: string }) {
+    this.createIssueCalls.push(request);
+    return of(
+      issue({ id: 'issue-created', version: 1, workflowStateId: 'workflow-state-backlog' }),
+    );
+  }
+
+  changeStatus(issueId: string, workflowStateId: string, expectedVersion?: number) {
+    this.changeStatusCalls.push({ issueId, workflowStateId, expectedVersion });
+    return of(issue());
   }
 }
 
@@ -150,6 +169,19 @@ describe('BoardPage', () => {
     expect(api.queryBoardCalls.length).toBe(1);
     expect(page.groups().map((group) => group.displayName)).toEqual(['Backlog']);
     expect(page.totalCount()).toBe(1);
+  });
+
+  it('makes the post-create move conditional on the version the create returned', () => {
+    const page = createPage();
+    page.startCreating('workflow-state-todo');
+    page.newIssueTitle.set('Quick create');
+
+    page.submitCreate();
+
+    expect(api.createIssueCalls.length).toBe(1);
+    expect(api.changeStatusCalls).toEqual([
+      { issueId: 'issue-created', workflowStateId: 'workflow-state-todo', expectedVersion: 1 },
+    ]);
   });
 
   it('re-runs the query when a filter changes so the server decides membership', () => {

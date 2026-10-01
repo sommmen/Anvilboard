@@ -126,18 +126,25 @@ public sealed class BoardAgentService(
     [AgentOperation("change-issue-status", "Changes the workflow state of an issue", Category = "issues")]
     [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues)]
     public async Task<AgentResponse<IssueSummary>> ChangeIssueStatusAsync(
-        Guid issueId, Guid workflowStateId, string idempotencyKey, CancellationToken cancellationToken = default)
+        Guid issueId,
+        Guid workflowStateId,
+        string idempotencyKey,
+        int? expectedVersion = null,
+        CancellationToken cancellationToken = default)
     {
-        var summary = await idempotency.ExecuteAsync(
-            "change-issue-status", idempotencyKey, [issueId, workflowStateId],
+        var summary = await AsConflictErrorAsync(() => idempotency.ExecuteAsync(
+            // expectedVersion participates in the request hash: retrying the same key with a
+            // different expected version is a different request, not a replay.
+            "change-issue-status", idempotencyKey, [issueId, workflowStateId, expectedVersion],
             async (actor, ct) =>
             {
                 var id = await scope.RequireIssueAsync(issueId, ct);
                 var targetStateId = await scope.RequireWorkflowStateAsync(workflowStateId, ct);
-                var issue = await issues.ChangeStatusAsync(scope.WorkspaceId, id, targetStateId, actor.MemberId, ct);
+                var issue = await issues.ChangeStatusAsync(
+                    scope.WorkspaceId, id, targetStateId, actor.MemberId, expectedVersion, ct);
                 return IssueSummary.FromIssue(issue);
             },
-            cancellationToken);
+            cancellationToken));
 
         return Ok(summary);
     }
@@ -145,20 +152,43 @@ public sealed class BoardAgentService(
     [AgentOperation("assign-issue", "Assigns (or unassigns, when assigneeId is omitted) an issue", Category = "issues")]
     [RequiresAgentPermission(Permission.ReadWriteIssues, Permission.ReadWriteAssignedIssues)]
     public async Task<AgentResponse<IssueSummary>> AssignIssueAsync(
-        Guid issueId, string idempotencyKey, Guid? assigneeId = null, CancellationToken cancellationToken = default)
+        Guid issueId,
+        string idempotencyKey,
+        Guid? assigneeId = null,
+        int? expectedVersion = null,
+        CancellationToken cancellationToken = default)
     {
-        var summary = await idempotency.ExecuteAsync(
-            "assign-issue", idempotencyKey, [issueId, assigneeId],
+        var summary = await AsConflictErrorAsync(() => idempotency.ExecuteAsync(
+            "assign-issue", idempotencyKey, [issueId, assigneeId, expectedVersion],
             async (actor, ct) =>
             {
                 var id = await scope.RequireIssueAsync(issueId, ct);
                 var assignee = await scope.RequireMemberAsync(assigneeId, ct);
-                var issue = await issues.AssignAsync(scope.WorkspaceId, id, assignee, actor.MemberId, ct);
+                var issue = await issues.AssignAsync(
+                    scope.WorkspaceId, id, assignee, actor.MemberId, expectedVersion, ct);
                 return IssueSummary.FromIssue(issue);
             },
-            cancellationToken);
+            cancellationToken));
 
         return Ok(summary);
+    }
+
+    /// <summary>
+    /// Re-throws a stale-write rejection as an <see cref="AgentRequestException"/> so the CLI/MCP
+    /// surface reports the same <c>CONCURRENCY_CONFLICT</c> code REST does (<c>G3</c>). Without it
+    /// the exception escapes as a bare <see cref="InvalidOperationException"/> and the host renders
+    /// it as an internal error, which would tell an agent to give up rather than refetch and retry.
+    /// </summary>
+    private static async Task<T> AsConflictErrorAsync<T>(Func<Task<T>> operation)
+    {
+        try
+        {
+            return await operation();
+        }
+        catch (ConcurrencyConflictException ex)
+        {
+            throw new AgentRequestException(ex.ErrorCode, ex.Message);
+        }
     }
 
     [AgentOperation("comment-on-issue", "Adds a comment to an issue", Category = "issues")]
@@ -569,6 +599,7 @@ public sealed record IssueSummary(
     string? Description,
     IssueStatus Status,
     Guid WorkflowStateId,
+    int Version,
     IssuePriority Priority,
     Guid? AssigneeId,
     IntegrationProvider Source,
@@ -578,7 +609,7 @@ public sealed record IssueSummary(
 {
     public static IssueSummary FromIssue(Issue issue) => new(
         issue.Id.Value, issue.TeamId.Value, issue.Key, issue.Title, issue.Description,
-        issue.Status, issue.WorkflowStateId.Value, issue.Priority, issue.AssigneeId?.Value, issue.Source,
+        issue.Status, issue.WorkflowStateId.Value, issue.Version, issue.Priority, issue.AssigneeId?.Value, issue.Source,
         issue.CreatedAt, issue.UpdatedAt, issue.CompletedAt);
 }
 

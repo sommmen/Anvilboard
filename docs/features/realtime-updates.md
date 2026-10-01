@@ -9,7 +9,7 @@
 | Component | realtime-updates |
 | Priority | P1 |
 | Status | **Implemented** — transport-neutral publisher, coalescing dispatcher, SignalR hub, Angular client, and the approved-plugin-event relay are all in `src/`. |
-| Last verified | 2026-09-12 against commit `e3e03a5` + the documentation-alignment change set — six populated .NET test projects 521 passing, `npm test` 44 passing |
+| Last verified | 2026-09-14 against commit `93e866a` + the documentation-currency update — six populated .NET test projects 581 passing, `npm test` 49 passing |
 | SRS Refs | FR-WRK-014, FR-INT-006, NFR-PERF-002 |
 | Tech Design Ref | §8.1 Component Overview; §9 API Design; §12 Performance Design |
 | Depends On | workspace-authorization, issue-board-service |

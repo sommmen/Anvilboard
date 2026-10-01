@@ -25,6 +25,9 @@
           </button>
         }
       </div>
+      @if (statusError()) {
+        <p class="panel-error">{{ statusError() }}</p>
+      }
     </div>
 
     <div class="panel-field">

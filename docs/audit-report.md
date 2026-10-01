@@ -1,10 +1,10 @@
 # Documentation Audit Report
 
 > Project: Anvilboard
-> Audited: initial full pass, then re-verified against the code after the backup/restore, realtime, artifact, and agent-authorization work landed
+> Audited: initial full pass, then re-verified 2026-09-14 against the code after audit querying and optimistic concurrency landed
 > Scope: Full — `docs/anvilboard/*`, `docs/features/*`, `docs/plans/*`, `docs/project-anvilboard.md`, `ideas/anvilboard/draft.md`, root-level docs (`README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CHANGELOG.md`, `SPEC.md`, `FUNCTIONAL_SPEC.md`, `PLUGINS.md`)
-> Documents reviewed: 29 Markdown documents in the declared scope
-> Code alignment: Yes — cross-referenced against `src/` (.NET 10 solution, `Anvilboard.slnx`) and `src/anvilboard-web` (Angular). Latest verification: **443 populated .NET tests passing, 0 failing** (Application 257, API 73, Agent 55, Infrastructure 41, GitHub 12, Linear 5), plus a successful Angular production build.
+> Documents reviewed: 35 Markdown documents in the declared scope
+> Code alignment: Yes — cross-referenced against `src/` (.NET 10 solution, `Anvilboard.slnx`) and `src/anvilboard-web` (Angular). Latest verification: **581 populated .NET tests passing, 0 failing** (Application 311, API 132, Agent 80, Infrastructure 41, GitHub 12, Linear 5), plus **49 Angular tests passing across 6 spec files**.
 
 ## Executive Summary
 
@@ -16,7 +16,7 @@ not structure but **currency**: several of the most-read documents (`docs/anvilb
 target-state / pre-implementation documents and were never updated as real code landed. Before this
 audit, `tech-design.md` §16 marked **every** milestone "Not Started" even though M1–M4.5 and parts of
 M5–M6.7 are substantially implemented and covered by passing automated tests across 6 populated
-xUnit test projects (114 at the time of the first pass, **521** as of the latest re-verification);
+xUnit test projects (114 at the time of the first pass, **581** as of the latest re-verification);
 `test-cases.md` claimed there were **zero** automated test projects at all.
 
 The audit updated the doc/implementation-status claims across all 9 feature docs, the
@@ -50,7 +50,7 @@ place.
 | Severity | Count | Categories |
 |----------|-------|------------|
 | Critical |   3   | **All resolved.** audit-and-recovery (backup/restore missing), realtime-updates (entire feature unimplemented), artifacts (no `ArtifactService`) |
-| Major    |  22   | **Open (5)**: MAJ-006 threaded comments, MAJ-009 optimistic concurrency, MAJ-014 outbound plugin events, MAJ-018 audit `QueryAsync`, MAJ-020 artifact lifecycle hooks. **Resolved (17)**: MAJ-001–MAJ-005, MAJ-007, MAJ-008, MAJ-010–MAJ-013, MAJ-015–MAJ-017, MAJ-019, MAJ-021, MAJ-022 |
+| Major    |  22   | **Open (3)**: MAJ-006 threaded comments, MAJ-014 outbound plugin events, MAJ-020 artifact lifecycle hooks. **Resolved (19)**: MAJ-001–MAJ-005, MAJ-007–MAJ-013, MAJ-015–MAJ-019, MAJ-021, MAJ-022 |
 | Minor    |  10   | **Open (2)**: MIN-004 plugin manifest validation, MIN-010 enum casing inconsistent between live enums and `.ToString()`-flattened fields. **Resolved (8)**: MIN-001, MIN-002, MIN-003, MIN-005, MIN-006, MIN-007, MIN-008 (`/api/v1` documented but never implemented), MIN-009 (phantom + missing endpoints in tech-design §9.1) |
 | Info     |   5   | PRD §11/§12 staleness, test-cases.md forward-looking sections, IssueLinkService directional design (positive), doc-structure notes |
 
@@ -105,7 +105,7 @@ place.
 - **Impact**: A core operational-safety requirement (data recovery) is entirely unimplemented; NFR-AVL-001 cannot currently be met or verified.
 - **Fix**: Implement `IBackupService` (or equivalent) with backup creation, integrity verification, and restore, backed by tests; until then, keep `docs/features/audit-and-recovery.md`'s Status row (already added by this audit) marked Partial/Not Started for this capability.
 - **Plan**: [`docs/plans/backup-and-restore.md`](./plans/backup-and-restore.md) — the evidence-backed technical design and dependency-ordered work breakdown. Delivered; see the resolution note above.
-- **Status**: **Resolved.** Production code, tests, and the recovery drill are complete. The residual gap in `audit-and-recovery.md` is now `FR-OPS-001` (audit *query* access), which is a separate requirement and is not covered by this finding.
+- **Status**: **Resolved.** Production code, tests, and the recovery drill are complete. FR-OPS-001 audit-query access was a separate requirement and has since been delivered under MAJ-018.
 
 ### CRIT-002: Realtime updates (FR-WRK-014) — entire feature unimplemented — **RESOLVED**
 
@@ -234,10 +234,21 @@ place.
 - **Impact**: Users cannot see the audit trail for an issue from the UI, even though the data exists.
 - **Fix**: Add an activity feed panel to the issue-detail view consuming existing `ActivityEvent` data.
 
-### MAJ-009: Optimistic concurrency (`Issue.Version`) only partially enforced
+### MAJ-009: Optimistic concurrency (`Issue.Version`) only partially enforced — **RESOLVED**
+
+> **Resolved.** `ChangeStatusAsync` and `AssignAsync` accept an optional `expectedVersion` and
+> reject a stale write with `CONCURRENCY_CONFLICT` (409), carrying `currentVersion` so the caller
+> can refetch and retry. The check runs immediately after the load — before transition validation
+> and before the same-state no-op short circuit — so a stale caller cannot succeed vacuously.
+> `CreateAsync` now seeds `Version = 1`. REST, CLI/MCP, and the web client all pass the version they
+> read; a reflection test (`IssueMutationContractTests`) fails the build if a future field-level
+> mutation is added without the parameter. Adding a comment and the external-ingestion upsert are
+> deliberately exempt. See
+> [`docs/plans/optimistic-concurrency-enforcement.md`](./plans/optimistic-concurrency-enforcement.md).
+
 - **Location**: `docs/features/issue-board-service.md`
 - **Issue**: `Issue.Version` exists as a concurrency token, but not all mutation paths validate/increment it consistently (some code paths bypass the check).
-- **Evidence**: Version-check logic present in some but not all issue-mutation service methods (verified by direct inspection during the earlier agent pass).
+- **Evidence (corrected)**: The original evidence said the check was "present in some but not all" methods. It was present in **none** — `Version` was incremented at three sites and compared at zero, so `CONCURRENCY_CONFLICT` had a catalog entry and no production throw site.
 - **Impact**: Conflicting concurrent edits may silently overwrite each other on the paths that skip the check, contradicting the PRD's "conflicting edits show what changed" requirement (US-HUM-003).
 - **Fix**: Audit all issue-mutation entry points for consistent version-check enforcement.
 
@@ -337,12 +348,14 @@ place.
 > intentionally deferred until a second contract version exists, and REST body-envelope migration
 > remains explicit M4 follow-up work.
 
-### MAJ-018: FR-OPS-001 partial — no generic `QueryAsync` for audit history
-- **Location**: `docs/features/audit-and-recovery.md`; `docs/anvilboard/srs.md` FR-OPS-001
-- **Issue**: Audit events are recorded, but the spec's generic query capability (filter audit history by actor/time/entity/type) does not have a corresponding `QueryAsync`-style API; only narrow, purpose-specific lookups exist.
-- **Evidence**: `IAuditService`-equivalent type inspection shows write-path methods but no flexible query method matching the spec's filter surface.
-- **Impact**: Administrators/compliance reviewers cannot query the audit trail with the flexibility the spec promises.
-- **Fix**: Add a generic, filterable audit-query method and corresponding REST/CLI surface.
+### MAJ-018: FR-OPS-001 partial — no generic audit-history query — **RESOLVED**
+
+> **Resolved** by [`docs/plans/audit-query-surface.md`](./plans/audit-query-surface.md).
+> `IAuditQueryService.QueryAsync` now provides workspace-first filtering by actor, time, target,
+> action, and channel with bounded cursor pagination. `GET /api/audit-events` and the agent
+> `list-audit-events` operation derive the workspace from authenticated scope and require
+> `Permission.ReadAudit`. Application, API, and agent tests cover the query contract and access
+> boundary.
 
 ### MAJ-019: NFR-AVL-001 (availability/recovery objective) not met — **RESOLVED**
 
@@ -495,7 +508,7 @@ place.
 - **Issue**: Five classes of drift accumulated after the backup/restore, artifact, realtime, and agent-authorization work landed:
   1. **Stale status claims** — `workspace-authorization.md` and tech-design §16's M1 row still said CLI/MCP enforcement was outstanding after MAJ-001/MAJ-015 shipped; `docs/plans/backup-and-restore.md` still read `Status | Plan — not yet implemented` after CRIT-001/MAJ-019 were resolved.
   2. **Wrong finding IDs** — three documents cited **MAJ-021** (the resolved bootstrap-seeding finding) where they meant **MAJ-022** (the open REST/application workspace-query scoping gap), making a resolved finding look open and an open finding look absent.
-  3. **Stale test counts** — docs cited a 114- or 189-test suite; the figure at the time of this fix was **394 populated .NET tests**, across 43 source test files, plus a successful Angular production build. (The suite has since grown to **443**; see the header callout for the current figure.)
+  3. **Stale test counts** — docs cited a 114- or 189-test suite; the figure at the time of this fix was **394 populated .NET tests**, across 43 source test files, plus a successful Angular production build. (The suite has since grown to **581**; see the header callout for the current figure.)
   4. **Understated coverage** — `DEVELOPMENT.md` described `Api.Tests` and `Agent.Tests` far more narrowly than their actual contents, and claimed "the agent surface … still has no automated coverage"; `CONTRIBUTING.md` told contributors "there's no automated test suite yet".
   5. **Stale gap lists** — `test-cases.md` §1.3/§6 still listed backup/restore as untestable "because no backup/restore service exists".
 - **Evidence**: Individual runs of the six populated .NET test projects → 394 passing / 0 failing (Application 221, Infrastructure 41, Agent 52, API 63, GitHub 12, Linear 5); `npm test -- --watch=false` in `src/anvilboard-web` → 21 passing across 3 spec files; `npm run build` → successful production bundle; direct inspection of `src/Anvilboard.Application/Backup/` (12 files including `BackupService.cs`, `RestoreCoordinator.cs`) and the 20 `[RequiresAgentPermission]` operations on `BoardAgentService`.
@@ -595,7 +608,7 @@ place.
 
 ### INFO-002: `test-cases.md` forward-looking sections (§2 Test Strategy/Pyramid, §3–5 planned `TC-*` test case tables, §7 Statistics) were left as target-state content
 - **Location**: `docs/anvilboard/test-cases.md` §2 onward
-- **Note**: These sections describe a target test-coverage strategy and a catalog of planned test cases (`TC-AUTH-*`, `TC-WF-*`, etc.) rather than claims about current-state coverage, so they were left in place. Only the current-state claims (header callout, §1.1–1.3 tables, §6 Gap Analysis's "no test projects" line) were corrected to reflect the real passing test suite (114 at the time of the first pass, 443 as of the latest re-verification).
+- **Note**: These sections describe a target test-coverage strategy and a catalog of planned test cases (`TC-AUTH-*`, `TC-WF-*`, etc.) rather than claims about current-state coverage, so they were left in place. Only the current-state claims (header callout, §1.1–1.3 tables, §6 Gap Analysis's "no test projects" line) were corrected to reflect the real passing test suite (114 at the time of the first pass, 581 as of the latest re-verification).
 
 ### INFO-003: `IssueLinkService` directional/zero-cascade design is a positive finding, not a gap
 - **Location**: `docs/features/issue-linking.md`
@@ -653,7 +666,7 @@ graph TD
 
 ## Recommended Priority Actions
 
-1. ~~**Implement backup/restore (`IBackupService`) and verify NFR-AVL-001**~~ — CRIT-001 and MAJ-019 done; `FR-OPS-001` audit query access (MAJ-018) still open — large
+1. ~~**Implement backup/restore (`IBackupService`) and verify NFR-AVL-001, then expose permission-gated audit queries**~~ — CRIT-001, MAJ-018, and MAJ-019 done; FR-OPS-001 and FR-OPS-002 are implemented — done: [`docs/plans/backup-and-restore.md`](./plans/backup-and-restore.md), [`docs/plans/audit-query-surface.md`](./plans/audit-query-surface.md)
 2. ~~**Build the realtime-updates push layer (SignalR/WebSocket) and outbound plugin event relay**~~ — CRIT-002 done; MAJ-014 (core → plugin dispatch) still open — medium
 3. ~~**Implement `ArtifactService` with upsert/refresh semantics and lifecycle-hook artifact expansion**~~ — CRIT-003 and MIN-006 done, MAJ-020 audit emission done; MAJ-020's `IIssueHook` artifact-expansion path still open — medium
 4. ~~**Extend workspace authorization enforcement to CLI/MCP and add admin credential revocation**~~ — MAJ-001 closed; MAJ-002 was already implemented and is corrected above — done. ~~**Residual:** enforce authenticated-workspace predicates throughout REST/application reads and mutations (MAJ-022).~~ — MAJ-022 closed; REST and CLI/MCP now enforce the same workspace boundary.
@@ -661,7 +674,7 @@ graph TD
 6. ~~**Wire agent-surface authorization, idempotency, and an `apiVersion` contract field**~~ — MAJ-015, MAJ-016, and MAJ-017 closed with SQLite-backed integration coverage — done
 7. ~~**Add sync-health/backoff tracking and enforce paused-integration webhook rejection**~~ — MAJ-012 and MAJ-013 closed with the `IntegrationHealth` table, a single sync-condition derivation reused by the board filter and dashboard, categorized exponential backoff honouring `Retry-After`, paused-webhook rejection after signature verification, and REST plus agent read surfaces — done: [`docs/plans/integration-sync-health.md`](./plans/integration-sync-health.md)
 8. ~~**Close remaining UI/UX gaps (board filter parity, issue-detail activity feed, link-update endpoint)**~~ — MAJ-007, MAJ-008, MAJ-010, and MAJ-011 closed with `GET /api/board` wiring the orphaned `IBoardQueryService` to REST and agent callers, cursor-paged activity and comment read paths, `PATCH …/links/{linkId}`, a server-owned link-type vocabulary, and the Angular filter stack plus activity feed — done: [`docs/plans/board-experience-parity.md`](./plans/board-experience-parity.md)
-9. **Add a generic filterable audit-query method (`QueryAsync`-equivalent)** — fixes MAJ-018 — small
+9. ~~**Add a generic filterable audit-query method (`QueryAsync`-equivalent)**~~ — MAJ-018 closed with workspace-scoped REST and agent access — done: [`docs/plans/audit-query-surface.md`](./plans/audit-query-surface.md)
 10. ~~**Reword the README Kanban-column description and add missing agent tools to the documented catalog**~~ — MIN-001 and MIN-005 both closed during the documentation-currency pass (see MIN-007) — done
 11. **Decide the wire casing for `.ToString()`-flattened enum fields** — fixes MIN-010 — small, but a
     breaking contract change either way. Today activity `type`, board `priority`/`provider`, and the

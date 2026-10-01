@@ -16,6 +16,16 @@ import { ActivityFeed } from '../activity-feed/activity-feed';
 
 const ACTIVITY_PAGE_SIZE = 20;
 
+/**
+ * A stale conditional write comes back as an RFC 7807 problem whose `title` is the server's stable
+ * error code. Matching on the code rather than the bare 409 keeps this from also swallowing the
+ * workflow-transition denial that shares the status.
+ */
+function isConcurrencyConflict(error: unknown): boolean {
+  const response = error as { status?: number; error?: { title?: string } } | null;
+  return response?.status === 409 && response?.error?.title === 'CONCURRENCY_CONFLICT';
+}
+
 @Component({
   imports: [ActivityFeed],
   selector: 'app-issue-detail',
@@ -37,6 +47,9 @@ export class IssueDetail {
 
   /** Server-owned vocabulary; empty until it loads, which only costs the datalist its suggestions. */
   readonly suggestedLinkTypes = signal<string[]>([]);
+
+  /** Set when a status change was rejected because the panel was rendering a stale version. */
+  readonly statusError = signal('');
 
   readonly comments = signal<Comment[]>([]);
   readonly commentsLoading = signal(false);
@@ -83,8 +96,26 @@ export class IssueDetail {
     });
   }
 
+  /**
+   * Conditional on the version the panel is currently rendering. If someone else moved the issue
+   * while this panel was open, the server rejects the write with 409 rather than silently
+   * discarding their change, and we tell the user to look at the refreshed board.
+   */
   changeStatus(workflowStateId: string): void {
-    this.api.changeStatus(this.issue().id, workflowStateId).subscribe(() => this.changed.emit());
+    this.statusError.set('');
+    this.api.changeStatus(this.issue().id, workflowStateId, this.issue().version).subscribe({
+      next: () => this.changed.emit(),
+      error: (error: unknown) => {
+        if (isConcurrencyConflict(error)) {
+          this.statusError.set(
+            'This issue changed while you were viewing it. The board has been refreshed — try again.',
+          );
+        }
+        // Refresh either way: on conflict to pick up the winning write, otherwise so the panel
+        // does not keep showing a state the server rejected.
+        this.changed.emit();
+      },
+    });
   }
 
   /**
