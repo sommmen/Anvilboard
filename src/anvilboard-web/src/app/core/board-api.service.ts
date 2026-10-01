@@ -78,12 +78,22 @@ export class BoardApiService {
    * `CONCURRENCY_CONFLICT` when the issue moved since it was rendered, instead of silently
    * overwriting whatever a concurrent writer did. Omit it to keep last-writer-wins.
    */
-  changeStatus(issueId: string, workflowStateId: string, expectedVersion?: number): Observable<Issue> {
-    return this.http.patch<Issue>(`/api/issues/${issueId}/status`, { workflowStateId, expectedVersion });
+  changeStatus(
+    issueId: string,
+    workflowStateId: string,
+    expectedVersion?: number,
+  ): Observable<Issue> {
+    return this.http.patch<Issue>(`/api/issues/${issueId}/status`, {
+      workflowStateId,
+      expectedVersion,
+    });
   }
 
   assign(issueId: string, assigneeId: string | null, expectedVersion?: number): Observable<Issue> {
-    return this.http.patch<Issue>(`/api/issues/${issueId}/assignee`, { assigneeId, expectedVersion });
+    return this.http.patch<Issue>(`/api/issues/${issueId}/assignee`, {
+      assigneeId,
+      expectedVersion,
+    });
   }
 
   addComment(issueId: string, body: string, authorId?: string): Observable<Comment> {

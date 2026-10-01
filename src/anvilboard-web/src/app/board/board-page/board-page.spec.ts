@@ -133,7 +133,9 @@ class FakeBoardApiService {
 
   createIssue(request: { teamId: string; title: string }) {
     this.createIssueCalls.push(request);
-    return of(issue({ id: 'issue-created', version: 1, workflowStateId: 'workflow-state-backlog' }));
+    return of(
+      issue({ id: 'issue-created', version: 1, workflowStateId: 'workflow-state-backlog' }),
+    );
   }
 
   changeStatus(issueId: string, workflowStateId: string, expectedVersion?: number) {
