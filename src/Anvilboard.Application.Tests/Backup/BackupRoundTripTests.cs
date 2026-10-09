@@ -38,7 +38,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
     private string _backupDirectory = null!;
     private AnvilboardDbOptions _dbOptions = null!;
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         _databasePath = Path.Combine(Path.GetTempPath(), $"anvilboard-roundtrip-{Guid.NewGuid():N}.db");
         _backupDirectory = Path.Combine(Path.GetTempPath(), $"anvilboard-roundtrip-backups-{Guid.NewGuid():N}");
@@ -49,10 +49,10 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
             Pooling = false,
         }.ToString();
         _dbOptions = new AnvilboardDbOptions { DatabasePath = _databasePath, BackupDirectory = _backupDirectory };
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         SqliteConnection.ClearAllPools();
         TryDelete(_databasePath);
@@ -70,7 +70,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
             }
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]
