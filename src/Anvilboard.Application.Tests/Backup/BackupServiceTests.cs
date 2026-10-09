@@ -34,7 +34,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
     public FakeSnapshotArchiver Archiver { get; } = new();
     public RestoreCoordinator Coordinator { get; } = new();
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _databasePath = Path.Combine(Path.GetTempPath(), $"anvilboard-backupsvc-{Guid.NewGuid():N}.db");
         _connectionString = new SqliteConnectionStringBuilder
@@ -58,7 +58,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         await _db.SaveChangesAsync();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         await _db.DisposeAsync();
         SqliteConnection.ClearAllPools();
