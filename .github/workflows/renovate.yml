@@ -5,11 +5,25 @@ on:
     branches:
       - "main"
     paths:
+      # Configuration: re-run so config changes take effect immediately.
+      - "renovate.json"
       - "renovate-config.json"
       - ".github/workflows/renovate.yml"
+      # Shared dependency manifests: a merge here puts every other open
+      # dependency PR one commit behind main. Re-running lets Renovate rebase
+      # them right away instead of leaving them conflicted until the next cron.
+      - "**/package-lock.json"
+      - "**/dotnet-tools.json"
   workflow_dispatch: # Allow running the workflow manually from the GitHub UI
   schedule:
     - cron: "0 8 * * *"
+
+# Renovate mutates branches, so overlapping runs can race. Queue a follow-up run
+# instead of cancelling: the in-progress run may predate the merge that triggered
+# this one, so cancelling it could drop the rebase we want.
+concurrency:
+  group: renovate
+  cancel-in-progress: false
 
 permissions:
   contents: read

@@ -20,6 +20,33 @@
         "/^[Rr]enovatebot/github-action/"
       ],
       "automerge": true
+    },
+    {
+      "description": "Test-only infrastructure ships nothing to production, so a bad version can only turn the required 'Build and Test (.NET)' check red, which already blocks the merge. That makes these self-policing, so all update types automerge including majors. Microsoft.AspNetCore.Mvc.Testing and EntityFrameworkCore.InMemory are deliberately NOT listed: although test-only, they belong to the 'dotnet monorepo' group that bumps the whole .NET runtime in lockstep, and matching one member would leak automerge onto that framework-wide PR.",
+      "matchManagers": [
+        "nuget"
+      ],
+      "matchDepNames": [
+        "/^[Xx]unit/",
+        "/^[Mm]icrosoft\\.NET\\.Test\\./",
+        "/^[Mm]icrosoft\\.Testing\\./",
+        "/^[Nn]Substitute/",
+        "/^[Aa]utoFixture/",
+        "/^[Cc]overlet/"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "Build-time only: analyzers, polyfill source generators, SourceLink and reproducible-build SDKs emit nothing at runtime, so a bad version fails the build rather than reaching production.",
+      "matchManagers": [
+        "nuget"
+      ],
+      "matchDepNames": [
+        "/^[Dd]ot[Nn]et\\.ReproducibleBuilds/",
+        "/^[Mm]icrosoft\\.SourceLink\\./",
+        "/^[Pp]olySharp$/"
+      ],
+      "automerge": true
     }
   ]
 }
