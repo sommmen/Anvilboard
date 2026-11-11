@@ -47,6 +47,46 @@
         "/^[Pp]olySharp$/"
       ],
       "automerge": true
+    },
+    {
+      "description": "Front-end tooling that never reaches the shipped bundle: Prettier only formats source, so a bad version cannot change runtime behaviour.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchDepNames": [
+        "/^prettier$/"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "tslib supplies the TypeScript emit helpers. Both TypeScript (~6.0.2) and @angular/core (22.x) depend on it with a wide '^2.3.0' range, so a 2.x bump cannot break that contract, and any incompatibility would be a compile error in the required 'Build and Test (Angular)' check. Majors are excluded because a tslib 3.x would be exactly the case where those ranges stop being satisfied.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchDepNames": [
+        "/^tslib$/"
+      ],
+      "automerge": true,
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ]
+    },
+    {
+      "description": "Test-only front-end tooling: jsdom provides the test DOM and vitest runs the suite, so a bad version only turns the required 'Build and Test (Angular)' check red. Majors stay manual because jsdom majors drop Node versions and the vitest v5 major was rejected by hand in #38.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchDepNames": [
+        "/^jsdom$/",
+        "/^vitest$/",
+        "/^@vitest\\//"
+      ],
+      "automerge": true,
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ]
     }
   ]
 }
