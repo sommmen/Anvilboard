@@ -20,7 +20,7 @@ public sealed class IntegrationHealthEndpointTests
         var workspaceId = await factory.GetWorkspaceIdAsync("test-workspace");
         await factory.SeedIntegrationAsync(workspaceId, IntegrationProvider.GitHub, IntegrationStatus.Enabled);
 
-        var response = await client.GetAsync("/api/integrations/health");
+        var response = await client.GetAsync("/api/integrations/health", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var entry = Assert.Single(await ReadHealthAsync(response));
@@ -42,7 +42,7 @@ public sealed class IntegrationHealthEndpointTests
         var workspaceId = await factory.GetWorkspaceIdAsync("test-workspace");
         await factory.SeedIntegrationAsync(workspaceId, IntegrationProvider.GitHub, IntegrationStatus.Paused);
 
-        var response = await client.GetAsync("/api/integrations/health");
+        var response = await client.GetAsync("/api/integrations/health", TestContext.Current.CancellationToken);
 
         Assert.Equal(SyncCondition.Paused, Assert.Single(await ReadHealthAsync(response)).Condition);
     }
@@ -56,7 +56,7 @@ public sealed class IntegrationHealthEndpointTests
         var workspaceId = await factory.GetWorkspaceIdAsync("test-workspace");
         await factory.SeedIntegrationAsync(workspaceId, IntegrationProvider.GitHub, IntegrationStatus.Removed);
 
-        var response = await client.GetAsync("/api/integrations/health");
+        var response = await client.GetAsync("/api/integrations/health", TestContext.Current.CancellationToken);
 
         Assert.Empty(await ReadHealthAsync(response));
     }
@@ -72,7 +72,7 @@ public sealed class IntegrationHealthEndpointTests
         var otherWorkspaceId = await factory.SeedAdditionalWorkspaceAsync("workspace-b", "admin-b");
         await factory.SeedIntegrationAsync(otherWorkspaceId, IntegrationProvider.GitHub, IntegrationStatus.Enabled);
 
-        var response = await client.GetAsync("/api/integrations/health");
+        var response = await client.GetAsync("/api/integrations/health", TestContext.Current.CancellationToken);
 
         Assert.Empty(await ReadHealthAsync(response));
     }
@@ -85,7 +85,7 @@ public sealed class IntegrationHealthEndpointTests
         await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
 
         using var anonymous = factory.CreateClient();
-        var response = await anonymous.GetAsync("/api/integrations/health");
+        var response = await anonymous.GetAsync("/api/integrations/health", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }

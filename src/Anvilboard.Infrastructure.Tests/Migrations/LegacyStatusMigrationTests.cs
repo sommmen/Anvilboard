@@ -22,9 +22,9 @@ public sealed class LegacyStatusMigrationTests
                 .Options;
             await using (var db = new AnvilboardDbContext(options))
             {
-                await db.Database.MigrateAsync();
+                await db.Database.MigrateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
-                var states = await db.WorkflowStates.OrderBy(state => state.Order).ToListAsync();
+                var states = await db.WorkflowStates.OrderBy(state => state.Order).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
                 Assert.Collection(
                     states,
                     state => AssertState(state, "backlog", "Backlog", 0, false),
@@ -35,16 +35,16 @@ public sealed class LegacyStatusMigrationTests
                     state => AssertState(state, "cancelled", "Cancelled", 5, true));
 
                 var expectedKeys = new[] { "backlog", "todo", "in_progress", "in_review", "done", "cancelled" };
-                var issues = await db.Issues.OrderBy(issue => issue.Status).ToListAsync();
+                var issues = await db.Issues.OrderBy(issue => issue.Status).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
                 Assert.Equal(expectedKeys.Length, issues.Count);
                 foreach (var issue in issues)
                 {
-                    Assert.NotNull(issue.WorkflowStateId);
+                    Assert.NotEqual(default, issue.WorkflowStateId);
                     Assert.Equal(expectedKeys[(int)issue.Status],
                         states.Single(state => state.Id == issue.WorkflowStateId).Key);
                 }
 
-                Assert.Equal(9, await db.WorkflowTransitions.CountAsync());
+                Assert.Equal(9, await db.WorkflowTransitions.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
             }
         }
         finally

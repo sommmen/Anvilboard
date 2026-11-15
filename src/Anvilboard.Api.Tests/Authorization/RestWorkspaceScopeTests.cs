@@ -20,7 +20,7 @@ public sealed class RestWorkspaceScopeTests
     {
         await using var fixture = await ScopeFixture.CreateAsync();
 
-        var id = await fixture.Scope.RequireTeamAsync(fixture.TeamId.Value);
+        var id = await fixture.Scope.RequireTeamAsync(fixture.TeamId.Value, TestContext.Current.CancellationToken);
 
         Assert.Equal(fixture.TeamId, id);
     }
@@ -31,7 +31,7 @@ public sealed class RestWorkspaceScopeTests
         await using var fixture = await ScopeFixture.CreateAsync();
 
         await Assert.ThrowsAsync<WorkspaceScopeDeniedException>(
-            () => fixture.Scope.RequireTeamAsync(fixture.ForeignTeamId.Value));
+            () => fixture.Scope.RequireTeamAsync(fixture.ForeignTeamId.Value, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class RestWorkspaceScopeTests
         await using var fixture = await ScopeFixture.CreateAsync();
 
         await Assert.ThrowsAsync<WorkspaceScopeDeniedException>(
-            () => fixture.Scope.RequireTeamAsync(Guid.NewGuid()));
+            () => fixture.Scope.RequireTeamAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public sealed class RestWorkspaceScopeTests
     {
         await using var fixture = await ScopeFixture.CreateAsync();
 
-        var id = await fixture.Scope.RequireIssueAsync(fixture.IssueId.Value);
+        var id = await fixture.Scope.RequireIssueAsync(fixture.IssueId.Value, TestContext.Current.CancellationToken);
 
         Assert.Equal(fixture.IssueId, id);
     }
@@ -59,7 +59,7 @@ public sealed class RestWorkspaceScopeTests
         await using var fixture = await ScopeFixture.CreateAsync();
 
         await Assert.ThrowsAsync<WorkspaceScopeDeniedException>(
-            () => fixture.Scope.RequireIssueAsync(fixture.ForeignIssueId.Value));
+            () => fixture.Scope.RequireIssueAsync(fixture.ForeignIssueId.Value, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public sealed class RestWorkspaceScopeTests
         await using var fixture = await ScopeFixture.CreateAsync();
 
         await Assert.ThrowsAsync<WorkspaceScopeDeniedException>(
-            () => fixture.Scope.RequireIssueAsync(Guid.NewGuid()));
+            () => fixture.Scope.RequireIssueAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class RestWorkspaceScopeTests
     {
         await using var fixture = await ScopeFixture.CreateAsync();
 
-        Assert.Null(await fixture.Scope.RequireMemberAsync(null));
+        Assert.Null(await fixture.Scope.RequireMemberAsync(null, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public sealed class RestWorkspaceScopeTests
         await using var fixture = await ScopeFixture.CreateAsync();
 
         await Assert.ThrowsAsync<WorkspaceScopeDeniedException>(
-            () => fixture.Scope.RequireMemberAsync(fixture.ForeignMemberId.Value));
+            () => fixture.Scope.RequireMemberAsync(fixture.ForeignMemberId.Value, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class RestWorkspaceScopeTests
     {
         await using var fixture = await ScopeFixture.CreateAsync();
 
-        Assert.Equal(fixture.MemberId, await fixture.Scope.RequireMemberAsync(fixture.MemberId.Value));
+        Assert.Equal(fixture.MemberId, await fixture.Scope.RequireMemberAsync(fixture.MemberId.Value, TestContext.Current.CancellationToken));
     }
 
     [Fact]

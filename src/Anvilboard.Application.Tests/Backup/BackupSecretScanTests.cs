@@ -79,7 +79,7 @@ public sealed class BackupSecretScanTests : IAsyncLifetime
         BackupManifest manifest;
         await using (var db = CreateContext())
         {
-            manifest = await CreateService(db).CreateBackupAsync(workspaceId, operation);
+            manifest = await CreateService(db).CreateBackupAsync(workspaceId, operation, TestContext.Current.CancellationToken);
         }
 
         // A failed restore (wrong-case confirmation is rejected before any artifact I/O) adds the
@@ -87,10 +87,10 @@ public sealed class BackupSecretScanTests : IAsyncLifetime
         await using (var db = CreateContext())
         {
             await Assert.ThrowsAsync<BackupOperationException>(() => CreateService(db).RestoreAsync(
-                workspaceId, new BackupArtifactRef(manifest.BackupId), WorkspaceSlug.ToUpperInvariant(), operation));
+                workspaceId, new BackupArtifactRef(manifest.BackupId), WorkspaceSlug.ToUpperInvariant(), operation, TestContext.Current.CancellationToken));
         }
 
-        var manifestJson = await File.ReadAllTextAsync(ManifestPathFor(manifest.BackupId));
+        var manifestJson = await File.ReadAllTextAsync(ManifestPathFor(manifest.BackupId), TestContext.Current.CancellationToken);
 
         // Negative control: prove the scan below can actually fail. Without this, a future change
         // that stops the manifest/summaries from carrying any content at all would leave the
@@ -107,7 +107,7 @@ public sealed class BackupSecretScanTests : IAsyncLifetime
             var summaries = await db.AuditEvents
                 .Where(e => e.Action.StartsWith("workspace.backup.") || e.Action.StartsWith("workspace.restore."))
                 .Select(e => new { e.Action, e.ResultSummary })
-                .ToListAsync();
+                .ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.NotEmpty(summaries);
             foreach (var entry in summaries)

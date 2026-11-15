@@ -49,7 +49,7 @@ From the repo root:
 dotnet build Anvilboard.slnx
 ```
 
-NuGet package versions are managed centrally in `Directory.Packages.props`; the shared target framework and nullable/implicit-usings settings live in `Directory.Build.props`, so `.csproj` files carry no package versions.
+NuGet package versions are managed centrally in `Directory.Packages.props`; the shared target framework and nullable/implicit-usings settings live in `Directory.Build.props`, so `.csproj` files carry no package versions. Warnings are errors (`TreatWarningsAsErrors` in `Directory.Build.props`), including NuGet vulnerability audit warnings (NU1902/NU1903) — fix the cause rather than suppressing it.
 
 This builds all eight projects, including `Anvilboard.Agent` (so `dotnet-agent-surface` must be
 present as described above). To build everything except the agent surface (e.g. if you don't have

@@ -15,7 +15,7 @@ public sealed class IdempotencyServiceTests
         var service = fixture.CreateService();
 
         var result = await service.TryBeginAsync(
-            fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-1");
+            fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-1", TestContext.Current.CancellationToken);
 
         Assert.Equal(IdempotencyOutcome.New, result.Outcome);
         Assert.Null(result.StoredResultPayload);
@@ -31,10 +31,10 @@ public sealed class IdempotencyServiceTests
 
         await service.CommitAsync(
             fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-1",
-            """{"id":"abc"}""", IdempotencyService.DefaultRetention);
+            """{"id":"abc"}""", IdempotencyService.DefaultRetention, TestContext.Current.CancellationToken);
 
         var result = await service.TryBeginAsync(
-            fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-1");
+            fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-1", TestContext.Current.CancellationToken);
 
         Assert.Equal(IdempotencyOutcome.ReplayOriginal, result.Outcome);
         Assert.Equal("""{"id":"abc"}""", result.StoredResultPayload);
@@ -49,10 +49,10 @@ public sealed class IdempotencyServiceTests
 
         await service.CommitAsync(
             fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-1",
-            """{"id":"abc"}""", IdempotencyService.DefaultRetention);
+            """{"id":"abc"}""", IdempotencyService.DefaultRetention, TestContext.Current.CancellationToken);
 
         var result = await service.TryBeginAsync(
-            fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-2");
+            fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-2", TestContext.Current.CancellationToken);
 
         Assert.Equal(IdempotencyOutcome.KeyReusedWithDifferentPayload, result.Outcome);
         Assert.Null(result.StoredResultPayload);
@@ -68,10 +68,10 @@ public sealed class IdempotencyServiceTests
 
         await service.CommitAsync(
             fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-1",
-            """{"id":"abc"}""", IdempotencyService.DefaultRetention);
+            """{"id":"abc"}""", IdempotencyService.DefaultRetention, TestContext.Current.CancellationToken);
 
         var result = await service.TryBeginAsync(
-            fixture.WorkspaceId, "actor-2", "issues.create", "key-1", "hash-1");
+            fixture.WorkspaceId, "actor-2", "issues.create", "key-1", "hash-1", TestContext.Current.CancellationToken);
 
         Assert.Equal(IdempotencyOutcome.New, result.Outcome);
     }
@@ -84,10 +84,10 @@ public sealed class IdempotencyServiceTests
 
         await service.CommitAsync(
             fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-1",
-            """{"id":"abc"}""", IdempotencyService.DefaultRetention);
+            """{"id":"abc"}""", IdempotencyService.DefaultRetention, TestContext.Current.CancellationToken);
 
         var result = await service.TryBeginAsync(
-            fixture.WorkspaceId, "actor-1", "issues.transition", "key-1", "hash-1");
+            fixture.WorkspaceId, "actor-1", "issues.transition", "key-1", "hash-1", TestContext.Current.CancellationToken);
 
         Assert.Equal(IdempotencyOutcome.New, result.Outcome);
     }
@@ -102,10 +102,10 @@ public sealed class IdempotencyServiceTests
         var before = DateTimeOffset.UtcNow;
         await service.CommitAsync(
             fixture.WorkspaceId, "actor-1", "issues.create", "key-1", "hash-1",
-            """{"id":"abc"}""", retention);
+            """{"id":"abc"}""", retention, TestContext.Current.CancellationToken);
         var after = DateTimeOffset.UtcNow;
 
-        var record = await fixture.Db.IdempotencyRecords.AsNoTracking().SingleAsync();
+        var record = await fixture.Db.IdempotencyRecords.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(fixture.WorkspaceId, record.WorkspaceId);
         Assert.Equal("actor-1", record.ActorId);
         Assert.Equal("issues.create", record.Operation);

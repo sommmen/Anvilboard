@@ -14,7 +14,7 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
 
-        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", "same parent");
+        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", "same parent", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(fixture.IssueA.Id.Value, link.SourceIssueId);
         Assert.Equal(fixture.IssueB.Id.Value, link.TargetIssueId);
@@ -22,11 +22,11 @@ public sealed class IssueLinkServiceTests
         Assert.Equal("same parent", link.Description);
         Assert.Equal(IssueLinkDirection.Outgoing, link.Direction);
 
-        var stored = await fixture.Db.IssueLinks.SingleAsync();
+        var stored = await fixture.Db.IssueLinks.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(fixture.IssueA.Id, stored.SourceIssueId);
         Assert.Equal(fixture.IssueB.Id, stored.TargetIssueId);
 
-        var activity = await fixture.Db.ActivityEvents.SingleAsync();
+        var activity = await fixture.Db.ActivityEvents.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ActivityEventType.IssueLinkCreated, activity.Type);
         Assert.Equal(fixture.IssueA.Id, activity.IssueId);
     }
@@ -37,7 +37,7 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
 
-        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "CUSTOM_TYPE");
+        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "CUSTOM_TYPE", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("CUSTOM_TYPE", link.Type);
     }
@@ -48,7 +48,7 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
 
-        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "PARENT");
+        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "PARENT", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(string.Empty, link.Description);
     }
@@ -60,7 +60,7 @@ public sealed class IssueLinkServiceTests
         var service = new IssueLinkService(fixture.Db);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueA.Id, "RELATED"));
+            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueA.Id, "RELATED", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -72,7 +72,7 @@ public sealed class IssueLinkServiceTests
         var service = new IssueLinkService(fixture.Db);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "   "));
+            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "   ", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -84,7 +84,7 @@ public sealed class IssueLinkServiceTests
         var service = new IssueLinkService(fixture.Db);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, IssueId.New(), "RELATED"));
+            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, IssueId.New(), "RELATED", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -96,7 +96,7 @@ public sealed class IssueLinkServiceTests
         var service = new IssueLinkService(fixture.Db);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueOtherWorkspace.Id, "RELATED"));
+            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueOtherWorkspace.Id, "RELATED", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -113,10 +113,10 @@ public sealed class IssueLinkServiceTests
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
             () => service.CreateLinkAsync(
-                fixture.WorkspaceId, fixture.IssueOtherWorkspace.Id, foreignTarget.Id, "RELATED"));
+                fixture.WorkspaceId, fixture.IssueOtherWorkspace.Id, foreignTarget.Id, "RELATED", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
-        Assert.Empty(await fixture.Db.IssueLinks.AsNoTracking().ToListAsync());
+        Assert.Empty(await fixture.Db.IssueLinks.AsNoTracking().ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class IssueLinkServiceTests
         var service = new IssueLinkService(fixture.Db);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.ListLinksAsync(fixture.WorkspaceId, fixture.IssueOtherWorkspace.Id));
+            () => service.ListLinksAsync(fixture.WorkspaceId, fixture.IssueOtherWorkspace.Id, TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -138,14 +138,14 @@ public sealed class IssueLinkServiceTests
         var service = new IssueLinkService(fixture.Db);
         var foreignTarget = await fixture.AddIssueToOtherWorkspaceAsync("OTH-2");
         var link = await service.CreateLinkAsync(
-            fixture.OtherWorkspaceId, fixture.IssueOtherWorkspace.Id, foreignTarget.Id, "RELATED");
+            fixture.OtherWorkspaceId, fixture.IssueOtherWorkspace.Id, foreignTarget.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
             () => service.RemoveLinkAsync(
-                fixture.WorkspaceId, fixture.IssueOtherWorkspace.Id, new IssueLinkId(link.Id)));
+                fixture.WorkspaceId, fixture.IssueOtherWorkspace.Id, new IssueLinkId(link.Id), ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
-        Assert.Single(await fixture.Db.IssueLinks.AsNoTracking().ToListAsync());
+        Assert.Single(await fixture.Db.IssueLinks.AsNoTracking().ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -153,10 +153,10 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED"));
+            () => service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("RESOURCE_ALREADY_EXISTS", ex.ErrorCode);
     }
@@ -166,12 +166,12 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
-        var reverse = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueB.Id, fixture.IssueA.Id, "RELATED");
+        var reverse = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueB.Id, fixture.IssueA.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(fixture.IssueB.Id.Value, reverse.SourceIssueId);
-        Assert.Equal(2, await fixture.Db.IssueLinks.CountAsync());
+        Assert.Equal(2, await fixture.Db.IssueLinks.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -179,10 +179,10 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
-        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueC.Id, fixture.IssueA.Id, "BLOCKS");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueC.Id, fixture.IssueA.Id, "BLOCKS", ct: TestContext.Current.CancellationToken);
 
-        var links = await service.ListLinksAsync(fixture.WorkspaceId, fixture.IssueA.Id);
+        var links = await service.ListLinksAsync(fixture.WorkspaceId, fixture.IssueA.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, links.Count);
         var outgoing = Assert.Single(links, l => l.Type == "RELATED");
@@ -196,10 +196,10 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
-        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueC.Id, "DUPLICATE");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueC.Id, "DUPLICATE", ct: TestContext.Current.CancellationToken);
 
-        var links = await service.ListLinksAsync(fixture.WorkspaceId, fixture.IssueA.Id);
+        var links = await service.ListLinksAsync(fixture.WorkspaceId, fixture.IssueA.Id, TestContext.Current.CancellationToken);
 
         Assert.True(links[0].CreatedAt <= links[1].CreatedAt);
     }
@@ -209,12 +209,12 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
-        await service.RemoveLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(link.Id));
+        await service.RemoveLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(link.Id), ct: TestContext.Current.CancellationToken);
 
-        Assert.Empty(await fixture.Db.IssueLinks.ToListAsync());
-        var removalEvent = await fixture.Db.ActivityEvents.SingleAsync(e => e.Type == ActivityEventType.IssueLinkRemoved);
+        Assert.Empty(await fixture.Db.IssueLinks.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
+        var removalEvent = await fixture.Db.ActivityEvents.SingleAsync(e => e.Type == ActivityEventType.IssueLinkRemoved, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(fixture.IssueA.Id, removalEvent.IssueId);
     }
 
@@ -223,10 +223,10 @@ public sealed class IssueLinkServiceTests
     {
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+        var link = await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.RemoveLinkAsync(fixture.WorkspaceId, fixture.IssueC.Id, new IssueLinkId(link.Id)));
+            () => service.RemoveLinkAsync(fixture.WorkspaceId, fixture.IssueC.Id, new IssueLinkId(link.Id), ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -242,9 +242,9 @@ public sealed class IssueLinkServiceTests
         var beforeState = fixture.IssueB.WorkflowStateId;
         var beforeVersion = fixture.IssueB.Version;
 
-        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "BLOCKS");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "BLOCKS", ct: TestContext.Current.CancellationToken);
 
-        var unchanged = await fixture.Db.Issues.AsNoTracking().SingleAsync(i => i.Id == fixture.IssueB.Id);
+        var unchanged = await fixture.Db.Issues.AsNoTracking().SingleAsync(i => i.Id == fixture.IssueB.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(beforeStatus, unchanged.Status);
         Assert.Equal(beforeState, unchanged.WorkflowStateId);
         Assert.Equal(beforeVersion, unchanged.Version);
@@ -256,10 +256,10 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
         var created = await service.CreateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", "why they relate");
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", "why they relate", ct: TestContext.Current.CancellationToken);
 
         var updated = await service.UpdateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "BLOCKS");
+            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "BLOCKS", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("BLOCKS", updated.Type);
         Assert.Equal("why they relate", updated.Description);
@@ -272,10 +272,10 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
         var created = await service.CreateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var updated = await service.UpdateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), description: "added later");
+            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), description: "added later", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("RELATED", updated.Type);
         Assert.Equal("added later", updated.Description);
@@ -287,14 +287,14 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
         var created = await service.CreateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         await service.UpdateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "BLOCKS");
+            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "BLOCKS", ct: TestContext.Current.CancellationToken);
 
         var events = await fixture.Db.ActivityEvents
             .Where(e => e.Type == ActivityEventType.IssueLinkUpdated)
-            .ToListAsync();
+            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(2, events.Count);
         Assert.Contains(events, e => e.IssueId == fixture.IssueA.Id);
         Assert.Contains(events, e => e.IssueId == fixture.IssueB.Id);
@@ -306,13 +306,13 @@ public sealed class IssueLinkServiceTests
         // Retyping must not become a back door around the create path's uniqueness rule.
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
-        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "BLOCKS");
+        await service.CreateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "BLOCKS", ct: TestContext.Current.CancellationToken);
         var second = await service.CreateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
             () => service.UpdateLinkAsync(
-                fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(second.Id), type: "BLOCKS"));
+                fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(second.Id), type: "BLOCKS", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("RESOURCE_ALREADY_EXISTS", ex.ErrorCode);
     }
@@ -325,10 +325,10 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
         var created = await service.CreateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var updated = await service.UpdateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "RELATED", description: "note");
+            fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "RELATED", description: "note", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("RELATED", updated.Type);
         Assert.Equal("note", updated.Description);
@@ -340,10 +340,10 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
         var created = await service.CreateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
-            () => service.UpdateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id)));
+            () => service.UpdateLinkAsync(fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -354,11 +354,11 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
         var created = await service.CreateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
             () => service.UpdateLinkAsync(
-                fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "   "));
+                fixture.WorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "   ", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -369,11 +369,11 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
         var created = await service.CreateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
             () => service.UpdateLinkAsync(
-                fixture.WorkspaceId, fixture.IssueC.Id, new IssueLinkId(created.Id), type: "BLOCKS"));
+                fixture.WorkspaceId, fixture.IssueC.Id, new IssueLinkId(created.Id), type: "BLOCKS", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -384,11 +384,11 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
         var created = await service.CreateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<IssueLinkException>(
             () => service.UpdateLinkAsync(
-                fixture.OtherWorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "BLOCKS"));
+                fixture.OtherWorkspaceId, fixture.IssueA.Id, new IssueLinkId(created.Id), type: "BLOCKS", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -399,10 +399,10 @@ public sealed class IssueLinkServiceTests
         await using var fixture = await IssueLinkFixture.CreateAsync();
         var service = new IssueLinkService(fixture.Db);
         var created = await service.CreateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED");
+            fixture.WorkspaceId, fixture.IssueA.Id, fixture.IssueB.Id, "RELATED", ct: TestContext.Current.CancellationToken);
 
         var updated = await service.UpdateLinkAsync(
-            fixture.WorkspaceId, fixture.IssueB.Id, new IssueLinkId(created.Id), type: "BLOCKS");
+            fixture.WorkspaceId, fixture.IssueB.Id, new IssueLinkId(created.Id), type: "BLOCKS", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(IssueLinkDirection.Incoming, updated.Direction);
     }

@@ -58,7 +58,7 @@ public sealed class RestoreCoordinatorTests
     {
         var coordinator = new RestoreCoordinator();
         using var restoreLease = coordinator.TryBeginRestore();
-        await coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(2));
+        await coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
         var operation = coordinator.TryBeginDatabaseOperation();
         Assert.Null(operation);
@@ -69,7 +69,7 @@ public sealed class RestoreCoordinatorTests
     {
         var coordinator = new RestoreCoordinator();
         using var restoreLease = coordinator.TryBeginRestore();
-        await coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(2));
+        await coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
         coordinator.ReopenAdmission(restoreLease!);
 
@@ -89,7 +89,7 @@ public sealed class RestoreCoordinatorTests
         var blockingOperation = coordinator.TryBeginDatabaseOperation();
         Assert.NotNull(blockingOperation);
 
-        var drainTask = coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(5));
+        var drainTask = coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         // Admission closes synchronously, before the drain wait even starts polling.
         Assert.Null(coordinator.TryBeginDatabaseOperation());
@@ -107,14 +107,14 @@ public sealed class RestoreCoordinatorTests
         var blockingOperation = coordinator.TryBeginDatabaseOperation();
         Assert.NotNull(blockingOperation);
 
-        var drainTask = coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(5));
+        var drainTask = coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
-        await Task.Delay(TimeSpan.FromMilliseconds(150));
+        await Task.Delay(TimeSpan.FromMilliseconds(150), TestContext.Current.CancellationToken);
         Assert.False(drainTask.IsCompleted);
 
         blockingOperation!.Dispose();
 
-        var completed = await Task.WhenAny(drainTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        var completed = await Task.WhenAny(drainTask, Task.Delay(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
         Assert.Same(drainTask, completed);
         await drainTask;
     }
@@ -129,7 +129,7 @@ public sealed class RestoreCoordinatorTests
         Assert.NotNull(blockingOperation);
 
         var ex = await Assert.ThrowsAsync<TimeoutException>(
-            () => coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromMilliseconds(150)));
+            () => coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromMilliseconds(150), TestContext.Current.CancellationToken));
 
         Assert.Contains("1", ex.Message);
     }
@@ -150,8 +150,8 @@ public sealed class RestoreCoordinatorTests
 
         // Must complete promptly despite the still-open owner lease, since it is exempted from
         // the drain wait.
-        var drainTask = coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(5));
-        var completed = await Task.WhenAny(drainTask, Task.Delay(TimeSpan.FromSeconds(2)));
+        var drainTask = coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var completed = await Task.WhenAny(drainTask, Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
         Assert.Same(drainTask, completed);
         await drainTask;
     }
@@ -169,9 +169,9 @@ public sealed class RestoreCoordinatorTests
         var unrelatedOperation = coordinator.TryBeginDatabaseOperation();
         Assert.NotNull(unrelatedOperation);
 
-        var drainTask = coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(5));
+        var drainTask = coordinator.CloseAdmissionAndDrainAsync(restoreLease!, TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
-        await Task.Delay(TimeSpan.FromMilliseconds(150));
+        await Task.Delay(TimeSpan.FromMilliseconds(150), TestContext.Current.CancellationToken);
         Assert.False(drainTask.IsCompleted);
 
         unrelatedOperation!.Dispose();

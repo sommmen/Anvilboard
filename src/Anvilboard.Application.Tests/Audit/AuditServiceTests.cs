@@ -12,11 +12,11 @@ public sealed class AuditServiceTests
     public async Task RecordAsync_PersistsMetadataAndRedactsSecretSummary()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
         await using var db = new AnvilboardDbContext(new DbContextOptionsBuilder<AnvilboardDbContext>()
             .UseSqlite(connection)
             .Options);
-        await db.Database.EnsureCreatedAsync();
+        await db.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
 
         var workspaceId = WorkspaceId.New();
         var occurredBefore = DateTimeOffset.UtcNow;
@@ -31,9 +31,9 @@ public sealed class AuditServiceTests
             "created with token=super-secret-value and note=ordinary prose\n"
             + "json: {\"token\": \"escaped \\\"secret\\\" value\", \"password\": \"line one\nline two\"}");
 
-        await new AuditService(db).RecordAsync(request);
+        await new AuditService(db).RecordAsync(request, TestContext.Current.CancellationToken);
 
-        var persisted = await db.AuditEvents.AsNoTracking().SingleAsync();
+        var persisted = await db.AuditEvents.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotEqual(Guid.Empty, persisted.Id.Value);
         Assert.Equal(workspaceId, persisted.WorkspaceId);
         Assert.Equal(request.ActorId, persisted.ActorId);
@@ -52,7 +52,7 @@ public sealed class AuditServiceTests
         Assert.Contains("ordinary prose", persisted.ResultSummary);
 
         var rawChannel = await db.Database.SqlQueryRaw<string>(
-            "SELECT Channel AS Value FROM AuditEvents").SingleAsync();
+            "SELECT Channel AS Value FROM AuditEvents").SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("REST", rawChannel);
     }
 }

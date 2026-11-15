@@ -27,9 +27,9 @@ public sealed class IntegrationHealthServiceTests
     {
         await using var fixture = await HealthFixture.CreateAsync();
 
-        await fixture.Service.RecordAttemptAsync(fixture.Outcome(succeeded: true));
+        await fixture.Service.RecordAttemptAsync(fixture.Outcome(succeeded: true), TestContext.Current.CancellationToken);
 
-        var health = Assert.Single(await fixture.Service.GetHealthAsync(fixture.WorkspaceId));
+        var health = Assert.Single(await fixture.Service.GetHealthAsync(fixture.WorkspaceId, TestContext.Current.CancellationToken));
         Assert.Equal(SyncCondition.Fresh, health.Condition);
         Assert.Equal(fixture.Clock.Now, health.LastSuccessAt);
         Assert.Equal(0, health.ConsecutiveFailureCount);
@@ -42,12 +42,12 @@ public sealed class IntegrationHealthServiceTests
         await using var fixture = await HealthFixture.CreateAsync();
 
         await fixture.Service.RecordAttemptAsync(
-            fixture.Outcome(succeeded: false, category: SyncErrorCategory.Transport));
+            fixture.Outcome(succeeded: false, category: SyncErrorCategory.Transport), TestContext.Current.CancellationToken);
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
         await fixture.Service.RecordAttemptAsync(
-            fixture.Outcome(succeeded: false, category: SyncErrorCategory.Transport));
+            fixture.Outcome(succeeded: false, category: SyncErrorCategory.Transport), TestContext.Current.CancellationToken);
 
-        var health = Assert.Single(await fixture.Service.GetHealthAsync(fixture.WorkspaceId));
+        var health = Assert.Single(await fixture.Service.GetHealthAsync(fixture.WorkspaceId, TestContext.Current.CancellationToken));
         Assert.Equal(SyncCondition.Failed, health.Condition);
         Assert.Equal(2, health.ConsecutiveFailureCount);
     }
@@ -58,11 +58,11 @@ public sealed class IntegrationHealthServiceTests
         await using var fixture = await HealthFixture.CreateAsync();
 
         await fixture.Service.RecordAttemptAsync(
-            fixture.Outcome(succeeded: false, category: SyncErrorCategory.Auth));
+            fixture.Outcome(succeeded: false, category: SyncErrorCategory.Auth), TestContext.Current.CancellationToken);
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
-        await fixture.Service.RecordAttemptAsync(fixture.Outcome(succeeded: true));
+        await fixture.Service.RecordAttemptAsync(fixture.Outcome(succeeded: true), TestContext.Current.CancellationToken);
 
-        var health = Assert.Single(await fixture.Service.GetHealthAsync(fixture.WorkspaceId));
+        var health = Assert.Single(await fixture.Service.GetHealthAsync(fixture.WorkspaceId, TestContext.Current.CancellationToken));
         Assert.Equal(SyncCondition.Fresh, health.Condition);
         Assert.Equal(0, health.ConsecutiveFailureCount);
         Assert.Null(health.LastErrorCategory);
@@ -73,10 +73,10 @@ public sealed class IntegrationHealthServiceTests
     {
         await using var fixture = await HealthFixture.CreateAsync();
 
-        await fixture.Service.RecordAttemptAsync(fixture.Outcome(succeeded: true));
+        await fixture.Service.RecordAttemptAsync(fixture.Outcome(succeeded: true), TestContext.Current.CancellationToken);
         fixture.Clock.Advance(TimeSpan.FromMinutes(20));
 
-        var health = Assert.Single(await fixture.Service.GetHealthAsync(fixture.WorkspaceId));
+        var health = Assert.Single(await fixture.Service.GetHealthAsync(fixture.WorkspaceId, TestContext.Current.CancellationToken));
         Assert.Equal(SyncCondition.Stale, health.Condition);
     }
 
@@ -90,17 +90,17 @@ public sealed class IntegrationHealthServiceTests
         for (var i = 0; i < 5; i++)
         {
             await fixture.Service.RecordAttemptAsync(
-                fixture.Outcome(succeeded: false, category: SyncErrorCategory.Transport));
+                fixture.Outcome(succeeded: false, category: SyncErrorCategory.Transport), TestContext.Current.CancellationToken);
             fixture.Clock.Advance(TimeSpan.FromMinutes(1));
         }
 
-        await fixture.Service.RecordAttemptAsync(fixture.Outcome(succeeded: true));
+        await fixture.Service.RecordAttemptAsync(fixture.Outcome(succeeded: true), TestContext.Current.CancellationToken);
 
         var actions = await fixture.Db.AuditEvents
             .AsNoTracking()
             .Where(e => e.Action.StartsWith("integration.sync."))
             .Select(e => e.Action)
-            .ToListAsync();
+            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(["integration.sync.failed", "integration.sync.recovered"], actions);
     }
@@ -113,13 +113,13 @@ public sealed class IntegrationHealthServiceTests
         await using var fixture = await HealthFixture.CreateAsync();
 
         await fixture.Service.RecordAttemptAsync(
-            fixture.Outcome(succeeded: false, category: SyncErrorCategory.Auth));
+            fixture.Outcome(succeeded: false, category: SyncErrorCategory.Auth), TestContext.Current.CancellationToken);
 
         var summary = await fixture.Db.AuditEvents
             .AsNoTracking()
             .Where(e => e.Action == "integration.sync.failed")
             .Select(e => e.ResultSummary)
-            .SingleAsync();
+            .SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains("Auth", summary);
         Assert.DoesNotContain("token", summary, StringComparison.OrdinalIgnoreCase);
@@ -139,9 +139,9 @@ public sealed class IntegrationHealthServiceTests
             fixture.Clock.Now,
             Succeeded: true);
 
-        await fixture.Service.RecordAttemptAsync(outcome);
+        await fixture.Service.RecordAttemptAsync(outcome, TestContext.Current.CancellationToken);
 
-        Assert.Empty(await fixture.Db.IntegrationHealth.AsNoTracking().ToListAsync());
+        Assert.Empty(await fixture.Db.IntegrationHealth.AsNoTracking().ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public sealed class IntegrationHealthServiceTests
         await using var fixture = await HealthFixture.CreateAsync();
 
         await Assert.ThrowsAsync<ArgumentException>(() => fixture.Service.RecordAttemptAsync(
-            fixture.Outcome(succeeded: true) with { ErrorCategory = SyncErrorCategory.Auth }));
+            fixture.Outcome(succeeded: true) with { ErrorCategory = SyncErrorCategory.Auth }, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -158,13 +158,13 @@ public sealed class IntegrationHealthServiceTests
     {
         await using var fixture = await HealthFixture.CreateAsync();
 
-        await fixture.Service.RecordAttemptAsync(fixture.Outcome(succeeded: true));
+        await fixture.Service.RecordAttemptAsync(fixture.Outcome(succeeded: true), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             [IntegrationProvider.GitHub],
-            await fixture.Service.ProvidersInConditionAsync(fixture.WorkspaceId, SyncCondition.Fresh));
+            await fixture.Service.ProvidersInConditionAsync(fixture.WorkspaceId, SyncCondition.Fresh, TestContext.Current.CancellationToken));
         Assert.Empty(
-            await fixture.Service.ProvidersInConditionAsync(fixture.WorkspaceId, SyncCondition.Failed));
+            await fixture.Service.ProvidersInConditionAsync(fixture.WorkspaceId, SyncCondition.Failed, TestContext.Current.CancellationToken));
     }
 
     private sealed class HealthFixture : IAsyncDisposable

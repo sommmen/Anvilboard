@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Anvilboard.Agent;
 using Anvilboard.Agent.Authorization;
 using Anvilboard.Agent.Automation;
@@ -101,7 +101,8 @@ var catalog = OperationCatalog.Discover(typeof(BoardAgentService));
 var invoker = new OperationInvoker(
     new AgentInvocationServiceProvider(),
     jsonOptions,
-    [new WorkspaceAuthorizationPolicy()]);
+    [new WorkspaceAuthorizationPolicy()],
+    new OperationInvokerOptions { ExceptionMapper = new AnvilboardOperationExceptionMapper() });
 
 if (isMcpMode)
 {

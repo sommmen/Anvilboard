@@ -26,7 +26,7 @@ public sealed class SqliteBackupArchiverTests : IDisposable
         Assert.True(new FileInfo(walPath).Length > 0);
 
         var archiver = CreateArchiver(databasePath);
-        await archiver.CheckpointAsync();
+        await archiver.CheckpointAsync(TestContext.Current.CancellationToken);
 
         var walSizeAfterCheckpoint = File.Exists(walPath) ? new FileInfo(walPath).Length : 0;
         Assert.Equal(0, walSizeAfterCheckpoint);
@@ -41,7 +41,7 @@ public sealed class SqliteBackupArchiverTests : IDisposable
         var archiver = CreateArchiver(databasePath);
 
         // Must not throw: PRAGMA wal_checkpoint is a documented no-op outside WAL mode.
-        await archiver.CheckpointAsync();
+        await archiver.CheckpointAsync(TestContext.Current.CancellationToken);
         Assert.Equal(5, await CountRowsAsync(databasePath));
     }
 
@@ -53,7 +53,7 @@ public sealed class SqliteBackupArchiverTests : IDisposable
         var destinationPath = CreateTrackedTempPath();
 
         var archiver = CreateArchiver(databasePath);
-        await archiver.SnapshotAsync(destinationPath);
+        await archiver.SnapshotAsync(destinationPath, TestContext.Current.CancellationToken);
 
         Assert.True(File.Exists(destinationPath));
         Assert.Equal(await CountRowsAsync(databasePath), await CountRowsAsync(destinationPath));
@@ -71,7 +71,7 @@ public sealed class SqliteBackupArchiverTests : IDisposable
         var destinationPath = CreateTrackedTempPath();
 
         var archiver = CreateArchiver(databasePath);
-        await archiver.SnapshotAsync(destinationPath);
+        await archiver.SnapshotAsync(destinationPath, TestContext.Current.CancellationToken);
 
         Assert.Equal(7, await CountRowsAsync(destinationPath));
     }
@@ -83,15 +83,15 @@ public sealed class SqliteBackupArchiverTests : IDisposable
         await CreateDatabaseAsync(databasePath, walMode: false, rows: 3);
 
         var archiver = CreateArchiver(databasePath);
-        var firstHash = await archiver.ComputeSha256Async(databasePath);
-        var secondHash = await archiver.ComputeSha256Async(databasePath);
+        var firstHash = await archiver.ComputeSha256Async(databasePath, TestContext.Current.CancellationToken);
+        var secondHash = await archiver.ComputeSha256Async(databasePath, TestContext.Current.CancellationToken);
 
         Assert.Equal(firstHash, secondHash);
         Assert.Equal(64, firstHash.Length);
         Assert.Equal(firstHash, firstHash.ToLowerInvariant(), StringComparer.Ordinal);
 
         await InsertRowAsync(databasePath, "changes-the-file");
-        var thirdHash = await archiver.ComputeSha256Async(databasePath);
+        var thirdHash = await archiver.ComputeSha256Async(databasePath, TestContext.Current.CancellationToken);
         Assert.NotEqual(firstHash, thirdHash);
     }
 
@@ -103,7 +103,7 @@ public sealed class SqliteBackupArchiverTests : IDisposable
 
         var archiver = CreateArchiver(databasePath);
 
-        Assert.True(await archiver.VerifyIntegrityAsync(databasePath));
+        Assert.True(await archiver.VerifyIntegrityAsync(databasePath, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -115,23 +115,23 @@ public sealed class SqliteBackupArchiverTests : IDisposable
         // Truncating a healthy multi-page file to a quarter of its size corrupts it in a way
         // `integrity_check`/open detects deterministically, independent of the exact page size the
         // running SQLite build uses (plan §7.4 "corrupted/truncated fixtures").
-        var originalBytes = await File.ReadAllBytesAsync(databasePath);
-        await File.WriteAllBytesAsync(databasePath, originalBytes[..(originalBytes.Length / 4)]);
+        var originalBytes = await File.ReadAllBytesAsync(databasePath, TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(databasePath, originalBytes[..(originalBytes.Length / 4)], TestContext.Current.CancellationToken);
 
         var archiver = CreateArchiver(databasePath);
 
-        Assert.False(await archiver.VerifyIntegrityAsync(databasePath));
+        Assert.False(await archiver.VerifyIntegrityAsync(databasePath, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task VerifyIntegrityAsync_ReturnsFalse_ForANonSqliteFile()
     {
         var databasePath = CreateTrackedTempPath();
-        await File.WriteAllTextAsync(databasePath, "this is not a sqlite database at all");
+        await File.WriteAllTextAsync(databasePath, "this is not a sqlite database at all", TestContext.Current.CancellationToken);
 
         var archiver = CreateArchiver(databasePath);
 
-        Assert.False(await archiver.VerifyIntegrityAsync(databasePath));
+        Assert.False(await archiver.VerifyIntegrityAsync(databasePath, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -142,7 +142,7 @@ public sealed class SqliteBackupArchiverTests : IDisposable
 
         var archiver = CreateArchiver(databasePath);
 
-        Assert.True(await archiver.TryAcquireExclusiveAccessAsync());
+        Assert.True(await archiver.TryAcquireExclusiveAccessAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -152,22 +152,22 @@ public sealed class SqliteBackupArchiverTests : IDisposable
         await CreateDatabaseAsync(databasePath, walMode: false, rows: 1);
 
         await using var blockingConnection = new SqliteConnection(ConnectionString(databasePath));
-        await blockingConnection.OpenAsync();
+        await blockingConnection.OpenAsync(TestContext.Current.CancellationToken);
         await using (var pragma = blockingConnection.CreateCommand())
         {
             pragma.CommandText = "PRAGMA locking_mode = EXCLUSIVE;";
-            await pragma.ExecuteNonQueryAsync();
+            await pragma.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
 
         await using (var begin = blockingConnection.CreateCommand())
         {
             begin.CommandText = "BEGIN IMMEDIATE; INSERT INTO Sample (Note) VALUES ('locked');";
-            await begin.ExecuteNonQueryAsync();
+            await begin.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
 
         var archiver = CreateArchiver(databasePath);
 
-        Assert.False(await archiver.TryAcquireExclusiveAccessAsync());
+        Assert.False(await archiver.TryAcquireExclusiveAccessAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public sealed class SqliteBackupArchiverTests : IDisposable
         var safetyCopyPath = CreateTrackedTempPath();
 
         var archiver = CreateArchiver(databasePath);
-        await archiver.CreateSafetyCopyAsync(safetyCopyPath);
+        await archiver.CreateSafetyCopyAsync(safetyCopyPath, TestContext.Current.CancellationToken);
 
         Assert.True(File.Exists(safetyCopyPath));
         Assert.Equal(await CountRowsAsync(databasePath), await CountRowsAsync(safetyCopyPath));
@@ -201,7 +201,7 @@ public sealed class SqliteBackupArchiverTests : IDisposable
         await CreateDatabaseAsync(stagedPath, walMode: false, rows: 99);
 
         var archiver = CreateArchiver(databasePath);
-        await archiver.SwapInAsync(stagedPath);
+        await archiver.SwapInAsync(stagedPath, TestContext.Current.CancellationToken);
 
         Assert.Equal(99, await CountRowsAsync(databasePath));
         Assert.True(File.Exists(stagedPath));

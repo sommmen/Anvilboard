@@ -27,12 +27,12 @@ public sealed class IssueServiceConcurrencyTests
         var issue = fixture.CreateIssue(backlog.Id);
         issue.Version = 3;
         fixture.Db.Issues.Add(issue);
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var service = CreateIssueService(fixture);
 
         var exception = await Assert.ThrowsAsync<ConcurrencyConflictException>(
-            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, done.Id, expectedVersion: 2));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, done.Id, expectedVersion: 2, ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("CONCURRENCY_CONFLICT", exception.ErrorCode);
         Assert.Equal(2, exception.ExpectedVersion);
@@ -49,24 +49,24 @@ public sealed class IssueServiceConcurrencyTests
         var issue = fixture.CreateIssue(backlog.Id);
         issue.Version = 3;
         fixture.Db.Issues.Add(issue);
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var updatedAt = issue.UpdatedAt;
-        var activityBefore = await fixture.Db.ActivityEvents.CountAsync();
+        var activityBefore = await fixture.Db.ActivityEvents.CountAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var publisher = new CountingRealtimeUpdatePublisher();
         var service = CreateIssueService(fixture, publisher);
 
         await Assert.ThrowsAsync<ConcurrencyConflictException>(
-            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, done.Id, expectedVersion: 2));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, done.Id, expectedVersion: 2, ct: TestContext.Current.CancellationToken));
 
         // Read through a fresh context: the fixture's tracker could report an in-memory mutation
         // that was never saved, which is exactly the failure mode this asserts against.
         await using var verification = fixture.CreateFreshContext();
-        var persisted = await verification.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id);
+        var persisted = await verification.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(backlog.Id, persisted.WorkflowStateId);
         Assert.Equal(3, persisted.Version);
         Assert.Equal(updatedAt, persisted.UpdatedAt);
-        Assert.Equal(activityBefore, await verification.ActivityEvents.CountAsync());
+        Assert.Equal(activityBefore, await verification.ActivityEvents.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(0, publisher.PublishCount);
     }
 
@@ -80,11 +80,11 @@ public sealed class IssueServiceConcurrencyTests
         var issue = fixture.CreateIssue(backlog.Id);
         issue.Version = 3;
         fixture.Db.Issues.Add(issue);
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var service = CreateIssueService(fixture);
         var result = await service.ChangeStatusAsync(
-            fixture.WorkspaceId, issue.Id, done.Id, expectedVersion: 3);
+            fixture.WorkspaceId, issue.Id, done.Id, expectedVersion: 3, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(done.Id, result.WorkflowStateId);
         Assert.Equal(4, result.Version);
@@ -100,10 +100,10 @@ public sealed class IssueServiceConcurrencyTests
         var issue = fixture.CreateIssue(backlog.Id);
         issue.Version = 7;
         fixture.Db.Issues.Add(issue);
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var service = CreateIssueService(fixture);
-        var result = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, done.Id);
+        var result = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, done.Id, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(done.Id, result.WorkflowStateId);
         Assert.Equal(8, result.Version);
@@ -123,12 +123,12 @@ public sealed class IssueServiceConcurrencyTests
         var issue = fixture.CreateIssue(backlog.Id);
         issue.Version = 3;
         fixture.Db.Issues.Add(issue);
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var service = CreateIssueService(fixture);
 
         await Assert.ThrowsAsync<ConcurrencyConflictException>(
-            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, done.Id, expectedVersion: 1));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, done.Id, expectedVersion: 1, ct: TestContext.Current.CancellationToken));
     }
 
     /// <summary>
@@ -144,12 +144,12 @@ public sealed class IssueServiceConcurrencyTests
         var issue = fixture.CreateIssue(backlog.Id);
         issue.Version = 3;
         fixture.Db.Issues.Add(issue);
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var service = CreateIssueService(fixture);
 
         await Assert.ThrowsAsync<ConcurrencyConflictException>(
-            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, backlog.Id, expectedVersion: 1));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, backlog.Id, expectedVersion: 1, ct: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -160,16 +160,16 @@ public sealed class IssueServiceConcurrencyTests
         var issue = fixture.CreateIssue(backlog.Id);
         issue.Version = 5;
         fixture.Db.Issues.Add(issue);
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var service = CreateIssueService(fixture);
 
         var exception = await Assert.ThrowsAsync<ConcurrencyConflictException>(
-            () => service.AssignAsync(fixture.WorkspaceId, issue.Id, MemberId.New(), expectedVersion: 4));
+            () => service.AssignAsync(fixture.WorkspaceId, issue.Id, MemberId.New(), expectedVersion: 4, ct: TestContext.Current.CancellationToken));
 
         Assert.Equal(5, exception.CurrentVersion);
         await using var verification = fixture.CreateFreshContext();
-        var persisted = await verification.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id);
+        var persisted = await verification.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Null(persisted.AssigneeId);
         Assert.Equal(5, persisted.Version);
     }
@@ -182,12 +182,12 @@ public sealed class IssueServiceConcurrencyTests
         var issue = fixture.CreateIssue(backlog.Id);
         issue.Version = 5;
         fixture.Db.Issues.Add(issue);
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var assignee = MemberId.New();
         var service = CreateIssueService(fixture);
         var result = await service.AssignAsync(
-            fixture.WorkspaceId, issue.Id, assignee, expectedVersion: 5);
+            fixture.WorkspaceId, issue.Id, assignee, expectedVersion: 5, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(assignee, result.AssigneeId);
         Assert.Equal(6, result.Version);
@@ -203,11 +203,11 @@ public sealed class IssueServiceConcurrencyTests
         await using var fixture = await WorkflowFixture.CreateAsync();
         var service = CreateIssueService(fixture);
 
-        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Fresh");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Fresh", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, issue.Version);
         await using var verification = fixture.CreateFreshContext();
-        var persisted = await verification.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id);
+        var persisted = await verification.Issues.AsNoTracking().SingleAsync(i => i.Id == issue.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(1, persisted.Version);
     }
 
@@ -217,13 +217,13 @@ public sealed class IssueServiceConcurrencyTests
         await using var fixture = await WorkflowFixture.CreateAsync();
         var done = fixture.CreateState("done", "Done", order: 4, isTerminal: true);
         fixture.CreateTransition(fixture.Current.Id, done.Id);
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var service = CreateIssueService(fixture);
-        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Round trip");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Round trip", ct: TestContext.Current.CancellationToken);
 
         var moved = await service.ChangeStatusAsync(
-            fixture.WorkspaceId, issue.Id, done.Id, expectedVersion: issue.Version);
+            fixture.WorkspaceId, issue.Id, done.Id, expectedVersion: issue.Version, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(done.Id, moved.WorkflowStateId);
         Assert.Equal(2, moved.Version);

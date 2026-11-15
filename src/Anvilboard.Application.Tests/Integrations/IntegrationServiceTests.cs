@@ -21,23 +21,23 @@ public sealed class IntegrationServiceTests
             fixture.Actor,
             IntegrationProvider.GitHub,
             new Dictionary<string, string> { ["token"] = "super-secret" },
-            "{\"repositories\":[\"owner/repository\"]}");
+            "{\"repositories\":[\"owner/repository\"]}", TestContext.Current.CancellationToken);
 
         Assert.Equal(IntegrationStatus.Configured, configured.Status);
         Assert.DoesNotContain("super-secret", configured.SettingsJson);
-        var persisted = await fixture.Db.Integrations.SingleAsync();
+        var persisted = await fixture.Db.Integrations.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(persisted.ProtectedCredentials);
         Assert.DoesNotContain("super-secret", persisted.ProtectedCredentials);
 
-        var enabled = await service.EnableAsync(fixture.Actor, new IntegrationId(configured.Id));
-        var paused = await service.PauseAsync(fixture.Actor, new IntegrationId(configured.Id));
+        var enabled = await service.EnableAsync(fixture.Actor, new IntegrationId(configured.Id), TestContext.Current.CancellationToken);
+        var paused = await service.PauseAsync(fixture.Actor, new IntegrationId(configured.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(IntegrationStatus.Enabled, enabled.Status);
         Assert.Equal(IntegrationStatus.Paused, paused.Status);
 
-        await service.RemoveAsync(fixture.Actor, new IntegrationId(configured.Id), confirm: true);
+        await service.RemoveAsync(fixture.Actor, new IntegrationId(configured.Id), confirm: true, ct: TestContext.Current.CancellationToken);
 
-        var stored = await fixture.Db.Integrations.SingleAsync();
+        var stored = await fixture.Db.Integrations.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(IntegrationStatus.Removed, stored.Status);
         Assert.Null(stored.ProtectedCredentials);
     }
@@ -52,7 +52,7 @@ public sealed class IntegrationServiceTests
             fixture.Actor,
             IntegrationProvider.Linear,
             new Dictionary<string, string> { ["apiKey"] = "secret" },
-            "not-json"));
+            "not-json", TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
         Assert.Empty(fixture.Db.Integrations);
@@ -67,15 +67,15 @@ public sealed class IntegrationServiceTests
             fixture.Actor,
             IntegrationProvider.Linear,
             new Dictionary<string, string> { ["apiKey"] = "secret" },
-            "{}");
+            "{}", TestContext.Current.CancellationToken);
 
         var exception = await Assert.ThrowsAsync<IntegrationException>(() => service.RemoveAsync(
             fixture.Actor,
             new IntegrationId(configured.Id),
-            confirm: false));
+            confirm: false, ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
-        Assert.Equal(IntegrationStatus.Configured, (await fixture.Db.Integrations.SingleAsync()).Status);
+        Assert.Equal(IntegrationStatus.Configured, (await fixture.Db.Integrations.SingleAsync(cancellationToken: TestContext.Current.CancellationToken)).Status);
     }
 
     [Fact]
@@ -87,9 +87,9 @@ public sealed class IntegrationServiceTests
             fixture.Actor,
             IntegrationProvider.GitHub,
             new Dictionary<string, string> { ["token"] = "secret" },
-            "{}");
+            "{}", TestContext.Current.CancellationToken);
 
-        var validated = await service.ValidateAsync(fixture.Actor, new IntegrationId(configured.Id));
+        var validated = await service.ValidateAsync(fixture.Actor, new IntegrationId(configured.Id), TestContext.Current.CancellationToken);
 
         Assert.Equal(configured.Id, validated.Id);
         Assert.Equal(1, fixture.ValidatorCalls);

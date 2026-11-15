@@ -71,7 +71,8 @@ public sealed class AgentFactory : IAsyncDisposable
         Invoker = new OperationInvoker(
             new AgentInvocationTestServiceProvider(),
             JsonOptions,
-            [new WorkspaceAuthorizationPolicy()]);
+            [new WorkspaceAuthorizationPolicy()],
+            new OperationInvokerOptions { ExceptionMapper = new AnvilboardOperationExceptionMapper() });
     }
 
     public OperationCatalog Catalog { get; }

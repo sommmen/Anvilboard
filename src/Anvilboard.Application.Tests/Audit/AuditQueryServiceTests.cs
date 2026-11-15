@@ -24,7 +24,7 @@ public sealed class AuditQueryServiceTests
         await fixture.SaveAsync();
 
         var result = await new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery());
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(), TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ["issue.delete", "issue.update", "issue.create"],
@@ -42,7 +42,7 @@ public sealed class AuditQueryServiceTests
         await fixture.SaveAsync();
 
         var result = await new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery());
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(), TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(result.Events);
         Assert.Equal("issue.create", entry.Action);
@@ -62,18 +62,18 @@ public sealed class AuditQueryServiceTests
 
         var service = new AuditQueryService(fixture.Db);
 
-        var first = await service.QueryAsync(fixture.WorkspaceId, new AuditQuery(Limit: 2));
+        var first = await service.QueryAsync(fixture.WorkspaceId, new AuditQuery(Limit: 2), TestContext.Current.CancellationToken);
         Assert.True(first.HasMore);
         Assert.NotNull(first.NextCursor);
         Assert.Equal(["action-4", "action-3"], first.Events.Select(e => e.Action));
 
         var second = await service.QueryAsync(
-            fixture.WorkspaceId, new AuditQuery(Limit: 2, Cursor: first.NextCursor));
+            fixture.WorkspaceId, new AuditQuery(Limit: 2, Cursor: first.NextCursor), TestContext.Current.CancellationToken);
         Assert.True(second.HasMore);
         Assert.Equal(["action-2", "action-1"], second.Events.Select(e => e.Action));
 
         var third = await service.QueryAsync(
-            fixture.WorkspaceId, new AuditQuery(Limit: 2, Cursor: second.NextCursor));
+            fixture.WorkspaceId, new AuditQuery(Limit: 2, Cursor: second.NextCursor), TestContext.Current.CancellationToken);
         Assert.False(third.HasMore);
         Assert.Null(third.NextCursor);
         Assert.Equal(["action-0"], third.Events.Select(e => e.Action));
@@ -88,7 +88,7 @@ public sealed class AuditQueryServiceTests
         await fixture.SaveAsync();
 
         var result = await new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery(ActorId: "user:ada"));
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(ActorId: "user:ada"), TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(result.Events);
         Assert.Equal("user:ada", entry.ActorId);
@@ -104,7 +104,7 @@ public sealed class AuditQueryServiceTests
         await fixture.SaveAsync();
 
         var result = await new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery(TargetType: "issue", TargetId: "issue-1"));
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(TargetType: "issue", TargetId: "issue-1"), TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(result.Events);
         Assert.Equal("issue", entry.TargetType);
@@ -120,7 +120,7 @@ public sealed class AuditQueryServiceTests
         await fixture.SaveAsync();
 
         var result = await new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery(Action: "issue.delete"));
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(Action: "issue.delete"), TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(result.Events);
         Assert.Equal("issue.delete", entry.Action);
@@ -135,7 +135,7 @@ public sealed class AuditQueryServiceTests
         await fixture.SaveAsync();
 
         var result = await new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery(Channel: AuditChannel.Cli));
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(Channel: AuditChannel.Cli), TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(result.Events);
         Assert.Equal(AuditChannel.Cli, entry.Channel);
@@ -153,7 +153,7 @@ public sealed class AuditQueryServiceTests
 
         var result = await new AuditQueryService(fixture.Db).QueryAsync(
             fixture.WorkspaceId,
-            new AuditQuery(OccurredAfter: start.AddMinutes(1), OccurredBefore: start.AddMinutes(9)));
+            new AuditQuery(OccurredAfter: start.AddMinutes(1), OccurredBefore: start.AddMinutes(9)), TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(result.Events);
         Assert.Equal("in-range", entry.Action);
@@ -167,7 +167,7 @@ public sealed class AuditQueryServiceTests
         await fixture.SaveAsync();
 
         var result = await new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery());
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(), TestContext.Current.CancellationToken);
 
         Assert.Equal(AuditQueryService.DefaultLimit, result.AppliedQuery.Limit);
     }
@@ -182,7 +182,7 @@ public sealed class AuditQueryServiceTests
         await fixture.SaveAsync();
 
         var exception = await Assert.ThrowsAsync<AuditQueryException>(() => new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery(Limit: limit)));
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(Limit: limit), TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
     }
@@ -195,7 +195,7 @@ public sealed class AuditQueryServiceTests
         var now = DateTimeOffset.UtcNow;
 
         var exception = await Assert.ThrowsAsync<AuditQueryException>(() => new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery(OccurredAfter: now, OccurredBefore: now.AddMinutes(-1))));
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(OccurredAfter: now, OccurredBefore: now.AddMinutes(-1)), TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
     }
@@ -207,7 +207,7 @@ public sealed class AuditQueryServiceTests
         await fixture.SaveAsync();
 
         var exception = await Assert.ThrowsAsync<AuditQueryException>(() => new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery(Cursor: "not-a-valid-cursor!!")));
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(Cursor: "not-a-valid-cursor!!"), TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
     }
@@ -225,7 +225,7 @@ public sealed class AuditQueryServiceTests
         await fixture.SaveAsync();
 
         var exception = await Assert.ThrowsAsync<AuditQueryException>(() => new AuditQueryService(fixture.Db)
-            .QueryAsync(fixture.WorkspaceId, new AuditQuery()));
+            .QueryAsync(fixture.WorkspaceId, new AuditQuery(), TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
     }

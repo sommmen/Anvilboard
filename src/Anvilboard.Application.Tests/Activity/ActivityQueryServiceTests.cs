@@ -24,7 +24,7 @@ public sealed class ActivityQueryServiceTests
         await fixture.AddEventAsync(fixture.Issue.Id, ActivityEventType.CommentAdded, start.AddMinutes(2));
 
         var page = await new ActivityQueryService(fixture.Db)
-            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id);
+            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             ["CommentAdded", "StatusChanged", "Created"],
@@ -44,15 +44,15 @@ public sealed class ActivityQueryServiceTests
 
         var service = new ActivityQueryService(fixture.Db);
 
-        var first = await service.ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, limit: 2);
+        var first = await service.ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, limit: 2, ct: TestContext.Current.CancellationToken);
         Assert.Equal(2, first.Entries.Count);
         Assert.NotNull(first.NextCursor);
 
-        var second = await service.ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, limit: 2, cursor: first.NextCursor);
+        var second = await service.ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, limit: 2, cursor: first.NextCursor, ct: TestContext.Current.CancellationToken);
         Assert.Equal(2, second.Entries.Count);
         Assert.NotNull(second.NextCursor);
 
-        var third = await service.ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, limit: 2, cursor: second.NextCursor);
+        var third = await service.ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, limit: 2, cursor: second.NextCursor, ct: TestContext.Current.CancellationToken);
         Assert.Single(third.Entries);
         Assert.Null(third.NextCursor);
 
@@ -69,7 +69,7 @@ public sealed class ActivityQueryServiceTests
         await fixture.AddEventAsync(fixture.OtherIssue.Id, ActivityEventType.Created, now);
 
         var page = await new ActivityQueryService(fixture.Db)
-            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id);
+            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, ct: TestContext.Current.CancellationToken);
 
         Assert.Single(page.Entries);
     }
@@ -81,7 +81,7 @@ public sealed class ActivityQueryServiceTests
         await fixture.AddEventAsync(fixture.ForeignIssue.Id, ActivityEventType.Created, DateTimeOffset.UtcNow);
 
         var exception = await Assert.ThrowsAsync<ActivityQueryException>(() => new ActivityQueryService(fixture.Db)
-            .ListForIssueAsync(fixture.WorkspaceId, fixture.ForeignIssue.Id));
+            .ListForIssueAsync(fixture.WorkspaceId, fixture.ForeignIssue.Id, ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", exception.ErrorCode);
     }
@@ -94,7 +94,7 @@ public sealed class ActivityQueryServiceTests
         await using var fixture = await ActivityFixture.CreateAsync();
 
         var exception = await Assert.ThrowsAsync<ActivityQueryException>(() => new ActivityQueryService(fixture.Db)
-            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, limit));
+            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, limit, ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
     }
@@ -108,7 +108,7 @@ public sealed class ActivityQueryServiceTests
         await using var fixture = await ActivityFixture.CreateAsync();
 
         var exception = await Assert.ThrowsAsync<ActivityQueryException>(() => new ActivityQueryService(fixture.Db)
-            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, cursor: cursor));
+            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, cursor: cursor, ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
     }
@@ -121,7 +121,7 @@ public sealed class ActivityQueryServiceTests
             fixture.Issue.Id, ActivityEventType.CommentAdded, DateTimeOffset.UtcNow, fixture.MemberId);
 
         var page = await new ActivityQueryService(fixture.Db)
-            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id);
+            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, ct: TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(page.Entries);
         Assert.Equal(fixture.MemberId.Value, entry.ActorId);
@@ -136,7 +136,7 @@ public sealed class ActivityQueryServiceTests
         await fixture.AddEventAsync(fixture.Issue.Id, ActivityEventType.StatusChanged, DateTimeOffset.UtcNow);
 
         var page = await new ActivityQueryService(fixture.Db)
-            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id);
+            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, ct: TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(page.Entries);
         Assert.Null(entry.ActorDisplayName);
@@ -151,7 +151,7 @@ public sealed class ActivityQueryServiceTests
             fixture.Issue.Id, ActivityEventType.StatusChanged, DateTimeOffset.UtcNow, dataJson: """{"to":"done"}""");
 
         var page = await new ActivityQueryService(fixture.Db)
-            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id);
+            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, ct: TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(page.Entries);
         Assert.NotNull(entry.Data);
@@ -166,7 +166,7 @@ public sealed class ActivityQueryServiceTests
             fixture.Issue.Id, ActivityEventType.StatusChanged, DateTimeOffset.UtcNow, dataJson: "{not json");
 
         var page = await new ActivityQueryService(fixture.Db)
-            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id);
+            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, ct: TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(page.Entries);
         Assert.Null(entry.Data);
@@ -182,7 +182,7 @@ public sealed class ActivityQueryServiceTests
         await fixture.AddEventAsync(fixture.Issue.Id, ActivityEventType.StatusChanged, start.AddMinutes(1));
 
         var page = await new ActivityQueryService(fixture.Db)
-            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, limit: 1);
+            .ListForIssueAsync(fixture.WorkspaceId, fixture.Issue.Id, limit: 1, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("offset:1", Encoding.UTF8.GetString(Convert.FromBase64String(page.NextCursor!)));
     }

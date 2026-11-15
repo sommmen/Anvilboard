@@ -22,7 +22,7 @@ public sealed class ArtifactServiceTests
             ArtifactKind.Deployment,
             "Staging deploy",
             "https://deploy.example/123",
-            actorId: actorId);
+            actorId: actorId, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("deployment", artifact.Kind);
         Assert.Equal("Staging deploy", artifact.Title);
@@ -30,11 +30,11 @@ public sealed class ArtifactServiceTests
         Assert.Equal("local", artifact.Source);
         Assert.Equal(actorId.Value, artifact.AddedById);
 
-        var stored = await fixture.Db.Artifacts.SingleAsync();
+        var stored = await fixture.Db.Artifacts.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(fixture.Issue.Id, stored.IssueId);
         Assert.Equal(ArtifactKind.Deployment, stored.Kind);
 
-        var activity = await fixture.Db.ActivityEvents.SingleAsync();
+        var activity = await fixture.Db.ActivityEvents.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ActivityEventType.ArtifactAttached, activity.Type);
         Assert.Equal(fixture.Issue.Id, activity.IssueId);
         Assert.Equal(actorId, activity.ActorId);
@@ -51,14 +51,14 @@ public sealed class ArtifactServiceTests
             ArtifactKind.Link,
             "Slack thread",
             "https://slack.example/thread",
-            source: "slack-thread-expansion");
+            source: "slack-thread-expansion", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("slack-thread-expansion", artifact.Source);
         Assert.Null(artifact.AddedById);
 
         // The hook path emits the same audited event a human attach does — provenance is the only
         // difference between them.
-        var activity = await fixture.Db.ActivityEvents.SingleAsync();
+        var activity = await fixture.Db.ActivityEvents.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ActivityEventType.ArtifactAttached, activity.Type);
         Assert.Null(activity.ActorId);
     }
@@ -74,13 +74,13 @@ public sealed class ArtifactServiceTests
             fixture.Issue.Id,
             ArtifactKind.File,
             "crash.log",
-            inlineContent: new ArtifactInlineContent(bytes, "text/plain"));
+            inlineContent: new ArtifactInlineContent(bytes, "text/plain"), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(fixture.Store.LastReference, artifact.ContentReference);
         Assert.Equal(bytes, fixture.Store.Stored[artifact.ContentReference].Bytes);
 
         // The raw content must never leak into the row or the activity payload.
-        var activity = await fixture.Db.ActivityEvents.SingleAsync();
+        var activity = await fixture.Db.ActivityEvents.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.DoesNotContain("crash log contents", activity.DataJson);
     }
 
@@ -94,11 +94,11 @@ public sealed class ArtifactServiceTests
             fixture.Issue.Id,
             ArtifactKind.File,
             "crash.log",
-            inlineContent: new ArtifactInlineContent([1, 2, 3], "application/octet-stream")));
+            inlineContent: new ArtifactInlineContent([1, 2, 3], "application/octet-stream"), ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("ARTIFACT_STORE_UNAVAILABLE", ex.ErrorCode);
-        Assert.Empty(await fixture.Db.Artifacts.ToListAsync());
-        Assert.Empty(await fixture.Db.ActivityEvents.ToListAsync());
+        Assert.Empty(await fixture.Db.Artifacts.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Db.ActivityEvents.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -112,10 +112,10 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
 
         var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
-            fixture.Issue.Id, ArtifactKind.Link, title, contentReference));
+            fixture.Issue.Id, ArtifactKind.Link, title, contentReference, ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
-        Assert.Empty(await fixture.Db.Artifacts.ToListAsync());
+        Assert.Empty(await fixture.Db.Artifacts.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
 
         var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
-            fixture.Issue.Id, (ArtifactKind)42, "Title", "https://example.test"));
+            fixture.Issue.Id, (ArtifactKind)42, "Title", "https://example.test", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -141,7 +141,7 @@ public sealed class ArtifactServiceTests
             ArtifactKind.PullRequest,
             "PR",
             "https://example.test",
-            metadata: new string('x', (8 * 1024) + 1)));
+            metadata: new string('x', (8 * 1024) + 1), ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -157,7 +157,7 @@ public sealed class ArtifactServiceTests
             ArtifactKind.File,
             "crash.log",
             "https://example.test",
-            new ArtifactInlineContent([1, 2, 3])));
+            new ArtifactInlineContent([1, 2, 3]), ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -169,7 +169,7 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
 
         var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
-            IssueId.New(), ArtifactKind.Link, "Title", "https://example.test"));
+            IssueId.New(), ArtifactKind.Link, "Title", "https://example.test", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -181,10 +181,10 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
 
         var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.AttachArtifactAsync(fixture.WorkspaceId,
-            fixture.OrphanedIssue.Id, ArtifactKind.Link, "Title", "https://example.test"));
+            fixture.OrphanedIssue.Id, ArtifactKind.Link, "Title", "https://example.test", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
-        Assert.Empty(await fixture.Db.Artifacts.ToListAsync());
+        Assert.Empty(await fixture.Db.Artifacts.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
 
         var ex = await Assert.ThrowsAsync<ArtifactException>(
-            () => service.ListArtifactsAsync(fixture.WorkspaceId, fixture.OrphanedIssue.Id));
+            () => service.ListArtifactsAsync(fixture.WorkspaceId, fixture.OrphanedIssue.Id, TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -205,11 +205,11 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        await service.AttachArtifactAsync(fixture.WorkspaceId, fixture.Issue.Id, ArtifactKind.Link, "First", "https://a.test");
-        await service.AttachArtifactAsync(fixture.WorkspaceId, fixture.Issue.Id, ArtifactKind.Link, "Second", "https://b.test");
-        await service.AttachArtifactAsync(fixture.WorkspaceId, fixture.OtherIssue.Id, ArtifactKind.Link, "Elsewhere", "https://c.test");
+        await service.AttachArtifactAsync(fixture.WorkspaceId, fixture.Issue.Id, ArtifactKind.Link, "First", "https://a.test", ct: TestContext.Current.CancellationToken);
+        await service.AttachArtifactAsync(fixture.WorkspaceId, fixture.Issue.Id, ArtifactKind.Link, "Second", "https://b.test", ct: TestContext.Current.CancellationToken);
+        await service.AttachArtifactAsync(fixture.WorkspaceId, fixture.OtherIssue.Id, ArtifactKind.Link, "Elsewhere", "https://c.test", ct: TestContext.Current.CancellationToken);
 
-        var artifacts = await service.ListArtifactsAsync(fixture.WorkspaceId, fixture.Issue.Id);
+        var artifacts = await service.ListArtifactsAsync(fixture.WorkspaceId, fixture.Issue.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(["First", "Second"], artifacts.Select(artifact => artifact.Title));
     }
@@ -220,7 +220,7 @@ public sealed class ArtifactServiceTests
         await using var fixture = await ArtifactFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.ListArtifactsAsync(fixture.WorkspaceId, IssueId.New()));
+        var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.ListArtifactsAsync(fixture.WorkspaceId, IssueId.New(), TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -237,13 +237,13 @@ public sealed class ArtifactServiceTests
             "github:acme/app#7",
             "Fix the thing",
             "https://github.test/acme/app/pull/7",
-            """{"state":"open"}""");
+            """{"state":"open"}""", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("github:acme/app#7", artifact.DedupKey);
         Assert.Equal("github", artifact.Source);
-        Assert.Single(await fixture.Db.Artifacts.ToListAsync());
+        Assert.Single(await fixture.Db.Artifacts.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
 
-        var activity = await fixture.Db.ActivityEvents.SingleAsync();
+        var activity = await fixture.Db.ActivityEvents.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ActivityEventType.ArtifactAttached, activity.Type);
     }
 
@@ -256,11 +256,11 @@ public sealed class ArtifactServiceTests
 
         var first = await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, DedupKey, "Fix the thing",
-            "https://github.test/acme/app/pull/7", """{"state":"open"}""");
+            "https://github.test/acme/app/pull/7", """{"state":"open"}""", ct: TestContext.Current.CancellationToken);
 
         var second = await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, DedupKey, "Fix the thing (merged)",
-            "https://github.test/acme/app/pull/7", """{"state":"merged"}""");
+            "https://github.test/acme/app/pull/7", """{"state":"merged"}""", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(first.Id, second.Id);
         Assert.Equal(first.CreatedAt, second.CreatedAt);
@@ -268,9 +268,9 @@ public sealed class ArtifactServiceTests
         Assert.Equal("Fix the thing (merged)", second.Title);
 
         // The dedup key upserts rather than accumulating a row per provider event.
-        Assert.Single(await fixture.Db.Artifacts.ToListAsync());
+        Assert.Single(await fixture.Db.Artifacts.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
 
-        var types = await fixture.Db.ActivityEvents.Select(activity => activity.Type).ToListAsync();
+        var types = await fixture.Db.ActivityEvents.Select(activity => activity.Type).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal([ActivityEventType.ArtifactAttached, ActivityEventType.ArtifactRefreshed], types);
     }
 
@@ -284,11 +284,11 @@ public sealed class ArtifactServiceTests
 
         await service.AttachArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, "Manual PR link",
-            "https://github.test/acme/app/pull/9", actorId: actorId, dedupKey: DedupKey);
+            "https://github.test/acme/app/pull/9", actorId: actorId, dedupKey: DedupKey, ct: TestContext.Current.CancellationToken);
 
         var refreshed = await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, DedupKey, "Manual PR link",
-            "https://github.test/acme/app/pull/9", """{"state":"merged"}""");
+            "https://github.test/acme/app/pull/9", """{"state":"merged"}""", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(actorId.Value, refreshed.AddedById);
     }
@@ -302,14 +302,14 @@ public sealed class ArtifactServiceTests
 
         await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.Issue.Id, ArtifactKind.PullRequest, DedupKey, "PR",
-            "https://github.test/acme/app/pull/7");
+            "https://github.test/acme/app/pull/7", ct: TestContext.Current.CancellationToken);
 
         await service.RefreshArtifactAsync(fixture.WorkspaceId,
             fixture.OtherIssue.Id, ArtifactKind.PullRequest, DedupKey, "PR",
-            "https://github.test/acme/app/pull/7");
+            "https://github.test/acme/app/pull/7", ct: TestContext.Current.CancellationToken);
 
         // The dedup key scopes to an issue, so the same PR can be correlated to two issues.
-        Assert.Equal(2, await fixture.Db.Artifacts.CountAsync());
+        Assert.Equal(2, await fixture.Db.Artifacts.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -322,10 +322,10 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
 
         var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RefreshArtifactAsync(fixture.WorkspaceId,
-            fixture.Issue.Id, kind, "dedup", "Title", "https://example.test"));
+            fixture.Issue.Id, kind, "dedup", "Title", "https://example.test", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
-        Assert.Empty(await fixture.Db.Artifacts.ToListAsync());
+        Assert.Empty(await fixture.Db.Artifacts.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -335,7 +335,7 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
 
         var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RefreshArtifactAsync(fixture.WorkspaceId,
-            fixture.Issue.Id, ArtifactKind.PullRequest, "  ", "Title", "https://example.test"));
+            fixture.Issue.Id, ArtifactKind.PullRequest, "  ", "Title", "https://example.test", ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -351,15 +351,15 @@ public sealed class ArtifactServiceTests
             fixture.Issue.Id,
             ArtifactKind.File,
             "crash.log",
-            inlineContent: new ArtifactInlineContent(Encoding.UTF8.GetBytes("log")));
+            inlineContent: new ArtifactInlineContent(Encoding.UTF8.GetBytes("log")), ct: TestContext.Current.CancellationToken);
 
-        await service.RemoveArtifactAsync(fixture.WorkspaceId, fixture.Issue.Id, new ArtifactId(artifact.Id), actorId);
+        await service.RemoveArtifactAsync(fixture.WorkspaceId, fixture.Issue.Id, new ArtifactId(artifact.Id), actorId, TestContext.Current.CancellationToken);
 
-        Assert.Empty(await fixture.Db.Artifacts.ToListAsync());
+        Assert.Empty(await fixture.Db.Artifacts.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
         Assert.DoesNotContain(artifact.ContentReference, fixture.Store.Stored.Keys);
 
         var removal = await fixture.Db.ActivityEvents
-            .SingleAsync(activity => activity.Type == ActivityEventType.ArtifactRemoved);
+            .SingleAsync(activity => activity.Type == ActivityEventType.ArtifactRemoved, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(actorId, removal.ActorId);
     }
 
@@ -370,13 +370,13 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
 
         var artifact = await service.AttachArtifactAsync(fixture.WorkspaceId,
-            fixture.Issue.Id, ArtifactKind.Link, "Title", "https://example.test");
+            fixture.Issue.Id, ArtifactKind.Link, "Title", "https://example.test", ct: TestContext.Current.CancellationToken);
 
         var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RemoveArtifactAsync(fixture.WorkspaceId,
-            fixture.OtherIssue.Id, new ArtifactId(artifact.Id)));
+            fixture.OtherIssue.Id, new ArtifactId(artifact.Id), ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
-        Assert.Single(await fixture.Db.Artifacts.ToListAsync());
+        Assert.Single(await fixture.Db.Artifacts.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -386,7 +386,7 @@ public sealed class ArtifactServiceTests
         var service = fixture.CreateService();
 
         var ex = await Assert.ThrowsAsync<ArtifactException>(() => service.RemoveArtifactAsync(fixture.WorkspaceId,
-            fixture.Issue.Id, ArtifactId.New()));
+            fixture.Issue.Id, ArtifactId.New(), ct: TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }

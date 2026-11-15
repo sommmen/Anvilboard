@@ -19,13 +19,13 @@ public sealed class PluginConfigStateStoreTests
         await using (var db = CreateContext(connection))
         {
             IPluginConfigStore store = new PluginConfigStateStore(db);
-            await store.SetAsync(workspace, "github", "base-url", "https://github.example");
-            await store.SetAsync(workspace, "linear", "base-url", "https://linear.example");
-            await store.SetAsync(otherWorkspace, "github", "base-url", "https://other.example");
-            await store.SetAsync(workspace, "github", "token", "secret-value", isSecret: true);
+            await store.SetAsync(workspace, "github", "base-url", "https://github.example", cancellationToken: TestContext.Current.CancellationToken);
+            await store.SetAsync(workspace, "linear", "base-url", "https://linear.example", cancellationToken: TestContext.Current.CancellationToken);
+            await store.SetAsync(otherWorkspace, "github", "base-url", "https://other.example", cancellationToken: TestContext.Current.CancellationToken);
+            await store.SetAsync(workspace, "github", "token", "secret-value", isSecret: true, cancellationToken: TestContext.Current.CancellationToken);
 
-            var config = await store.GetAsync(workspace, "github", "base-url");
-            var secret = await store.GetAsync(workspace, "github", "token");
+            var config = await store.GetAsync(workspace, "github", "base-url", TestContext.Current.CancellationToken);
+            var secret = await store.GetAsync(workspace, "github", "token", TestContext.Current.CancellationToken);
 
             Assert.Equal("https://github.example", config!.Value);
             Assert.Null(secret!.Value);
@@ -36,8 +36,8 @@ public sealed class PluginConfigStateStoreTests
         {
             IPluginConfigStore store = new PluginConfigStateStore(db);
 
-            Assert.Equal("https://linear.example", (await store.GetAsync(workspace, "linear", "base-url"))!.Value);
-            Assert.Equal("https://other.example", (await store.GetAsync(otherWorkspace, "github", "base-url"))!.Value);
+            Assert.Equal("https://linear.example", (await store.GetAsync(workspace, "linear", "base-url", TestContext.Current.CancellationToken))!.Value);
+            Assert.Equal("https://other.example", (await store.GetAsync(otherWorkspace, "github", "base-url", TestContext.Current.CancellationToken))!.Value);
         }
     }
 
@@ -50,15 +50,15 @@ public sealed class PluginConfigStateStoreTests
         IPluginConfigStore configStore = new PluginConfigStateStore(db);
         IPluginStateStore stateStore = new PluginConfigStateStore(db);
 
-        await Assert.ThrowsAsync<ArgumentException>(() => configStore.SetAsync(workspace, "", "valid", "value"));
-        await Assert.ThrowsAsync<ArgumentException>(() => configStore.SetAsync(workspace, "valid", "", "value"));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => configStore.SetAsync(workspace, new string('p', 101), "valid", "value"));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => configStore.SetAsync(workspace, "valid", new string('c', 201), "value"));
+        await Assert.ThrowsAsync<ArgumentException>(() => configStore.SetAsync(workspace, "", "valid", "value", cancellationToken: TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => configStore.SetAsync(workspace, "valid", "", "value", cancellationToken: TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => configStore.SetAsync(workspace, new string('p', 101), "valid", "value", cancellationToken: TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => configStore.SetAsync(workspace, "valid", new string('c', 201), "value", cancellationToken: TestContext.Current.CancellationToken));
 
-        await Assert.ThrowsAsync<ArgumentException>(() => stateStore.SetAsync(workspace, "", "valid", "{}"));
-        await Assert.ThrowsAsync<ArgumentException>(() => stateStore.SetAsync(workspace, "valid", "", "{}"));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => stateStore.SetAsync(workspace, new string('p', 101), "valid", "{}"));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => stateStore.SetAsync(workspace, "valid", new string('s', 201), "{}"));
+        await Assert.ThrowsAsync<ArgumentException>(() => stateStore.SetAsync(workspace, "", "valid", "{}", TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => stateStore.SetAsync(workspace, "valid", "", "{}", TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => stateStore.SetAsync(workspace, new string('p', 101), "valid", "{}", TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => stateStore.SetAsync(workspace, "valid", new string('s', 201), "{}", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -70,17 +70,17 @@ public sealed class PluginConfigStateStoreTests
         await using (var db = CreateContext(connection))
         {
             IPluginStateStore store = new PluginConfigStateStore(db);
-            await store.SetAsync(workspace, "github", "cursor", "{\"lastId\":1}");
-            await store.SetAsync(workspace, "github", "cursor", "{\"lastId\":2}");
+            await store.SetAsync(workspace, "github", "cursor", "{\"lastId\":1}", TestContext.Current.CancellationToken);
+            await store.SetAsync(workspace, "github", "cursor", "{\"lastId\":2}", TestContext.Current.CancellationToken);
         }
 
         await using (var db = CreateContext(connection))
         {
             IPluginStateStore store = new PluginConfigStateStore(db);
-            var state = await store.GetAsync(workspace, "github", "cursor");
+            var state = await store.GetAsync(workspace, "github", "cursor", TestContext.Current.CancellationToken);
 
             Assert.Equal("{\"lastId\":2}", state!.Value);
-            Assert.Null(await store.GetAsync(workspace, "linear", "cursor"));
+            Assert.Null(await store.GetAsync(workspace, "linear", "cursor", TestContext.Current.CancellationToken));
         }
     }
 

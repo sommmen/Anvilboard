@@ -28,14 +28,14 @@ public sealed class WebhookEndpointsTests
         using var clientA = factory.CreateClient();
         var cookieA = await ApiFactory.BootstrapAndGetSessionCookieAsync(clientA, "workspace-a");
         clientA.DefaultRequestHeaders.Add("Cookie", cookieA);
-        var teamAResponse = await clientA.PostAsJsonAsync("/api/teams", new { name = "Engineering A", key = "ENG" });
+        var teamAResponse = await clientA.PostAsJsonAsync("/api/teams", new { name = "Engineering A", key = "ENG" }, cancellationToken: TestContext.Current.CancellationToken);
         teamAResponse.EnsureSuccessStatusCode();
 
         await factory.SeedAdditionalWorkspaceAsync("workspace-b", "admin-b");
         using var clientB = factory.CreateClient();
         var cookieB = await ApiFactory.LoginAndGetSessionCookieAsync(clientB, "admin-b");
         clientB.DefaultRequestHeaders.Add("Cookie", cookieB);
-        var teamBResponse = await clientB.PostAsJsonAsync("/api/teams", new { name = "Engineering B", key = "ENG" });
+        var teamBResponse = await clientB.PostAsJsonAsync("/api/teams", new { name = "Engineering B", key = "ENG" }, cancellationToken: TestContext.Current.CancellationToken);
         teamBResponse.EnsureSuccessStatusCode();
 
         using var anonymousClient = factory.CreateClient();

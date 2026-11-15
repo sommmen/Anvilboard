@@ -35,7 +35,7 @@ public sealed class McpStdoutTests
         try
         {
             Assert.True(process.Start());
-            var stderr = process.StandardError.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
 
             await process.StandardInput.WriteLineAsync(
                 """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"stdout-regression-test","version":"1.0"}}}""");
@@ -43,12 +43,11 @@ public sealed class McpStdoutTests
                 """{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}""");
             await process.StandardInput.WriteLineAsync(
                 """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}""");
-            await process.StandardInput.FlushAsync();
+            await process.StandardInput.FlushAsync(TestContext.Current.CancellationToken);
 
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var frames = new List<JsonDocument>();
-            while (!frames.Any(frame =>
-                       frame.RootElement.TryGetProperty("id", out var id) && id.GetInt32() == 2))
+            while (!HasResponse(frames, 1) || !HasResponse(frames, 2))
             {
                 var line = await process.StandardOutput.ReadLineAsync(timeout.Token);
                 Assert.False(string.IsNullOrWhiteSpace(line));
@@ -83,12 +82,16 @@ public sealed class McpStdoutTests
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync();
+                await process.WaitForExitAsync(TestContext.Current.CancellationToken);
             }
 
             TryDelete(tempDirectory);
         }
     }
+
+    // The server handles requests concurrently, so the initialize response can follow the tools/list one.
+    private static bool HasResponse(List<JsonDocument> frames, int requestId) =>
+        frames.Any(frame => frame.RootElement.TryGetProperty("id", out var id) && id.GetInt32() == requestId);
 
     private static void TryDelete(string path)
     {

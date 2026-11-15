@@ -15,7 +15,7 @@ public sealed class FileSystemBackupArchiveStoreTests : IDisposable
     {
         var store = CreateStore();
 
-        await store.EnsureWritableAsync();
+        await store.EnsureWritableAsync(TestContext.Current.CancellationToken);
 
         Assert.True(Directory.Exists(_backupDirectory));
     }
@@ -25,11 +25,11 @@ public sealed class FileSystemBackupArchiveStoreTests : IDisposable
     {
         // A plain file already sitting at the configured backup directory path can never become a
         // directory; this is a deterministic way to force the "unwritable" failure (plan §7.4).
-        await File.WriteAllTextAsync(_backupDirectory, "not a directory");
+        await File.WriteAllTextAsync(_backupDirectory, "not a directory", TestContext.Current.CancellationToken);
 
         var store = CreateStore();
 
-        await Assert.ThrowsAsync<BackupStoreUnavailableException>(() => store.EnsureWritableAsync());
+        await Assert.ThrowsAsync<BackupStoreUnavailableException>(() => store.EnsureWritableAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public sealed class FileSystemBackupArchiveStoreTests : IDisposable
         var store = CreateStore();
 
         var exception = await Assert.ThrowsAsync<BackupStoreUnavailableException>(
-            () => store.EnsureFreeSpaceAsync(long.MaxValue / 2));
+            () => store.EnsureFreeSpaceAsync(long.MaxValue / 2, TestContext.Current.CancellationToken));
 
         Assert.Contains("insufficient free space", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -48,7 +48,7 @@ public sealed class FileSystemBackupArchiveStoreTests : IDisposable
     {
         var store = CreateStore();
 
-        await store.EnsureFreeSpaceAsync(1024);
+        await store.EnsureFreeSpaceAsync(1024, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -83,8 +83,8 @@ public sealed class FileSystemBackupArchiveStoreTests : IDisposable
         var location = store.CreateStagingLocation();
         var manifest = CreateManifest(location.BackupId);
 
-        await store.WriteManifestAsync(location, manifest);
-        var read = await store.ReadManifestAsync(location.BackupId);
+        await store.WriteManifestAsync(location, manifest, TestContext.Current.CancellationToken);
+        var read = await store.ReadManifestAsync(location.BackupId, TestContext.Current.CancellationToken);
 
         Assert.NotNull(read);
         Assert.Equal(manifest.BackupId, read!.BackupId);
@@ -103,7 +103,7 @@ public sealed class FileSystemBackupArchiveStoreTests : IDisposable
     {
         var store = CreateStore();
 
-        Assert.Null(await store.ReadManifestAsync(Guid.NewGuid()));
+        Assert.Null(await store.ReadManifestAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -111,9 +111,9 @@ public sealed class FileSystemBackupArchiveStoreTests : IDisposable
     {
         var store = CreateStore();
         var location = store.CreateStagingLocation();
-        await File.WriteAllTextAsync(location.ManifestPath, "{ not valid json");
+        await File.WriteAllTextAsync(location.ManifestPath, "{ not valid json", TestContext.Current.CancellationToken);
 
-        Assert.Null(await store.ReadManifestAsync(location.BackupId));
+        Assert.Null(await store.ReadManifestAsync(location.BackupId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -122,16 +122,16 @@ public sealed class FileSystemBackupArchiveStoreTests : IDisposable
         var store = CreateStore();
 
         var older = store.CreateStagingLocation();
-        await store.WriteManifestAsync(older, CreateManifest(older.BackupId, DateTimeOffset.UtcNow.AddMinutes(-10)));
+        await store.WriteManifestAsync(older, CreateManifest(older.BackupId, DateTimeOffset.UtcNow.AddMinutes(-10)), TestContext.Current.CancellationToken);
 
         var newer = store.CreateStagingLocation();
-        await store.WriteManifestAsync(newer, CreateManifest(newer.BackupId, DateTimeOffset.UtcNow));
+        await store.WriteManifestAsync(newer, CreateManifest(newer.BackupId, DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
 
         // Incomplete: the staging directory exists (e.g. the process crashed mid-backup) but no
         // manifest was ever written, so it must never be surfaced as a usable backup (plan §8.3).
         var incomplete = store.CreateStagingLocation();
 
-        var backups = await store.ListBackupsAsync();
+        var backups = await store.ListBackupsAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, backups.Count);
         Assert.Equal(newer.BackupId, backups[0].BackupId);
@@ -144,7 +144,7 @@ public sealed class FileSystemBackupArchiveStoreTests : IDisposable
     {
         var store = CreateStore();
 
-        Assert.Empty(await store.ListBackupsAsync());
+        Assert.Empty(await store.ListBackupsAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]

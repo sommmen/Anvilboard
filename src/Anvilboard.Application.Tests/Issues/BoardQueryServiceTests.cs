@@ -15,17 +15,17 @@ public sealed class BoardQueryServiceTests
         await using var fixture = await BoardQueryFixture.CreateAsync();
         var service = fixture.Service;
 
-        var firstPage = await service.QueryAsync(new BoardQuery(fixture.WorkspaceId, Type: "Bug", GroupBy: BoardGroupBy.Type, Limit: 1));
+        var firstPage = await service.QueryAsync(new BoardQuery(fixture.WorkspaceId, Type: "Bug", GroupBy: BoardGroupBy.Type, Limit: 1), TestContext.Current.CancellationToken);
 
         var group = Assert.Single(firstPage.Groups);
         Assert.Equal("Bug", group.DisplayName);
         Assert.Single(group.Issues);
         Assert.NotNull(firstPage.NextCursor);
 
-        var secondPage = await service.QueryAsync(new BoardQuery(fixture.WorkspaceId, Type: "Bug", Limit: 1, Cursor: firstPage.NextCursor));
+        var secondPage = await service.QueryAsync(new BoardQuery(fixture.WorkspaceId, Type: "Bug", Limit: 1, Cursor: firstPage.NextCursor), TestContext.Current.CancellationToken);
 
         Assert.Single(Assert.Single(secondPage.Groups).Issues);
-        var withArchived = await service.QueryAsync(new BoardQuery(fixture.WorkspaceId, IncludeArchived: true, GroupBy: BoardGroupBy.Type));
+        var withArchived = await service.QueryAsync(new BoardQuery(fixture.WorkspaceId, IncludeArchived: true, GroupBy: BoardGroupBy.Type), TestContext.Current.CancellationToken);
         Assert.Equal(3, withArchived.TotalCount);
     }
 
@@ -37,7 +37,7 @@ public sealed class BoardQueryServiceTests
         // The seeded GitHub integration has no health row yet, which derives as Stale, so the
         // filter must resolve to { GitHub } and drop the locally created issues.
         var page = await fixture.Service.QueryAsync(
-            new BoardQuery(fixture.WorkspaceId, SyncCondition: BoardSyncCondition.Stale, IncludeArchived: true));
+            new BoardQuery(fixture.WorkspaceId, SyncCondition: BoardSyncCondition.Stale, IncludeArchived: true), TestContext.Current.CancellationToken);
 
         Assert.Equal(1, page.TotalCount);
         var issue = Assert.Single(page.Groups.SelectMany(group => group.Issues));
@@ -52,7 +52,7 @@ public sealed class BoardQueryServiceTests
         // Nothing is failing, so the resolved provider set is empty. That must mean "no issues",
         // never "no filter" — the unfiltered board would return three issues here.
         var page = await fixture.Service.QueryAsync(
-            new BoardQuery(fixture.WorkspaceId, SyncCondition: BoardSyncCondition.Failed, IncludeArchived: true));
+            new BoardQuery(fixture.WorkspaceId, SyncCondition: BoardSyncCondition.Failed, IncludeArchived: true), TestContext.Current.CancellationToken);
 
         Assert.Equal(0, page.TotalCount);
         Assert.Empty(page.Groups);
@@ -67,7 +67,7 @@ public sealed class BoardQueryServiceTests
         await using var fixture = await BoardQueryFixture.CreateAsync();
 
         var exception = await Assert.ThrowsAsync<BoardQueryException>(() => fixture.Service
-            .QueryAsync(new BoardQuery(fixture.WorkspaceId, Limit: limit)));
+            .QueryAsync(new BoardQuery(fixture.WorkspaceId, Limit: limit), TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
     }
@@ -78,7 +78,7 @@ public sealed class BoardQueryServiceTests
         await using var fixture = await BoardQueryFixture.CreateAsync();
 
         var exception = await Assert.ThrowsAsync<BoardQueryException>(() => fixture.Service
-            .QueryAsync(new BoardQuery(fixture.WorkspaceId, Cursor: "not-a-cursor")));
+            .QueryAsync(new BoardQuery(fixture.WorkspaceId, Cursor: "not-a-cursor"), TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", exception.ErrorCode);
     }

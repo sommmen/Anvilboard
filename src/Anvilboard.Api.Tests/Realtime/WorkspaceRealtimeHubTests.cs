@@ -120,7 +120,7 @@ public sealed class WorkspaceRealtimeHubTests
 
         await insiderReceived.Task.WaitAsync(ReceiveTimeout, CancellationToken.None);
 
-        var completed = await Task.WhenAny(observed.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+        var completed = await Task.WhenAny(observed.Task, Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
         Assert.NotSame(observed.Task, completed);
     }
 
@@ -166,7 +166,7 @@ public sealed class WorkspaceRealtimeHubTests
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
         client.DefaultRequestHeaders.Add("Cookie", cookie);
-        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" });
+        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" }, cancellationToken: TestContext.Current.CancellationToken);
         teamResponse.EnsureSuccessStatusCode();
 
         await using var connection = BuildConnection(factory, cookie);
@@ -204,7 +204,7 @@ public sealed class WorkspaceRealtimeHubTests
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
         client.DefaultRequestHeaders.Add("Cookie", cookie);
-        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" });
+        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" }, cancellationToken: TestContext.Current.CancellationToken);
         teamResponse.EnsureSuccessStatusCode();
 
         await using var connection = BuildConnection(factory, cookie);
