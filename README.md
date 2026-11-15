@@ -92,18 +92,13 @@ historical snapshot of the original proof-of-concept build.
 
 ## Quickstart
 
-**Prerequisites:** .NET SDK 10, Node.js 20+ (Angular 22 requires it), npm.
-
-> `Anvilboard.Agent` references `dotnet-agent-surface` by project reference (it isn't published to
-> NuGet yet), so clone it as a sibling of this repo: `../dotnet-agent-surface` relative to
-> `Anvilboard/`. `Anvilboard.Api` and the Angular client have no such dependency and build
-> standalone.
+**Prerequisites:** .NET SDK 10, Node.js 24 (Angular 22 requires it), pnpm.
 
 ```powershell
 # 1. Build the Angular client — its production build lands directly in Anvilboard.Api/wwwroot
 cd src/anvilboard-web
-npm install
-npm run build
+pnpm install
+pnpm build
 
 # 2. Run the API host (serves the API and the SPA you just built)
 cd ../Anvilboard.Api
