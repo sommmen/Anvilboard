@@ -13,6 +13,7 @@ on:
       # dependency PR one commit behind main. Re-running lets Renovate rebase
       # them right away instead of leaving them conflicted until the next cron.
       - "**/package-lock.json"
+      - "**/Directory.Packages.props"
       - "**/dotnet-tools.json"
   workflow_dispatch: # Allow running the workflow manually from the GitHub UI
   schedule:
@@ -27,6 +28,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: read
   security-events: read
 
 jobs:

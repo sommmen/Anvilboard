@@ -49,7 +49,7 @@ jobs:
 
       - name: Run tests
         working-directory: Anvilboard
-        run: dotnet test Anvilboard.slnx --no-build --no-restore --configuration Release --verbosity normal
+        run: dotnet test Anvilboard.slnx --no-build --no-restore --configuration Release --verbosity normal --report-gh
 
   build-and-test-web:
     name: Build and Test (Angular)
@@ -80,3 +80,18 @@ jobs:
 
       - name: Test
         run: npm test -- --watch=false
+
+  ci:
+    name: ci
+    needs: [build-and-test-dotnet, build-and-test-web]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report CI result
+        run: |
+          if [[ "${{ needs.build-and-test-dotnet.result }}" != "success" ]] || \
+             [[ "${{ needs.build-and-test-web.result }}" != "success" ]]; then
+            echo "CI checks failed"
+            exit 1
+          fi
+          echo "All CI checks passed."

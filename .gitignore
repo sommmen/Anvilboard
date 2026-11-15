@@ -24,13 +24,18 @@ npm-debug.log*
 
 # IDEs / editors
 .idea/
-.serena/
+# Commit Serena's project config; ignore its machine-local index and memories.
+.serena/*
+!.serena/project.yml
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 !.vscode/mcp.json
+
+# Logs
+*.log
 
 # OS
 .DS_Store
