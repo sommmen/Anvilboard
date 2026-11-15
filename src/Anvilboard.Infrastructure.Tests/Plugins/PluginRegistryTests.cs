@@ -116,16 +116,22 @@ public sealed class PluginRegistryTests
 
     public sealed class PluginRequiringHostOnlyCapability(IHostOnlyCapabilityProbe probe) : IAnvilboardPlugin
     {
+        public IHostOnlyCapabilityProbe Probe { get; } = probe;
+
         public PluginManifest Manifest { get; } = new("requires-host-only-capability", "Requires Host-Only Capability", "1.0.0");
     }
 
     public sealed class PluginRequiringServiceProvider(IServiceProvider serviceProvider) : IAnvilboardPlugin
     {
+        public IServiceProvider ServiceProvider { get; } = serviceProvider;
+
         public PluginManifest Manifest { get; } = new("requires-service-provider", "Requires Service Provider", "1.0.0");
     }
 
     public sealed class PluginRequiringHostOnlyCapabilityCollection(IEnumerable<IHostOnlyCapabilityProbe> probes) : IAnvilboardPlugin
     {
+        public IEnumerable<IHostOnlyCapabilityProbe> Probes { get; } = probes;
+
         public PluginManifest Manifest { get; } = new("requires-host-only-capability-collection", "Requires Host-Only Capability Collection", "1.0.0");
     }
 
@@ -135,6 +141,8 @@ public sealed class PluginRegistryTests
 
     public sealed class PluginRequiringOrdinaryCapability(IOrdinaryCapabilityProbe probe) : IAnvilboardPlugin
     {
+        public IOrdinaryCapabilityProbe Probe { get; } = probe;
+
         public PluginManifest Manifest { get; } = new("requires-ordinary-capability", "Requires Ordinary Capability", "1.0.0");
     }
 }

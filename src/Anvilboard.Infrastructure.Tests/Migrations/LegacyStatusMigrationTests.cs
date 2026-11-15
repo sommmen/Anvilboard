@@ -39,7 +39,7 @@ public sealed class LegacyStatusMigrationTests
                 Assert.Equal(expectedKeys.Length, issues.Count);
                 foreach (var issue in issues)
                 {
-                    Assert.NotNull(issue.WorkflowStateId);
+                    Assert.NotEqual(default, issue.WorkflowStateId);
                     Assert.Equal(expectedKeys[(int)issue.Status],
                         states.Single(state => state.Id == issue.WorkflowStateId).Key);
                 }
