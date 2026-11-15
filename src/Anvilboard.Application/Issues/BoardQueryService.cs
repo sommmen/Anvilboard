@@ -178,7 +178,7 @@ public sealed class BoardQueryService(AnvilboardDbContext db, IIntegrationHealth
         {
             IEnumerable<string?> labelIds = issue.LabelIds.Count == 0
                 ? [null]
-                : issue.LabelIds.Select(id => id.ToString());
+                : issue.LabelIds.Select(id => (string?)id.ToString());
             foreach (var labelKey in labelIds)
             {
                 var key = labelKey ?? string.Empty;
