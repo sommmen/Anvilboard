@@ -47,7 +47,7 @@
 |---|---:|
 | Test projects | 6 `*.Tests` unit/integration projects with tests + 1 empty `Anvilboard.IntegrationTests` scaffold (no `.cs` test files yet) |
 | Testable boundaries with an existing test file | 11 of 12 listed above have at least one test file |
-| Total automated tests (last run) | 630 total: 581 .NET (Application 311, API 132, Agent 80, Infrastructure 41, GitHub 12, Linear 5) plus 49 Angular (`npm test -- --watch=false`, 6 spec files), all passing |
+| Total automated tests (last run) | 630 total: 581 .NET (Application 311, API 132, Agent 80, Infrastructure 41, GitHub 12, Linear 5) plus 49 Angular (`pnpm test --watch=false`, 6 spec files), all passing |
 | Test result | All passing, 0 failures |
 | Known coverage gaps | No dedicated `DashboardService`, `IssueService`, or `SyncCoordinator` test file; no CLI/MCP contract-equivalence test project (though `Anvilboard.Agent.Tests` now covers authorization, the operation catalog, request guards, and MCP stdout isolation); `Anvilboard.IntegrationTests` project exists but is empty |
 
@@ -316,5 +316,5 @@ AC identifiers are intentionally qualified with their source document because se
 | Persistence/recovery integrity cases | 11 |
 | Open traceability gaps | 4 |
 | Automated .NET tests (`dotnet test Anvilboard.slnx`) | 581 |
-| Automated Angular tests (`npm test`) | 49 |
+| Automated Angular tests (`pnpm test`) | 49 |
 | Automated tests, total | 630 |

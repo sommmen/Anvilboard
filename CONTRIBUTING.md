@@ -41,13 +41,13 @@ architecture rather than introducing a new one.
 4. Build before you open a PR:
    ```powershell
    dotnet build Anvilboard.slnx
-   cd src/anvilboard-web && npm run build
+   cd src/anvilboard-web && pnpm build
    ```
 5. Run the tests before you open a PR (see
    [DEVELOPMENT.md's testing section](DEVELOPMENT.md#testing)):
    ```powershell
    dotnet test Anvilboard.slnx
-   cd src/anvilboard-web && npm test
+   cd src/anvilboard-web && pnpm test
    ```
    Coverage is broad but not complete, so also describe what you manually verified in your PR
    description — which UI flows you clicked through, which CLI/MCP operations you called, which

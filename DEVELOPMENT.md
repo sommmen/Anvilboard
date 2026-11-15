@@ -11,8 +11,9 @@ The historical PoC-era equivalents ([FUNCTIONAL_SPEC.md](FUNCTIONAL_SPEC.md),
 ## Prerequisites
 
 - **.NET SDK 10** (`dotnet --version` should report `10.x`).
-- **Node.js 24** and **npm** (Angular 22.1 requires Node ^22.22.3, ^24.15.0 or 26+; CI and
-  `src/anvilboard-web/.nvmrc` pin Node 24, and `packageManager` in `package.json` pins npm).
+- **Node.js 24** and **pnpm** (Angular 22.1 requires Node ^22.22.3, ^24.15.0 or 26+; CI,
+  `src/anvilboard-web/.nvmrc` and `engines` in `package.json` pin Node 24, and `packageManager` in
+  `package.json` pins pnpm — `corepack enable` picks up the pinned version).
 
 ## Repository layout
 
@@ -48,8 +49,8 @@ packages from NuGet (versions in `Directory.Packages.props`). To build a single 
 
 ```powershell
 cd src/anvilboard-web
-npm install
-npm run build
+pnpm install
+pnpm build
 ```
 
 `angular.json`'s production `outputPath` writes straight into `src/Anvilboard.Api/wwwroot` (no
@@ -62,7 +63,7 @@ serve the current UI.
 **Backend + prebuilt UI, single process** (what you'd run to just use the board):
 
 ```powershell
-cd src/anvilboard-web && npm run build
+cd src/anvilboard-web && pnpm build
 cd ../Anvilboard.Api
 dotnet run
 ```
@@ -79,7 +80,7 @@ dotnet run
 
 # terminal 2
 cd src/anvilboard-web
-npm start   # ng serve
+pnpm start   # ng serve
 ```
 
 `ng serve` proxies `/api` and `/webhooks` to `http://localhost:5089` via `proxy.conf.json`, so the
@@ -247,7 +248,7 @@ dotnet test tests/Anvilboard.IntegrationTests/Anvilboard.IntegrationTests.csproj
 `tests/Anvilboard.IntegrationTests` project is still an empty scaffold; real-time coverage lives in
 `src/Anvilboard.Application.Tests/Realtime` and `src/Anvilboard.Api.Tests/Realtime` instead.
 
-Frontend tests remain in `src/anvilboard-web` and run through Angular/Vitest (`npm test`). The
+Frontend tests remain in `src/anvilboard-web` and run through Angular/Vitest (`pnpm test`). The
 feature specification paths `src/Anvilboard.Web` and `tests/Anvilboard.Web.Tests` are stale; do not
 create a separate frontend test project at those paths.
 

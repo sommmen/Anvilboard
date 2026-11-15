@@ -48,24 +48,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - name: Setup pnpm and Node.js
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
-          node-version: "24.x"
-          cache: npm
-          cache-dependency-path: src/anvilboard-web/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
+          runtime: node@24
+          working-directory: src/anvilboard-web
+          require-lockfile: true
+          cache: true
 
       - name: Lint (format check)
-        run: npx prettier --check "src/**/*.{ts,html,scss}"
+        run: pnpm exec prettier --check "src/**/*.{ts,html,scss}"
 
       - name: Build
-        run: npm run build
+        run: pnpm build
 
       - name: Test
-        run: npm test -- --watch=false
+        run: pnpm test --watch=false
 
   ci:
     name: ci
