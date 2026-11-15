@@ -47,8 +47,7 @@ public sealed class McpStdoutTests
 
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var frames = new List<JsonDocument>();
-            while (!frames.Any(frame =>
-                       frame.RootElement.TryGetProperty("id", out var id) && id.GetInt32() == 2))
+            while (!HasResponse(frames, 1) || !HasResponse(frames, 2))
             {
                 var line = await process.StandardOutput.ReadLineAsync(timeout.Token);
                 Assert.False(string.IsNullOrWhiteSpace(line));
@@ -89,6 +88,10 @@ public sealed class McpStdoutTests
             TryDelete(tempDirectory);
         }
     }
+
+    // The server handles requests concurrently, so the initialize response can follow the tools/list one.
+    private static bool HasResponse(List<JsonDocument> frames, int requestId) =>
+        frames.Any(frame => frame.RootElement.TryGetProperty("id", out var id) && id.GetInt32() == requestId);
 
     private static void TryDelete(string path)
     {
