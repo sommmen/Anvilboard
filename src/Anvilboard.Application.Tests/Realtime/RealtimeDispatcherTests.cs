@@ -22,7 +22,7 @@ public sealed class RealtimeDispatcherTests
         buffer.Offer(Change());
         signal.Signal();
 
-        await transport.SecondSend.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await transport.SecondSend.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
         await dispatcher.StopAsync(CancellationToken.None);
     }
 

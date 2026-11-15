@@ -23,9 +23,9 @@ public sealed class WebhookPauseGateTests
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
         client.DefaultRequestHeaders.Add("Cookie", cookie);
-        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" });
+        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" }, cancellationToken: TestContext.Current.CancellationToken);
         teamResponse.EnsureSuccessStatusCode();
-        var team = await teamResponse.Content.ReadFromJsonAsync<TeamResponse>();
+        var team = await teamResponse.Content.ReadFromJsonAsync<TeamResponse>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(team);
 
         var workspaceId = await factory.GetWorkspaceIdAsync("test-workspace");
@@ -34,7 +34,7 @@ public sealed class WebhookPauseGateTests
         var response = await PostWebhookAsync(factory);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        var problem = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        var problem = await response.Content.ReadFromJsonAsync<ErrorResponse>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("INTEGRATION_PAUSED", problem?.Error);
 
         // The point of the gate is not the status code but the absence of a write: a 409 that still
@@ -49,9 +49,9 @@ public sealed class WebhookPauseGateTests
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
         client.DefaultRequestHeaders.Add("Cookie", cookie);
-        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" });
+        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" }, cancellationToken: TestContext.Current.CancellationToken);
         teamResponse.EnsureSuccessStatusCode();
-        var team = await teamResponse.Content.ReadFromJsonAsync<TeamResponse>();
+        var team = await teamResponse.Content.ReadFromJsonAsync<TeamResponse>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(team);
 
         var workspaceId = await factory.GetWorkspaceIdAsync("test-workspace");
@@ -73,9 +73,9 @@ public sealed class WebhookPauseGateTests
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
         client.DefaultRequestHeaders.Add("Cookie", cookie);
-        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" });
+        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" }, cancellationToken: TestContext.Current.CancellationToken);
         teamResponse.EnsureSuccessStatusCode();
-        var team = await teamResponse.Content.ReadFromJsonAsync<TeamResponse>();
+        var team = await teamResponse.Content.ReadFromJsonAsync<TeamResponse>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(team);
 
         var response = await PostWebhookAsync(factory);
@@ -93,9 +93,9 @@ public sealed class WebhookPauseGateTests
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
         client.DefaultRequestHeaders.Add("Cookie", cookie);
-        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" });
+        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" }, cancellationToken: TestContext.Current.CancellationToken);
         teamResponse.EnsureSuccessStatusCode();
-        var team = await teamResponse.Content.ReadFromJsonAsync<TeamResponse>();
+        var team = await teamResponse.Content.ReadFromJsonAsync<TeamResponse>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(team);
 
         var workspaceId = await factory.GetWorkspaceIdAsync("test-workspace");
@@ -116,9 +116,9 @@ public sealed class WebhookPauseGateTests
         using var client = factory.CreateClient();
         var cookie = await ApiFactory.BootstrapAndGetSessionCookieAsync(client);
         client.DefaultRequestHeaders.Add("Cookie", cookie);
-        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" });
+        var teamResponse = await client.PostAsJsonAsync("/api/teams", new { name = "Engineering", key = "ENG" }, cancellationToken: TestContext.Current.CancellationToken);
         teamResponse.EnsureSuccessStatusCode();
-        var team = await teamResponse.Content.ReadFromJsonAsync<TeamResponse>();
+        var team = await teamResponse.Content.ReadFromJsonAsync<TeamResponse>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(team);
 
         var workspaceId = await factory.GetWorkspaceIdAsync("test-workspace");

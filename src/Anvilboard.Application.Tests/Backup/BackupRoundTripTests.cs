@@ -78,7 +78,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
     {
         await using (var db = CreateContext())
         {
-            await db.Database.MigrateAsync();
+            await db.Database.MigrateAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
 
         var workspaceId = WorkspaceId.New();
@@ -99,7 +99,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
                 Key = "ORIG",
                 CreatedAt = DateTimeOffset.UtcNow,
             });
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         var operation = new BackupOperationContext("agent:roundtrip", AuditChannel.Rest, "corr-roundtrip");
@@ -107,7 +107,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
         BackupManifest manifest;
         await using (var db = CreateContext())
         {
-            manifest = await CreateService(db).CreateBackupAsync(workspaceId, operation);
+            manifest = await CreateService(db).CreateBackupAsync(workspaceId, operation, TestContext.Current.CancellationToken);
         }
 
         Assert.NotEqual(Guid.Empty, manifest.BackupId);
@@ -119,7 +119,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
         // instead have to fail the restore closed at the workspace-set-mismatch check.
         await using (var db = CreateContext())
         {
-            var workspace = await db.Workspaces.SingleAsync(w => w.Id == workspaceId);
+            var workspace = await db.Workspaces.SingleAsync(w => w.Id == workspaceId, cancellationToken: TestContext.Current.CancellationToken);
             workspace.Name = "Mutated After Backup";
             db.Teams.Add(new Team
             {
@@ -129,19 +129,19 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
                 Key = "POST",
                 CreatedAt = DateTimeOffset.UtcNow,
             });
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         await using (var db = CreateContext())
         {
-            Assert.Equal(2, await db.Teams.CountAsync(t => t.WorkspaceId == workspaceId));
+            Assert.Equal(2, await db.Teams.CountAsync(t => t.WorkspaceId == workspaceId, cancellationToken: TestContext.Current.CancellationToken));
         }
 
         RestoreResult result;
         await using (var db = CreateContext())
         {
             result = await CreateService(db).RestoreAsync(
-                workspaceId, new BackupArtifactRef(manifest.BackupId), WorkspaceSlug, operation);
+                workspaceId, new BackupArtifactRef(manifest.BackupId), WorkspaceSlug, operation, TestContext.Current.CancellationToken);
         }
 
         Assert.True(result.Success);
@@ -150,14 +150,14 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
 
         await using (var db = CreateContext())
         {
-            var workspace = await db.Workspaces.SingleAsync(w => w.Id == workspaceId);
+            var workspace = await db.Workspaces.SingleAsync(w => w.Id == workspaceId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal("Acme Corp Original", workspace.Name);
 
-            var team = await db.Teams.SingleAsync(t => t.WorkspaceId == workspaceId);
+            var team = await db.Teams.SingleAsync(t => t.WorkspaceId == workspaceId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal("Original Team", team.Name);
 
             var auditEvent = await db.AuditEvents.AsNoTracking()
-                .SingleAsync(e => e.Action == "workspace.restore.completed");
+                .SingleAsync(e => e.Action == "workspace.restore.completed", cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(manifest.BackupId.ToString(), auditEvent.TargetId);
             Assert.Equal("corr-roundtrip", auditEvent.CorrelationId);
         }
@@ -168,7 +168,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
     {
         await using (var db = CreateContext())
         {
-            await db.Database.MigrateAsync();
+            await db.Database.MigrateAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
 
         var workspaceId = WorkspaceId.New();
@@ -181,14 +181,14 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
                 Slug = WorkspaceSlug,
                 CreatedAt = DateTimeOffset.UtcNow,
             });
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         var operation = new BackupOperationContext("agent:roundtrip", AuditChannel.Rest, "corr-tamper");
         BackupManifest manifest;
         await using (var db = CreateContext())
         {
-            manifest = await CreateService(db).CreateBackupAsync(workspaceId, operation);
+            manifest = await CreateService(db).CreateBackupAsync(workspaceId, operation, TestContext.Current.CancellationToken);
         }
 
         // Tamper with the on-disk snapshot after the fact so its bytes no longer match the
@@ -196,13 +196,13 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
         var location = new FileSystemBackupArchiveStore(Options.Create(_dbOptions), NullLogger<FileSystemBackupArchiveStore>.Instance)
             .FindBackup(manifest.BackupId);
         Assert.NotNull(location);
-        await File.AppendAllTextAsync(location!.DatabasePath, "tampered-bytes");
+        await File.AppendAllTextAsync(location!.DatabasePath, "tampered-bytes", TestContext.Current.CancellationToken);
 
         RestoreResult result;
         await using (var db = CreateContext())
         {
             result = await CreateService(db).RestoreAsync(
-                workspaceId, new BackupArtifactRef(manifest.BackupId), WorkspaceSlug, operation);
+                workspaceId, new BackupArtifactRef(manifest.BackupId), WorkspaceSlug, operation, TestContext.Current.CancellationToken);
         }
 
         Assert.False(result.Success);
@@ -210,7 +210,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
 
         await using (var db = CreateContext())
         {
-            var workspace = await db.Workspaces.SingleAsync(w => w.Id == workspaceId);
+            var workspace = await db.Workspaces.SingleAsync(w => w.Id == workspaceId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal("Acme Corp", workspace.Name);
         }
     }
@@ -230,7 +230,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
         // version is genuinely older than this build's head.
         await using (var db = CreateContext())
         {
-            await db.Database.GetService<IMigrator>().MigrateAsync(OlderMigration);
+            await db.Database.GetService<IMigrator>().MigrateAsync(OlderMigration, TestContext.Current.CancellationToken);
         }
 
         var workspaceId = WorkspaceId.New();
@@ -243,7 +243,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
                 Slug = WorkspaceSlug,
                 CreatedAt = DateTimeOffset.UtcNow,
             });
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         var operation = new BackupOperationContext("agent:roundtrip", AuditChannel.Rest, "corr-rollforward");
@@ -251,7 +251,7 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
         BackupManifest manifest;
         await using (var db = CreateContext())
         {
-            manifest = await CreateService(db).CreateBackupAsync(workspaceId, operation);
+            manifest = await CreateService(db).CreateBackupAsync(workspaceId, operation, TestContext.Current.CancellationToken);
         }
 
         Assert.Equal(OlderMigration, manifest.SchemaVersion);
@@ -259,17 +259,17 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
         // Bring the live database up to head. The artifact is now one migration behind it.
         await using (var db = CreateContext())
         {
-            await db.Database.MigrateAsync();
-            var workspace = await db.Workspaces.SingleAsync(w => w.Id == workspaceId);
+            await db.Database.MigrateAsync(cancellationToken: TestContext.Current.CancellationToken);
+            var workspace = await db.Workspaces.SingleAsync(w => w.Id == workspaceId, cancellationToken: TestContext.Current.CancellationToken);
             workspace.Name = "Mutated At Head";
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         RestoreResult result;
         await using (var db = CreateContext())
         {
             result = await CreateService(db).RestoreAsync(
-                workspaceId, new BackupArtifactRef(manifest.BackupId), WorkspaceSlug, operation);
+                workspaceId, new BackupArtifactRef(manifest.BackupId), WorkspaceSlug, operation, TestContext.Current.CancellationToken);
         }
 
         Assert.True(result.Success);
@@ -278,14 +278,14 @@ public sealed class BackupRoundTripTests : IAsyncLifetime
         await using (var verifyDb = CreateContext())
         {
             // The restored (older) content is present...
-            var workspace = await verifyDb.Workspaces.SingleAsync(w => w.Id == workspaceId);
+            var workspace = await verifyDb.Workspaces.SingleAsync(w => w.Id == workspaceId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal("Acme Corp Legacy", workspace.Name);
 
             // ...and the restored database was migrated forward to head, so nothing is pending.
-            Assert.Empty(await verifyDb.Database.GetPendingMigrationsAsync());
+            Assert.Empty(await verifyDb.Database.GetPendingMigrationsAsync(cancellationToken: TestContext.Current.CancellationToken));
 
             var auditEvent = await verifyDb.AuditEvents.AsNoTracking()
-                .SingleAsync(e => e.Action == "workspace.restore.completed");
+                .SingleAsync(e => e.Action == "workspace.restore.completed", cancellationToken: TestContext.Current.CancellationToken);
             Assert.Contains("rollForwardApplied=True", auditEvent.ResultSummary);
             Assert.Contains($"schemaVersion={OlderMigration}", auditEvent.ResultSummary);
         }

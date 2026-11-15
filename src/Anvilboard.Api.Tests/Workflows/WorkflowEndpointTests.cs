@@ -24,7 +24,7 @@ public sealed class WorkflowEndpointTests
         client.DefaultRequestHeaders.Add(
             "Cookie", await ApiFactory.BootstrapAndGetSessionCookieAsync(client));
 
-        var states = await client.GetFromJsonAsync<List<WorkflowStateDto>>("/api/workflow/states");
+        var states = await client.GetFromJsonAsync<List<WorkflowStateDto>>("/api/workflow/states", cancellationToken: TestContext.Current.CancellationToken);
         var backlog = states!.Single(state => state.Key == "backlog");
         var customResponse = await client.PostAsJsonAsync("/api/workflow/states", new
         {
@@ -32,43 +32,43 @@ public sealed class WorkflowEndpointTests
             displayName = "QA review",
             order = 10,
             isTerminal = false,
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
         customResponse.EnsureSuccessStatusCode();
-        var custom = await customResponse.Content.ReadFromJsonAsync<WorkflowStateDto>();
+        var custom = await customResponse.Content.ReadFromJsonAsync<WorkflowStateDto>(cancellationToken: TestContext.Current.CancellationToken);
         var transitionResponse = await client.PostAsJsonAsync("/api/workflow/transitions", new
         {
             fromStateId = backlog.Id,
             toStateId = custom!.Id,
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
         transitionResponse.EnsureSuccessStatusCode();
 
         var teamResponse = await client.PostAsJsonAsync("/api/teams", new
         {
             name = "Workflow team",
             key = "WF",
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
         teamResponse.EnsureSuccessStatusCode();
-        using var teamJson = JsonDocument.Parse(await teamResponse.Content.ReadAsStringAsync());
+        using var teamJson = JsonDocument.Parse(await teamResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var teamId = teamJson.RootElement.GetProperty("id").GetGuid();
         var issueResponse = await client.PostAsJsonAsync("/api/issues", new
         {
             teamId,
             title = "Custom workflow issue",
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
         issueResponse.EnsureSuccessStatusCode();
-        using var issueJson = JsonDocument.Parse(await issueResponse.Content.ReadAsStringAsync());
+        using var issueJson = JsonDocument.Parse(await issueResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var issueId = issueJson.RootElement.GetProperty("id").GetGuid();
 
         var response = await client.PatchAsJsonAsync(
             $"/api/issues/{issueId}/status",
-            new { workflowStateId = custom.Id });
+            new { workflowStateId = custom.Id }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var updatedJson = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        using var updatedJson = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal(custom.Id, updatedJson.RootElement.GetProperty("workflowStateId").GetGuid());
         using var verifyScope = factory.Services.CreateScope();
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
-        Assert.Equal(custom.Id, (await verifyDb.Issues.AsNoTracking().SingleAsync(i => i.Id == new IssueId(issueId))).WorkflowStateId.Value);
+        Assert.Equal(custom.Id, (await verifyDb.Issues.AsNoTracking().SingleAsync(i => i.Id == new IssueId(issueId), cancellationToken: TestContext.Current.CancellationToken)).WorkflowStateId.Value);
     }
 
     [Fact]
@@ -83,16 +83,16 @@ public sealed class WorkflowEndpointTests
         {
             name = "Scoped workflow team",
             key = "SCP",
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
         teamResponse.EnsureSuccessStatusCode();
-        using var teamJson = JsonDocument.Parse(await teamResponse.Content.ReadAsStringAsync());
+        using var teamJson = JsonDocument.Parse(await teamResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var issueResponse = await client.PostAsJsonAsync("/api/issues", new
         {
             teamId = teamJson.RootElement.GetProperty("id").GetGuid(),
             title = "Scoped transition issue",
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
         issueResponse.EnsureSuccessStatusCode();
-        using var issueJson = JsonDocument.Parse(await issueResponse.Content.ReadAsStringAsync());
+        using var issueJson = JsonDocument.Parse(await issueResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var issueId = new IssueId(issueJson.RootElement.GetProperty("id").GetGuid());
 
         var foreignWorkspaceId = await factory.SeedAdditionalWorkspaceAsync("foreign-workflow", "foreign-workflow-admin");
@@ -108,7 +108,7 @@ public sealed class WorkflowEndpointTests
         {
             var seedDb = seedScope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
             seedDb.WorkflowStates.Add(foreignState);
-            await seedDb.SaveChangesAsync();
+            await seedDb.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         WorkflowStateId originalStateId;
@@ -117,31 +117,31 @@ public sealed class WorkflowEndpointTests
         using (var beforeScope = factory.Services.CreateScope())
         {
             var beforeDb = beforeScope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
-            var before = await beforeDb.Issues.AsNoTracking().SingleAsync(i => i.Id == issueId);
+            var before = await beforeDb.Issues.AsNoTracking().SingleAsync(i => i.Id == issueId, cancellationToken: TestContext.Current.CancellationToken);
             originalStateId = before.WorkflowStateId;
             originalVersion = before.Version;
-            originalActivityCount = await beforeDb.ActivityEvents.CountAsync(e => e.IssueId == issueId);
+            originalActivityCount = await beforeDb.ActivityEvents.CountAsync(e => e.IssueId == issueId, cancellationToken: TestContext.Current.CancellationToken);
         }
 
         var foreign = await client.PatchAsJsonAsync(
             $"/api/issues/{issueId.Value}/status",
-            new { workflowStateId = foreignState.Id.Value });
+            new { workflowStateId = foreignState.Id.Value }, cancellationToken: TestContext.Current.CancellationToken);
         var unknown = await client.PatchAsJsonAsync(
             $"/api/issues/{issueId.Value}/status",
-            new { workflowStateId = Guid.NewGuid() });
+            new { workflowStateId = Guid.NewGuid() }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Forbidden, foreign.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, unknown.StatusCode);
         Assert.Equal(
-            await foreign.Content.ReadAsStringAsync(),
-            await unknown.Content.ReadAsStringAsync());
+            await foreign.Content.ReadAsStringAsync(TestContext.Current.CancellationToken),
+            await unknown.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         using var verifyScope = factory.Services.CreateScope();
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
-        var persisted = await verifyDb.Issues.AsNoTracking().SingleAsync(i => i.Id == issueId);
+        var persisted = await verifyDb.Issues.AsNoTracking().SingleAsync(i => i.Id == issueId, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(IssueStatus.Backlog, persisted.Status);
         Assert.Equal(originalStateId, persisted.WorkflowStateId);
         Assert.Equal(originalVersion, persisted.Version);
-        Assert.Equal(originalActivityCount, await verifyDb.ActivityEvents.CountAsync(e => e.IssueId == issueId));
+        Assert.Equal(originalActivityCount, await verifyDb.ActivityEvents.CountAsync(e => e.IssueId == issueId, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public sealed class WorkflowEndpointTests
 
         var statesResponse = await client.GetAsync("/api/workflow/states", CancellationToken.None);
         Assert.Equal(HttpStatusCode.OK, statesResponse.StatusCode);
-        var seededStates = await statesResponse.Content.ReadFromJsonAsync<List<WorkflowStateDto>>();
+        var seededStates = await statesResponse.Content.ReadFromJsonAsync<List<WorkflowStateDto>>(cancellationToken: TestContext.Current.CancellationToken);
         var seeded = seededStates!.Single(state => state.Key == "backlog");
 
         var createState = await client.PostAsJsonAsync("/api/workflow/states", new
@@ -165,7 +165,7 @@ public sealed class WorkflowEndpointTests
             isTerminal = false,
         }, CancellationToken.None);
         Assert.Equal(HttpStatusCode.Created, createState.StatusCode);
-        var createdState = await createState.Content.ReadFromJsonAsync<WorkflowStateDto>();
+        var createdState = await createState.Content.ReadFromJsonAsync<WorkflowStateDto>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(createdState);
         Assert.Equal($"/api/workflow/states/{createdState.Id}", createState.Headers.Location?.ToString());
 
@@ -176,7 +176,7 @@ public sealed class WorkflowEndpointTests
             isTerminal = true,
         }, CancellationToken.None);
         Assert.Equal(HttpStatusCode.OK, updateState.StatusCode);
-        var updatedState = await updateState.Content.ReadFromJsonAsync<WorkflowStateDto>();
+        var updatedState = await updateState.Content.ReadFromJsonAsync<WorkflowStateDto>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("Quality review", updatedState!.DisplayName);
         Assert.True(updatedState.IsTerminal);
 
@@ -186,12 +186,12 @@ public sealed class WorkflowEndpointTests
             toStateId = createdState.Id,
         }, CancellationToken.None);
         Assert.Equal(HttpStatusCode.Created, createTransition.StatusCode);
-        var transition = await createTransition.Content.ReadFromJsonAsync<WorkflowTransitionDto>();
+        var transition = await createTransition.Content.ReadFromJsonAsync<WorkflowTransitionDto>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(transition);
 
         var transitionsResponse = await client.GetAsync("/api/workflow/transitions", CancellationToken.None);
         Assert.Equal(HttpStatusCode.OK, transitionsResponse.StatusCode);
-        var transitions = await transitionsResponse.Content.ReadFromJsonAsync<List<WorkflowTransitionDto>>();
+        var transitions = await transitionsResponse.Content.ReadFromJsonAsync<List<WorkflowTransitionDto>>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Contains(transitions!, edge => edge.Id == transition.Id);
 
         var removeTransition = await client.DeleteAsync(
@@ -226,7 +226,7 @@ public sealed class WorkflowEndpointTests
         }, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("RESOURCE_ALREADY_EXISTS", problem.RootElement.GetProperty("title").GetString());
     }
 
@@ -249,7 +249,7 @@ public sealed class WorkflowEndpointTests
         }, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("VALIDATION_FAILED", problem.RootElement.GetProperty("title").GetString());
 
         var after = (await client.GetFromJsonAsync<List<WorkflowStateDto>>(
@@ -262,7 +262,7 @@ public sealed class WorkflowEndpointTests
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
         var audit = await verifyDb.AuditEvents.AsNoTracking()
             .SingleAsync(item => item.Action == "workflow.state.rejected"
-                && item.CorrelationId == "workflow-key-rejection");
+                && item.CorrelationId == "workflow-key-rejection", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(AuditChannel.Rest, audit.Channel);
         Assert.StartsWith("errorCode=VALIDATION_FAILED;", audit.ResultSummary, StringComparison.Ordinal);
     }
@@ -298,7 +298,7 @@ public sealed class WorkflowEndpointTests
             };
             db.WorkflowStates.AddRange(first, second);
             db.WorkflowTransitions.Add(edge);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
             foreignStateId = first.Id.Value;
             foreignTransitionId = edge.Id.Value;
         }
@@ -319,11 +319,11 @@ public sealed class WorkflowEndpointTests
         using var verifyScope = factory.Services.CreateScope();
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AnvilboardDbContext>();
         var state = await verifyDb.WorkflowStates.AsNoTracking()
-            .SingleAsync(s => s.Id == new WorkflowStateId(foreignStateId));
+            .SingleAsync(s => s.Id == new WorkflowStateId(foreignStateId), cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("First", state.DisplayName);
         Assert.False(state.IsArchived);
         Assert.True(await verifyDb.WorkflowTransitions
-            .AnyAsync(t => t.Id == new WorkflowTransitionId(foreignTransitionId)));
+            .AnyAsync(t => t.Id == new WorkflowTransitionId(foreignTransitionId), cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -364,7 +364,7 @@ public sealed class WorkflowEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, read.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, write.StatusCode);
-        using var problem = JsonDocument.Parse(await write.Content.ReadAsStringAsync());
+        using var problem = JsonDocument.Parse(await write.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("WORKSPACE_ACCESS_DENIED", problem.RootElement.GetProperty("title").GetString());
     }
 

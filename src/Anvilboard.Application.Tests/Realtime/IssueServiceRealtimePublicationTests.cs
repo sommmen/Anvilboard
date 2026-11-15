@@ -25,7 +25,7 @@ public sealed class IssueServiceRealtimePublicationTests
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
 
-        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Publish me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Publish me", ct: TestContext.Current.CancellationToken);
 
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
         Assert.Equal(fixture.WorkspaceId, change.WorkspaceId);
@@ -42,7 +42,7 @@ public sealed class IssueServiceRealtimePublicationTests
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
 
-        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Publish me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Publish me", ct: TestContext.Current.CancellationToken);
 
         var activity = Assert.Single(publisher.Changes.OfType<RealtimeActivityChange>());
         Assert.Equal(issue.Id, activity.IssueId);
@@ -55,14 +55,14 @@ public sealed class IssueServiceRealtimePublicationTests
     {
         await using var fixture = await RealtimeFixture.CreateAsync();
         fixture.AllowTransitionToDone();
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
-        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Move me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Move me", ct: TestContext.Current.CancellationToken);
         publisher.Changes.Clear();
 
-        var updated = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, fixture.DoneStateId);
+        var updated = await service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, fixture.DoneStateId, ct: TestContext.Current.CancellationToken);
 
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
         Assert.Equal(RealtimeIssueChangeKind.Updated, change.ChangeKind);
@@ -77,10 +77,10 @@ public sealed class IssueServiceRealtimePublicationTests
         await using var fixture = await RealtimeFixture.CreateAsync();
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
-        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Assign me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Assign me", ct: TestContext.Current.CancellationToken);
         publisher.Changes.Clear();
 
-        var updated = await service.AssignAsync(fixture.WorkspaceId, issue.Id, MemberId.New());
+        var updated = await service.AssignAsync(fixture.WorkspaceId, issue.Id, MemberId.New(), ct: TestContext.Current.CancellationToken);
 
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
         // CreateAsync seeds version 1, so the first mutation lands on 2.
@@ -95,10 +95,10 @@ public sealed class IssueServiceRealtimePublicationTests
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
         var original = new NormalizedIssue(IntegrationProvider.GitHub, "repo#1", "RT", "Original", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
-        var created = await service.UpsertFromExternalUnscopedAsync(original);
+        var created = await service.UpsertFromExternalUnscopedAsync(original, TestContext.Current.CancellationToken);
         publisher.Changes.Clear();
 
-        var updated = await service.UpsertFromExternalUnscopedAsync(original with { Title = "Changed", SyncFingerprint = "two" });
+        var updated = await service.UpsertFromExternalUnscopedAsync(original with { Title = "Changed", SyncFingerprint = "two" }, TestContext.Current.CancellationToken);
 
         var change = Assert.Single(publisher.Changes.OfType<RealtimeIssueChange>());
         Assert.Equal(created.Id, updated.Id);
@@ -116,7 +116,7 @@ public sealed class IssueServiceRealtimePublicationTests
         // File the issue via the untargeted overload first, so the external link ends up owned by
         // the fixture's own workspace/team.
         var original = new NormalizedIssue(IntegrationProvider.GitHub, "cross-tenant#1", "RT", "Original", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
-        await service.UpsertFromExternalUnscopedAsync(original);
+        await service.UpsertFromExternalUnscopedAsync(original, TestContext.Current.CancellationToken);
 
         // A second workspace that happens to also configure a team keyed "RT" — team keys are only
         // unique within a workspace, so this is a legal, if coincidental, configuration.
@@ -136,7 +136,7 @@ public sealed class IssueServiceRealtimePublicationTests
             Key = "RT",
             CreatedAt = DateTimeOffset.UtcNow,
         });
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // Same (Provider, SourceKey) dedupe key as the existing link, but now resolved against the
         // *other* workspace — as would happen if a trusted webhook's team-key routing pointed at a
@@ -145,7 +145,7 @@ public sealed class IssueServiceRealtimePublicationTests
         var sameLinkDifferentTenant = original with { Title = "Hijacked", SyncFingerprint = "two" };
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => service.UpsertFromExternalAsync(otherWorkspaceId, sameLinkDifferentTenant));
+            () => service.UpsertFromExternalAsync(otherWorkspaceId, sameLinkDifferentTenant, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -177,12 +177,12 @@ public sealed class IssueServiceRealtimePublicationTests
             Key = "RT",
             CreatedAt = DateTimeOffset.UtcNow,
         });
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var normalized = new NormalizedIssue(IntegrationProvider.GitHub, "ambiguous#1", "RT", "Ambiguous", null, IssueStatus.Backlog, IssuePriority.None, null, null, [], "one", DateTimeOffset.UtcNow);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => service.UpsertFromExternalUnscopedAsync(normalized));
+            () => service.UpsertFromExternalUnscopedAsync(normalized, TestContext.Current.CancellationToken));
 
         Assert.Contains("more than one workspace", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(publisher.Changes);
@@ -194,11 +194,11 @@ public sealed class IssueServiceRealtimePublicationTests
         await using var fixture = await RealtimeFixture.CreateAsync();
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
-        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Do not move me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Do not move me", ct: TestContext.Current.CancellationToken);
         publisher.Changes.Clear();
 
         await Assert.ThrowsAsync<WorkflowTransitionDeniedException>(
-            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, fixture.DoneStateId));
+            () => service.ChangeStatusAsync(fixture.WorkspaceId, issue.Id, fixture.DoneStateId, ct: TestContext.Current.CancellationToken));
 
         Assert.Empty(publisher.Changes);
     }
@@ -209,10 +209,10 @@ public sealed class IssueServiceRealtimePublicationTests
         await using var fixture = await RealtimeFixture.CreateAsync();
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
-        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Comment on me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Comment on me", ct: TestContext.Current.CancellationToken);
         publisher.Changes.Clear();
 
-        await service.AddCommentAsync(fixture.WorkspaceId, issue.Id, "A comment");
+        await service.AddCommentAsync(fixture.WorkspaceId, issue.Id, "A comment", ct: TestContext.Current.CancellationToken);
 
         var activity = Assert.Single(publisher.Changes.OfType<RealtimeActivityChange>());
         Assert.Equal(fixture.WorkspaceId, activity.WorkspaceId);
@@ -225,9 +225,9 @@ public sealed class IssueServiceRealtimePublicationTests
         await using var fixture = await RealtimeFixture.CreateAsync();
         var service = fixture.CreateService(new ThrowingRealtimeUpdatePublisher());
 
-        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Survive publication failure");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Survive publication failure", ct: TestContext.Current.CancellationToken);
 
-        Assert.Equal(issue.Id, (await fixture.Db.Issues.AsNoTracking().SingleAsync()).Id);
+        Assert.Equal(issue.Id, (await fixture.Db.Issues.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken)).Id);
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public sealed class IssueServiceRealtimePublicationTests
         await using var fixture = await RealtimeFixture.CreateAsync();
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher);
-        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Comment on me");
+        var issue = await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Comment on me", ct: TestContext.Current.CancellationToken);
 
         // Workspace membership is established by the issue's team. Once the team is gone the issue
         // is no longer provably inside the caller's workspace, so the scoped lookup must fail
@@ -246,9 +246,9 @@ public sealed class IssueServiceRealtimePublicationTests
         await fixture.RemoveTeamAsync();
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => service.AddCommentAsync(fixture.WorkspaceId, issue.Id, "A comment"));
+            () => service.AddCommentAsync(fixture.WorkspaceId, issue.Id, "A comment", ct: TestContext.Current.CancellationToken));
 
-        Assert.Empty(await fixture.Db.Comments.AsNoTracking().ToListAsync());
+        Assert.Empty(await fixture.Db.Comments.AsNoTracking().ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -258,7 +258,7 @@ public sealed class IssueServiceRealtimePublicationTests
         var publisher = new RecordingRealtimeUpdatePublisher();
         var service = fixture.CreateService(publisher, CorrelationContext.FromHeaderOrNew("corr-123"));
 
-        await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Trace me");
+        await service.CreateAsync(fixture.WorkspaceId, fixture.TeamId, "Trace me", ct: TestContext.Current.CancellationToken);
 
         Assert.All(publisher.Changes, change => Assert.Equal("corr-123", change.CorrelationId));
     }

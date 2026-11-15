@@ -15,7 +15,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         await using var fixture = await AuthorizationFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var result = await service.AuthenticateAsync(ChannelCredential.FromUsernamePassword("coordinator", "correct horse"));
+        var result = await service.AuthenticateAsync(ChannelCredential.FromUsernamePassword("coordinator", "correct horse"), TestContext.Current.CancellationToken);
 
         Assert.True(result.IsAuthenticated);
         Assert.Equal(fixture.Coordinator.Id, result.Actor!.MemberId);
@@ -30,7 +30,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         await using var fixture = await AuthorizationFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var result = await service.AuthenticateAsync(ChannelCredential.FromUsernamePassword("nobody", "whatever"));
+        var result = await service.AuthenticateAsync(ChannelCredential.FromUsernamePassword("nobody", "whatever"), TestContext.Current.CancellationToken);
 
         Assert.False(result.IsAuthenticated);
         Assert.Equal("CREDENTIAL_INVALID_OR_EXPIRED", result.ErrorCode);
@@ -45,7 +45,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         await using var fixture = await AuthorizationFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var result = await service.AuthenticateAsync(ChannelCredential.FromUsernamePassword("coordinator", "wrong password"));
+        var result = await service.AuthenticateAsync(ChannelCredential.FromUsernamePassword("coordinator", "wrong password"), TestContext.Current.CancellationToken);
 
         Assert.False(result.IsAuthenticated);
         Assert.Equal("CREDENTIAL_INVALID_OR_EXPIRED", result.ErrorCode);
@@ -58,7 +58,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var (token, rawToken) = await fixture.AddApiTokenAsync(fixture.AutomationAgent, [Permission.ReadWriteIssues]);
 
-        var result = await service.AuthenticateAsync(ChannelCredential.FromApiToken(rawToken));
+        var result = await service.AuthenticateAsync(ChannelCredential.FromApiToken(rawToken), TestContext.Current.CancellationToken);
 
         Assert.True(result.IsAuthenticated);
         Assert.Equal(fixture.AutomationAgent.Id, result.Actor!.MemberId);
@@ -72,9 +72,9 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var (token, rawToken) = await fixture.AddApiTokenAsync(fixture.AutomationAgent, [Permission.ReadWriteIssues]);
         token.RevokedAt = DateTimeOffset.UtcNow;
-        await fixture.Db.SaveChangesAsync();
+        await fixture.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var result = await service.AuthenticateAsync(ChannelCredential.FromApiToken(rawToken));
+        var result = await service.AuthenticateAsync(ChannelCredential.FromApiToken(rawToken), TestContext.Current.CancellationToken);
 
         Assert.False(result.IsAuthenticated);
         Assert.Equal("CREDENTIAL_INVALID_OR_EXPIRED", result.ErrorCode);
@@ -87,7 +87,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var (token, rawToken) = await fixture.AddApiTokenAsync(fixture.AutomationAgent, [Permission.ReadWriteIssues], expiresAt: DateTimeOffset.UtcNow.AddMinutes(-1));
 
-        var result = await service.AuthenticateAsync(ChannelCredential.FromApiToken(rawToken));
+        var result = await service.AuthenticateAsync(ChannelCredential.FromApiToken(rawToken), TestContext.Current.CancellationToken);
 
         Assert.False(result.IsAuthenticated);
         Assert.Equal("CREDENTIAL_INVALID_OR_EXPIRED", result.ErrorCode);
@@ -100,7 +100,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         await using var fixture = await AuthorizationFixture.CreateAsync();
         var service = fixture.CreateService();
 
-        var result = await service.AuthenticateAsync(new ChannelCredential());
+        var result = await service.AuthenticateAsync(new ChannelCredential(), TestContext.Current.CancellationToken);
 
         Assert.False(result.IsAuthenticated);
         Assert.Equal("AUTHENTICATION_REQUIRED", result.ErrorCode);
@@ -113,7 +113,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var actor = new ActorContext(fixture.Coordinator.Id, fixture.Coordinator.WorkspaceId, Role.Coordinator);
 
-        var result = await service.AuthorizeAsync(actor, fixture.OtherWorkspace.Id, Permission.ReadBoard);
+        var result = await service.AuthorizeAsync(actor, fixture.OtherWorkspace.Id, Permission.ReadBoard, TestContext.Current.CancellationToken);
 
         Assert.False(result.IsAuthorized);
         Assert.Equal("WORKSPACE_ACCESS_DENIED", result.ErrorCode);
@@ -126,7 +126,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var actor = new ActorContext(fixture.Coordinator.Id, fixture.Workspace.Id, Role.Coordinator);
 
-        var result = await service.AuthorizeAsync(actor, fixture.Workspace.Id, Permission.ReadWriteIssues);
+        var result = await service.AuthorizeAsync(actor, fixture.Workspace.Id, Permission.ReadWriteIssues, TestContext.Current.CancellationToken);
 
         Assert.True(result.IsAuthorized);
     }
@@ -139,7 +139,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var actor = new ActorContext(fixture.Contributor.Id, fixture.Workspace.Id, Role.Contributor);
 
-        var result = await service.AuthorizeAsync(actor, fixture.Workspace.Id, Permission.ReadWriteIssues);
+        var result = await service.AuthorizeAsync(actor, fixture.Workspace.Id, Permission.ReadWriteIssues, TestContext.Current.CancellationToken);
 
         Assert.False(result.IsAuthorized);
         Assert.Equal("WORKSPACE_ACCESS_DENIED", result.ErrorCode);
@@ -155,8 +155,8 @@ public sealed class WorkspaceAuthorizationServiceTests
         var actor = new ActorContext(fixture.AutomationAgent.Id, fixture.Workspace.Id, Role.AutomationAgent,
             TokenGrantedPermissions: [Permission.ReadBoard]);
 
-        var deniedResult = await service.AuthorizeAsync(actor, fixture.Workspace.Id, Permission.ReadWriteIssues);
-        var authorizedResult = await service.AuthorizeAsync(actor, fixture.Workspace.Id, Permission.ReadBoard);
+        var deniedResult = await service.AuthorizeAsync(actor, fixture.Workspace.Id, Permission.ReadWriteIssues, TestContext.Current.CancellationToken);
+        var authorizedResult = await service.AuthorizeAsync(actor, fixture.Workspace.Id, Permission.ReadBoard, TestContext.Current.CancellationToken);
 
         Assert.False(deniedResult.IsAuthorized);
         Assert.True(authorizedResult.IsAuthorized);
@@ -169,7 +169,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var actor = new ActorContext(fixture.Coordinator.Id, fixture.Workspace.Id, Role.Coordinator);
 
-        await service.AuthorizeAsync(actor, fixture.Workspace.Id, Permission.ReadBoard);
+        await service.AuthorizeAsync(actor, fixture.Workspace.Id, Permission.ReadBoard, TestContext.Current.CancellationToken);
 
         Assert.Single(fixture.AuditEvents);
         Assert.Equal("AUTHORIZED", fixture.AuditEvents[0].Outcome);
@@ -182,12 +182,12 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var request = new BootstrapRequest("Acme", "acme", "Root Admin", "root", "s3cret!");
 
-        var actor = await service.BootstrapFirstAdministratorAsync(request);
+        var actor = await service.BootstrapFirstAdministratorAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal(Role.Administrator, actor.Role);
-        var workspace = await fixture.Db.Workspaces.SingleAsync();
+        var workspace = await fixture.Db.Workspaces.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("Acme", workspace.Name);
-        var member = await fixture.Db.Members.SingleAsync();
+        var member = await fixture.Db.Members.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("root", member.Username);
         Assert.Equal(Role.Administrator, member.Role);
         Assert.NotNull(member.PasswordHash);
@@ -201,12 +201,12 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var request = new BootstrapRequest("Acme", "acme", "Root Admin", "root", "s3cret!");
 
-        var actor = await service.BootstrapFirstAdministratorAsync(request);
+        var actor = await service.BootstrapFirstAdministratorAsync(request, TestContext.Current.CancellationToken);
 
         var states = await fixture.Db.WorkflowStates
             .Where(state => state.WorkspaceId == actor.WorkspaceId)
             .OrderBy(state => state.Order)
-            .ToListAsync();
+            .ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(
             new[] { "backlog", "todo", "in_progress", "in_review", "done", "cancelled" },
             states.Select(state => state.Key));
@@ -214,7 +214,7 @@ public sealed class WorkspaceAuthorizationServiceTests
 
         var transitions = await fixture.Db.WorkflowTransitions
             .Where(transition => transition.WorkspaceId == actor.WorkspaceId)
-            .CountAsync();
+            .CountAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(transitions > 0);
     }
 
@@ -226,7 +226,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var request = new BootstrapRequest("Acme", "acme", "Root Admin", "root", "s3cret!");
 
         var ex = await Assert.ThrowsAsync<WorkspaceAuthorizationException>(
-            () => service.BootstrapFirstAdministratorAsync(request));
+            () => service.BootstrapFirstAdministratorAsync(request, TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -244,7 +244,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var request = new BootstrapRequest(workspaceName, workspaceSlug, displayName, username, password);
 
         var ex = await Assert.ThrowsAsync<WorkspaceAuthorizationException>(
-            () => service.BootstrapFirstAdministratorAsync(request));
+            () => service.BootstrapFirstAdministratorAsync(request, TestContext.Current.CancellationToken));
 
         Assert.Equal("VALIDATION_FAILED", ex.ErrorCode);
     }
@@ -256,9 +256,9 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var (token, _) = await fixture.AddApiTokenAsync(fixture.AutomationAgent, [Permission.ReadWriteIssues]);
 
-        await service.RevokeCredentialAsync(fixture.Workspace.Id, fixture.Coordinator.Id, token.Id);
+        await service.RevokeCredentialAsync(fixture.Workspace.Id, fixture.Coordinator.Id, token.Id, TestContext.Current.CancellationToken);
 
-        var stored = await fixture.Db.ApiTokens.SingleAsync(t => t.Id == token.Id);
+        var stored = await fixture.Db.ApiTokens.SingleAsync(t => t.Id == token.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(stored.RevokedAt);
     }
 
@@ -270,7 +270,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var (token, _) = await fixture.AddApiTokenAsync(fixture.AutomationAgent, [Permission.ReadWriteIssues]);
         var actor = new ActorContext(fixture.Coordinator.Id, fixture.Workspace.Id, fixture.Coordinator.Role);
 
-        await service.RevokeCredentialAsync(actor.WorkspaceId, actor.MemberId, token.Id);
+        await service.RevokeCredentialAsync(actor.WorkspaceId, actor.MemberId, token.Id, TestContext.Current.CancellationToken);
 
         var auditEvent = Assert.Single(fixture.AuditEvents);
         Assert.Equal(actor, auditEvent.Actor);
@@ -287,7 +287,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var (token, _) = await fixture.AddApiTokenAsync(fixture.AutomationAgent, [Permission.ReadWriteIssues]);
 
         var ex = await Assert.ThrowsAsync<WorkspaceAuthorizationException>(
-            () => service.RevokeCredentialAsync(fixture.OtherWorkspace.Id, fixture.Coordinator.Id, token.Id));
+            () => service.RevokeCredentialAsync(fixture.OtherWorkspace.Id, fixture.Coordinator.Id, token.Id, TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -299,7 +299,7 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
 
         var ex = await Assert.ThrowsAsync<WorkspaceAuthorizationException>(
-            () => service.RevokeCredentialAsync(fixture.Workspace.Id, fixture.Coordinator.Id, ApiTokenId.New()));
+            () => service.RevokeCredentialAsync(fixture.Workspace.Id, fixture.Coordinator.Id, ApiTokenId.New(), TestContext.Current.CancellationToken));
 
         Assert.Equal("REFERENCED_ENTITY_NOT_FOUND", ex.ErrorCode);
     }
@@ -311,12 +311,12 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var actor = new ActorContext(fixture.Coordinator.Id, fixture.Workspace.Id, Role.Coordinator);
 
-        var session = await service.IssueSessionAsync(actor);
+        var session = await service.IssueSessionAsync(actor, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(session.RawToken);
         Assert.True(session.ExpiresAt > DateTimeOffset.UtcNow);
 
-        var stored = await fixture.Db.ApiTokens.SingleAsync(t => t.Id == session.ApiTokenId);
+        var stored = await fixture.Db.ApiTokens.SingleAsync(t => t.Id == session.ApiTokenId, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(fixture.Workspace.Id, stored.WorkspaceId);
         Assert.Equal(fixture.Coordinator.Id, stored.MemberId);
         Assert.NotEqual(session.RawToken, stored.TokenHash);
@@ -333,8 +333,8 @@ public sealed class WorkspaceAuthorizationServiceTests
         var service = fixture.CreateService();
         var actor = new ActorContext(fixture.Coordinator.Id, fixture.Workspace.Id, Role.Coordinator);
 
-        var session = await service.IssueSessionAsync(actor);
-        var result = await service.AuthenticateAsync(ChannelCredential.FromApiToken(session.RawToken));
+        var session = await service.IssueSessionAsync(actor, TestContext.Current.CancellationToken);
+        var result = await service.AuthenticateAsync(ChannelCredential.FromApiToken(session.RawToken), TestContext.Current.CancellationToken);
 
         Assert.True(result.IsAuthenticated);
         Assert.Equal(fixture.Coordinator.Id, result.Actor!.MemberId);

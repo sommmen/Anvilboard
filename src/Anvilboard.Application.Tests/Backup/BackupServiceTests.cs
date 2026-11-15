@@ -77,12 +77,12 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var service = BuildService();
 
         var ex = await Assert.ThrowsAsync<BackupOperationException>(
-            () => service.CreateBackupAsync(WorkspaceId.New(), NewOperation()));
+            () => service.CreateBackupAsync(WorkspaceId.New(), NewOperation(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BackupOperationException.WorkspaceAccessDenied, ex.ErrorCode);
         Assert.Empty(Store.CallLog);
         Assert.Empty(Archiver.CallLog);
-        Assert.Equal(0, await _db.AuditEvents.CountAsync());
+        Assert.Equal(0, await _db.AuditEvents.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var service = BuildService();
 
         var ex = await Assert.ThrowsAsync<BackupOperationException>(
-            () => service.CreateBackupAsync(_workspaceId, NewOperation()));
+            () => service.CreateBackupAsync(_workspaceId, NewOperation(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BackupOperationException.ArtifactStoreUnavailable, ex.ErrorCode);
         Assert.Equal([nameof(FakeBackupArchiveStore.EnsureWritableAsync)], Store.CallLog);
@@ -101,7 +101,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         // No BackupId exists yet at this point, so nothing can be audited against (plan §11
         // assumes a backupId target; this batch's documented interpretation is "no audit before
         // a BackupId exists").
-        Assert.Equal(0, await _db.AuditEvents.CountAsync());
+        Assert.Equal(0, await _db.AuditEvents.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -111,11 +111,11 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var service = BuildService();
 
         var ex = await Assert.ThrowsAsync<BackupOperationException>(
-            () => service.CreateBackupAsync(_workspaceId, NewOperation()));
+            () => service.CreateBackupAsync(_workspaceId, NewOperation(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BackupOperationException.ArtifactStoreUnavailable, ex.ErrorCode);
         Assert.DoesNotContain(nameof(FakeBackupArchiveStore.CreateStagingLocation), Store.CallLog);
-        Assert.Equal(0, await _db.AuditEvents.CountAsync());
+        Assert.Equal(0, await _db.AuditEvents.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -125,14 +125,14 @@ public sealed class BackupServiceTests : IAsyncLifetime
         Archiver.OnSnapshot = (_, _) => throw thrown;
         var service = BuildService();
 
-        var ex = await Assert.ThrowsAsync<IOException>(() => service.CreateBackupAsync(_workspaceId, NewOperation()));
+        var ex = await Assert.ThrowsAsync<IOException>(() => service.CreateBackupAsync(_workspaceId, NewOperation(), TestContext.Current.CancellationToken));
         Assert.Same(thrown, ex);
 
         Assert.Contains(nameof(FakeBackupArchiveStore.TryDeleteIncompleteBackup), Store.CallLog);
         Assert.NotNull(Store.LastDeletedIncompleteBackup);
         Assert.DoesNotContain(nameof(FakeBackupArchiveStore.WriteManifestAsync), Store.CallLog);
 
-        var auditEvent = await _db.AuditEvents.AsNoTracking().SingleAsync();
+        var auditEvent = await _db.AuditEvents.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("workspace.backup.failed", auditEvent.Action);
         Assert.Equal("backup", auditEvent.TargetType);
         Assert.Equal(Store.LastDeletedIncompleteBackup!.BackupId.ToString(), auditEvent.TargetId);
@@ -145,7 +145,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var service = BuildService();
         var operation = NewOperation(actorId: "agent:alice", correlationId: "corr-99");
 
-        var manifest = await service.CreateBackupAsync(_workspaceId, operation);
+        var manifest = await service.CreateBackupAsync(_workspaceId, operation, TestContext.Current.CancellationToken);
 
         Assert.NotEqual(Guid.Empty, manifest.BackupId);
         Assert.Equal(_workspaceId, manifest.RequestedForWorkspaceId);
@@ -157,7 +157,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         Assert.NotNull(Store.LastWrittenManifest);
         Assert.Equal(manifest.BackupId, Store.LastWrittenManifest!.BackupId);
 
-        var auditEvent = await _db.AuditEvents.AsNoTracking().SingleAsync();
+        var auditEvent = await _db.AuditEvents.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("workspace.backup.created", auditEvent.Action);
         Assert.Equal("backup", auditEvent.TargetType);
         Assert.Equal(manifest.BackupId.ToString(), auditEvent.TargetId);
@@ -177,12 +177,12 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var service = BuildService();
 
         var ex = await Assert.ThrowsAsync<BackupOperationException>(() => service.RestoreAsync(
-            WorkspaceId.New(), new BackupArtifactRef(Guid.NewGuid()), WorkspaceSlug, NewOperation()));
+            WorkspaceId.New(), new BackupArtifactRef(Guid.NewGuid()), WorkspaceSlug, NewOperation(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BackupOperationException.WorkspaceAccessDenied, ex.ErrorCode);
         Assert.Empty(Store.CallLog);
         Assert.Empty(Archiver.CallLog);
-        Assert.Equal(0, await _db.AuditEvents.CountAsync());
+        Assert.Equal(0, await _db.AuditEvents.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -191,11 +191,11 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var service = BuildService();
 
         var ex = await Assert.ThrowsAsync<BackupOperationException>(() => service.RestoreAsync(
-            _workspaceId, new BackupArtifactRef(Guid.NewGuid()), "not-the-right-slug", NewOperation()));
+            _workspaceId, new BackupArtifactRef(Guid.NewGuid()), "not-the-right-slug", NewOperation(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BackupOperationException.ValidationFailed, ex.ErrorCode);
         Assert.Empty(Store.CallLog);
-        Assert.Equal(0, await _db.AuditEvents.CountAsync());
+        Assert.Equal(0, await _db.AuditEvents.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -204,7 +204,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var service = BuildService();
 
         var ex = await Assert.ThrowsAsync<BackupOperationException>(() => service.RestoreAsync(
-            _workspaceId, new BackupArtifactRef(Guid.NewGuid()), string.Empty, NewOperation()));
+            _workspaceId, new BackupArtifactRef(Guid.NewGuid()), string.Empty, NewOperation(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BackupOperationException.ValidationFailed, ex.ErrorCode);
     }
@@ -219,12 +219,12 @@ public sealed class BackupServiceTests : IAsyncLifetime
 
         var service = BuildService();
         var ex = await Assert.ThrowsAsync<BackupOperationException>(() => service.RestoreAsync(
-            _workspaceId, new BackupArtifactRef(Guid.NewGuid()), WorkspaceSlug, NewOperation()));
+            _workspaceId, new BackupArtifactRef(Guid.NewGuid()), WorkspaceSlug, NewOperation(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BackupOperationException.RateLimited, ex.ErrorCode);
         Assert.Empty(Store.CallLog);
 
-        var auditEvent = await _db.AuditEvents.AsNoTracking().SingleAsync();
+        var auditEvent = await _db.AuditEvents.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("workspace.restore.failed", auditEvent.Action);
         Assert.Contains("RATE_LIMITED", auditEvent.ResultSummary);
     }
@@ -237,11 +237,11 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var artifact = new BackupArtifactRef(Guid.NewGuid());
 
         var ex = await Assert.ThrowsAsync<BackupOperationException>(
-            () => service.RestoreAsync(_workspaceId, artifact, WorkspaceSlug, NewOperation()));
+            () => service.RestoreAsync(_workspaceId, artifact, WorkspaceSlug, NewOperation(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BackupOperationException.ReferencedEntityNotFound, ex.ErrorCode);
 
-        var auditEvent = await _db.AuditEvents.AsNoTracking().SingleAsync();
+        var auditEvent = await _db.AuditEvents.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("workspace.restore.failed", auditEvent.Action);
         Assert.Equal(artifact.BackupId.ToString(), auditEvent.TargetId);
         Assert.Contains("REFERENCED_ENTITY_NOT_FOUND", auditEvent.ResultSummary);
@@ -261,13 +261,13 @@ public sealed class BackupServiceTests : IAsyncLifetime
         Store.OnReadManifest = (_, _) => Task.FromResult<BackupManifestData?>(null);
         var service = BuildService();
 
-        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation());
+        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation(), TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal(BackupFailedCheck.ManifestMissingOrMalformed, result.FailedCheck);
         Assert.Empty(Archiver.SwapInPaths);
 
-        var auditEvent = await _db.AuditEvents.AsNoTracking().SingleAsync();
+        var auditEvent = await _db.AuditEvents.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Contains(BackupFailedCheck.ManifestMissingOrMalformed, auditEvent.ResultSummary);
     }
 
@@ -280,7 +280,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         Archiver.OnComputeSha256 = (_, _) => Task.FromResult(new string('b', 64));
         var service = BuildService();
 
-        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation());
+        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation(), TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal(BackupFailedCheck.ChecksumMismatch, result.FailedCheck);
@@ -296,7 +296,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         Archiver.OnVerifyIntegrity = (_, _) => Task.FromResult(false);
         var service = BuildService();
 
-        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation());
+        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation(), TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal(BackupFailedCheck.SqliteIntegrityCheckFailed, result.FailedCheck);
@@ -311,7 +311,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         ConfigureHappyPathRestore(backupId, manifest);
         var service = BuildService();
 
-        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation());
+        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation(), TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal(BackupFailedCheck.SchemaVersionIncompatible, result.FailedCheck);
@@ -331,7 +331,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         ConfigureHappyPathRestore(backupId, manifest);
         var service = BuildService();
 
-        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation());
+        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation(), TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal(BackupFailedCheck.WorkspaceSetMismatch, result.FailedCheck);
@@ -350,7 +350,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var service = BuildService();
 
         var ex = await Assert.ThrowsAsync<BackupOperationException>(() => service.RestoreAsync(
-            _workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation()));
+            _workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BackupOperationException.ArtifactStoreUnavailable, ex.ErrorCode);
         Assert.Empty(Archiver.SwapInPaths);
@@ -371,7 +371,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var operation = NewOperation(correlationId: "corr-success");
         var before = DateTimeOffset.UtcNow;
 
-        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, operation);
+        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, operation, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
         Assert.Equal(backupId, result.BackupId);
@@ -390,7 +390,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         // scoped `_db`, but both point at the same underlying file.
         await using var verifyDb = new AnvilboardDbContext(
             new DbContextOptionsBuilder<AnvilboardDbContext>().UseSqlite(_connectionString).Options);
-        var auditEvent = await verifyDb.AuditEvents.AsNoTracking().SingleAsync();
+        var auditEvent = await verifyDb.AuditEvents.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("workspace.restore.completed", auditEvent.Action);
         Assert.Equal(backupId.ToString(), auditEvent.TargetId);
         Assert.Equal("corr-success", auditEvent.CorrelationId);
@@ -407,7 +407,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var throwingScopeFactory = new SingleServiceScopeFactory(new SingleServiceProvider(new ThrowingDbContextFactory()));
         var service = BuildService(throwingScopeFactory);
 
-        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation());
+        var result = await service.RestoreAsync(_workspaceId, new BackupArtifactRef(backupId), WorkspaceSlug, NewOperation(), TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal(backupId, result.BackupId);
@@ -436,7 +436,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var service = BuildService();
 
         var ex = await Assert.ThrowsAsync<BackupOperationException>(
-            () => service.ListBackupsAsync(WorkspaceId.New()));
+            () => service.ListBackupsAsync(WorkspaceId.New(), TestContext.Current.CancellationToken));
         Assert.Equal(BackupOperationException.WorkspaceAccessDenied, ex.ErrorCode);
     }
 
@@ -448,7 +448,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         Store.OnListBackups = _ => Task.FromResult<IReadOnlyList<BackupManifestData>>([manifestData]);
         var service = BuildService();
 
-        var manifests = await service.ListBackupsAsync(_workspaceId);
+        var manifests = await service.ListBackupsAsync(_workspaceId, TestContext.Current.CancellationToken);
 
         var manifest = Assert.Single(manifests);
         Assert.Equal(backupId, manifest.BackupId);
@@ -462,7 +462,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         var service = BuildService();
 
         var ex = await Assert.ThrowsAsync<BackupOperationException>(
-            () => service.VerifyBackupAsync(_workspaceId, new BackupArtifactRef(Guid.NewGuid())));
+            () => service.VerifyBackupAsync(_workspaceId, new BackupArtifactRef(Guid.NewGuid()), TestContext.Current.CancellationToken));
         Assert.Equal(BackupOperationException.ReferencedEntityNotFound, ex.ErrorCode);
     }
 
@@ -474,7 +474,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         ConfigureHappyPathRestore(backupId, manifest);
         var service = BuildService();
 
-        var verification = await service.VerifyBackupAsync(_workspaceId, new BackupArtifactRef(backupId));
+        var verification = await service.VerifyBackupAsync(_workspaceId, new BackupArtifactRef(backupId), TestContext.Current.CancellationToken);
 
         Assert.True(verification.Verified);
         Assert.Null(verification.FailedCheck);
@@ -489,7 +489,7 @@ public sealed class BackupServiceTests : IAsyncLifetime
         Archiver.OnComputeSha256 = (_, _) => Task.FromResult(new string('c', 64));
         var service = BuildService();
 
-        var verification = await service.VerifyBackupAsync(_workspaceId, new BackupArtifactRef(backupId));
+        var verification = await service.VerifyBackupAsync(_workspaceId, new BackupArtifactRef(backupId), TestContext.Current.CancellationToken);
 
         Assert.False(verification.Verified);
         Assert.Equal(BackupFailedCheck.ChecksumMismatch, verification.FailedCheck);

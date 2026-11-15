@@ -29,7 +29,7 @@ public sealed class DashboardFreshnessTests
     {
         await using var fixture = await DashboardFixture.CreateAsync();
 
-        var summary = await fixture.Service.GetSummaryAsync(fixture.WorkspaceId);
+        var summary = await fixture.Service.GetSummaryAsync(fixture.WorkspaceId, ct: TestContext.Current.CancellationToken);
 
         var freshness = summary.IntegrationFreshness;
         Assert.Equal(0, freshness.Fresh);
@@ -47,11 +47,11 @@ public sealed class DashboardFreshnessTests
         var linear = await fixture.AddIntegrationAsync(IntegrationProvider.Linear, IntegrationStatus.Paused);
 
         await fixture.Health.RecordAttemptAsync(
-            new SyncAttemptOutcome(github, fixture.WorkspaceId, "github", fixture.Clock.Now, Succeeded: true));
+            new SyncAttemptOutcome(github, fixture.WorkspaceId, "github", fixture.Clock.Now, Succeeded: true), TestContext.Current.CancellationToken);
         await fixture.Health.RecordAttemptAsync(
-            new SyncAttemptOutcome(linear, fixture.WorkspaceId, "linear", fixture.Clock.Now, Succeeded: true));
+            new SyncAttemptOutcome(linear, fixture.WorkspaceId, "linear", fixture.Clock.Now, Succeeded: true), TestContext.Current.CancellationToken);
 
-        var freshness = (await fixture.Service.GetSummaryAsync(fixture.WorkspaceId)).IntegrationFreshness;
+        var freshness = (await fixture.Service.GetSummaryAsync(fixture.WorkspaceId, ct: TestContext.Current.CancellationToken)).IntegrationFreshness;
 
         Assert.Equal(1, freshness.Fresh);
         Assert.Equal(1, freshness.Paused);
@@ -70,12 +70,12 @@ public sealed class DashboardFreshnessTests
 
         var older = fixture.Clock.Now;
         await fixture.Health.RecordAttemptAsync(
-            new SyncAttemptOutcome(github, fixture.WorkspaceId, "github", older, Succeeded: true));
+            new SyncAttemptOutcome(github, fixture.WorkspaceId, "github", older, Succeeded: true), TestContext.Current.CancellationToken);
         fixture.Clock.Advance(TimeSpan.FromMinutes(5));
         await fixture.Health.RecordAttemptAsync(
-            new SyncAttemptOutcome(linear, fixture.WorkspaceId, "linear", fixture.Clock.Now, Succeeded: true));
+            new SyncAttemptOutcome(linear, fixture.WorkspaceId, "linear", fixture.Clock.Now, Succeeded: true), TestContext.Current.CancellationToken);
 
-        var freshness = (await fixture.Service.GetSummaryAsync(fixture.WorkspaceId)).IntegrationFreshness;
+        var freshness = (await fixture.Service.GetSummaryAsync(fixture.WorkspaceId, ct: TestContext.Current.CancellationToken)).IntegrationFreshness;
 
         Assert.Equal(older, freshness.OldestSuccessfulSyncAt);
     }
@@ -92,9 +92,9 @@ public sealed class DashboardFreshnessTests
             "github",
             fixture.Clock.Now,
             Succeeded: false,
-            SyncErrorCategory.Auth));
+            SyncErrorCategory.Auth), TestContext.Current.CancellationToken);
 
-        var freshness = (await fixture.Service.GetSummaryAsync(fixture.WorkspaceId)).IntegrationFreshness;
+        var freshness = (await fixture.Service.GetSummaryAsync(fixture.WorkspaceId, ct: TestContext.Current.CancellationToken)).IntegrationFreshness;
 
         Assert.Equal(1, freshness.Failed);
         Assert.Equal(0, freshness.Stale);
