@@ -12,12 +12,14 @@ using DotNetAgentSurface.Core;
 namespace Anvilboard.Agent.Automation;
 
 /// <summary>
-/// Keeps the stable error-catalog code in the message for the application exceptions that carry one.
+/// Surfaces the stable error-catalog code in the message for the application exceptions that carry one.
 /// </summary>
 /// <remarks>
 /// The default mapper redacts any exception that is not an <see cref="OperationException"/> on the
-/// MCP surface. These application exceptions are written for callers and carry their catalog code in
-/// the message, so agents must receive them verbatim to branch on the code; anything else stays redacted.
+/// MCP surface. These application exceptions are written for callers, so agents receive their message,
+/// prefixed with the catalog code from <c>ErrorCode</c> when the message does not already start with it,
+/// to branch on the code. Anything else, including a backup artifact-store failure whose message embeds a
+/// server-side path, stays redacted.
 /// </remarks>
 public sealed class AnvilboardOperationExceptionMapper(IOperationExceptionMapper? inner = null) : IOperationExceptionMapper
 {
@@ -26,10 +28,36 @@ public sealed class AnvilboardOperationExceptionMapper(IOperationExceptionMapper
     public OperationInvocationResult Map(OperationFailureContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return IsCallerSafe(context.Exception)
-            ? OperationInvocationResult.VerbatimFailure(context.Exception.Message)
+        var exception = context.Exception;
+        return IsCallerSafe(exception)
+            ? OperationInvocationResult.VerbatimFailure(WithCode(exception))
             : _inner.Map(context);
     }
+
+    private static string WithCode(Exception exception)
+    {
+        var code = ErrorCodeOf(exception);
+        return code is null || exception.Message.StartsWith(code, StringComparison.Ordinal)
+            ? exception.Message
+            : $"{code}: {exception.Message}";
+    }
+
+    private static string? ErrorCodeOf(Exception exception) => exception switch
+    {
+        ActivityQueryException e => e.ErrorCode,
+        ArtifactException e => e.ErrorCode,
+        AuditQueryException e => e.ErrorCode,
+        BackupOperationException e => e.ErrorCode,
+        BoardQueryException e => e.ErrorCode,
+        ConcurrencyConflictException e => e.ErrorCode,
+        IdempotencyKeyReusedException => IdempotencyKeyReusedException.ErrorCode,
+        IntegrationException e => e.ErrorCode,
+        IssueLinkException e => e.ErrorCode,
+        WorkflowTransitionDeniedException e => e.ErrorCode,
+        WorkflowValidationException e => e.ErrorCode,
+        WorkspaceAuthorizationException e => e.ErrorCode,
+        _ => null,
+    };
 
     private static bool IsCallerSafe(Exception exception) => exception is
         AgentRequestException
@@ -46,3 +74,4 @@ public sealed class AnvilboardOperationExceptionMapper(IOperationExceptionMapper
         or WorkflowValidationException
         or WorkspaceAuthorizationException;
 }
+
