@@ -11,8 +11,8 @@ The historical PoC-era equivalents ([FUNCTIONAL_SPEC.md](FUNCTIONAL_SPEC.md),
 ## Prerequisites
 
 - **.NET SDK 10** (`dotnet --version` should report `10.x`).
-- **Node.js 20+** and **npm** (Angular 22 requires Node 20 or newer; this repo was built/verified
-  against Node v24, npm 11).
+- **Node.js 24** and **npm** (Angular 22.1 requires Node ^22.22.3, ^24.15.0 or 26+; CI and
+  `src/anvilboard-web/.nvmrc` pin Node 24, and `packageManager` in `package.json` pins npm).
 - **[`dotnet-agent-surface`](https://github.com/sommmen/dotnet-agent-surface)** cloned as a sibling directory:
 
   ```
@@ -48,6 +48,8 @@ From the repo root:
 ```powershell
 dotnet build Anvilboard.slnx
 ```
+
+NuGet package versions are managed centrally in `Directory.Packages.props`; the shared target framework and nullable/implicit-usings settings live in `Directory.Build.props`, so `.csproj` files carry no package versions.
 
 This builds all eight projects, including `Anvilboard.Agent` (so `dotnet-agent-surface` must be
 present as described above). To build everything except the agent surface (e.g. if you don't have
