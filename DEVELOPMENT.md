@@ -13,18 +13,6 @@ The historical PoC-era equivalents ([FUNCTIONAL_SPEC.md](FUNCTIONAL_SPEC.md),
 - **.NET SDK 10** (`dotnet --version` should report `10.x`).
 - **Node.js 24** and **npm** (Angular 22.1 requires Node ^22.22.3, ^24.15.0 or 26+; CI and
   `src/anvilboard-web/.nvmrc` pin Node 24, and `packageManager` in `package.json` pins npm).
-- **[`dotnet-agent-surface`](https://github.com/sommmen/dotnet-agent-surface)** cloned as a sibling directory:
-
-  ```
-  repos/
-  ├─ Anvilboard/
-  └─ dotnet-agent-surface/
-  ```
-
-  `Anvilboard.Agent` references it via `ProjectReference` (`../../../dotnet-agent-surface/...`
-  relative to `src/Anvilboard.Agent/`) rather than a NuGet package, so the two repos must sit next
-  to each other. `Anvilboard.Api` and `anvilboard-web` have no such dependency and can be built
-  without `dotnet-agent-surface` present — you only need it if you're touching `Anvilboard.Agent`.
 
 ## Repository layout
 
@@ -51,10 +39,10 @@ dotnet build Anvilboard.slnx
 
 NuGet package versions are managed centrally in `Directory.Packages.props`; the shared target framework and nullable/implicit-usings settings live in `Directory.Build.props`, so `.csproj` files carry no package versions. Warnings are errors (`TreatWarningsAsErrors` in `Directory.Build.props`), including NuGet vulnerability audit warnings (NU1902/NU1903) — fix the cause rather than suppressing it.
 
-This builds all eight projects, including `Anvilboard.Agent` (so `dotnet-agent-surface` must be
-present as described above). To build everything except the agent surface (e.g. if you don't have
-`dotnet-agent-surface` checked out), build the individual `.csproj` you need instead of the
-`.slnx`, e.g. `dotnet build src/Anvilboard.Api/Anvilboard.Api.csproj`.
+This builds all eight projects, including `Anvilboard.Agent`, which consumes the
+[`dotnet-agent-surface`](https://github.com/sommmen/dotnet-agent-surface) `DotNetAgentSurface.*`
+packages from NuGet (versions in `Directory.Packages.props`). To build a single project, build its
+`.csproj` instead of the `.slnx`, e.g. `dotnet build src/Anvilboard.Api/Anvilboard.Api.csproj`.
 
 ## Building the frontend
 
@@ -238,7 +226,7 @@ tests:
 | `src/Anvilboard.Application.Tests` | 311 | `WorkflowEngine` SQLite-backed tests: transition validation plus state/transition administration, validation, success/rejection auditing, no-ops, and archive/reassignment behavior; also covers workspace authorization, issue linking, artifacts (`ArtifactService`), audit redaction, backup/restore round-trips and secret scanning, real-time dispatch/coalescing/plugin-event relay, integration sync health (condition derivation, categorized backoff, `IntegrationHealthService`, dashboard freshness), and automation foundations (`IdempotencyService` replay/reuse detection, `CorrelationContext`, `ErrorCatalogTranslator`). |
 | `src/Anvilboard.Infrastructure.Tests` | 41 | Migration integration test (seeds a legacy pre-workflow SQLite schema, runs the real EF Core migrations, asserts default workflow states/transitions were seeded and issues backfilled), plus plugin registry/config-state storage, the SQLite backup archiver and archive store, and the data-protection secret store. |
 | `src/Anvilboard.Api.Tests` | 132 | API-host integration tests for workflow administration, authorization, validation, and foreign-resource non-mutation; workspace authorization endpoints and cross-workspace isolation across ID-addressed REST routes; artifact and backup endpoints; integration health reporting and the paused-webhook rejection gate; correlation middleware; webhooks; and the real-time SignalR hub. |
-| `src/Anvilboard.Agent.Tests` | 80 | Agent operation-catalog invariants, workflow lifecycle/idempotency/authorization and foreign-resource non-mutation, request guards, the integration-health operation, SQLite-backed authorization integration tests (credential authentication, permission enforcement, workspace isolation, actor attribution), and MCP stdout isolation. Requires the sibling `dotnet-agent-surface` checkout. |
+| `src/Anvilboard.Agent.Tests` | 80 | Agent operation-catalog invariants, workflow lifecycle/idempotency/authorization and foreign-resource non-mutation, request guards, the integration-health operation, SQLite-backed authorization integration tests (credential authentication, permission enforcement, workspace isolation, actor attribution), and MCP stdout isolation. |
 | `src/Anvilboard.Integrations.GitHub.Tests` | 12 | GitHub webhook signature validation and issue-event mapping. |
 | `src/Anvilboard.Integrations.Linear.Tests` | 5 | Linear webhook signature validation and issue-event mapping. |
 | `tests/Anvilboard.IntegrationTests` | 0 | Reserved for cross-cutting integration coverage; still an empty scaffold. |
@@ -255,8 +243,7 @@ dotnet test src/Anvilboard.Integrations.Linear.Tests/Anvilboard.Integrations.Lin
 dotnet test tests/Anvilboard.IntegrationTests/Anvilboard.IntegrationTests.csproj
 ```
 
-`dotnet test Anvilboard.slnx` also works once `dotnet-agent-surface` is checked out next to this
-repo, since the full solution build includes `Anvilboard.Agent` and its tests. The
+`dotnet test Anvilboard.slnx` runs every test project, including `Anvilboard.Agent` and its tests. The
 `tests/Anvilboard.IntegrationTests` project is still an empty scaffold; real-time coverage lives in
 `src/Anvilboard.Application.Tests/Realtime` and `src/Anvilboard.Api.Tests/Realtime` instead.
 

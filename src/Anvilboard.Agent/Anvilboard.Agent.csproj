@@ -11,14 +11,12 @@
     <ProjectReference Include="..\Anvilboard.Application\Anvilboard.Application.csproj" />
     <ProjectReference Include="..\Anvilboard.Integrations.GitHub\Anvilboard.Integrations.GitHub.csproj" />
     <ProjectReference Include="..\Anvilboard.Integrations.Linear\Anvilboard.Integrations.Linear.csproj" />
-    <!-- Not published to NuGet; consumed via sibling-repo ProjectReference, per the user's explicit
-         requirement that Anvilboard's agent surface be built on dotnet-agent-surface. -->
-    <ProjectReference Include="..\..\..\dotnet-agent-surface\src\DotNetAgentSurface.Core\DotNetAgentSurface.Core.csproj" />
-    <ProjectReference Include="..\..\..\dotnet-agent-surface\src\DotNetAgentSurface.CommandLine\DotNetAgentSurface.CommandLine.csproj" />
-    <ProjectReference Include="..\..\..\dotnet-agent-surface\src\DotNetAgentSurface.Mcp\DotNetAgentSurface.Mcp.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="DotNetAgentSurface.Core" />
+    <PackageReference Include="DotNetAgentSurface.CommandLine" />
+    <PackageReference Include="DotNetAgentSurface.Mcp" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />

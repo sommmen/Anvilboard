@@ -16,6 +16,16 @@
   ],
   "packageRules": [
     {
+      "description": "The DotNetAgentSurface.Core, .CommandLine and .Mcp packages are versioned and released together from dotnet-agent-surface, so they move in one PR.",
+      "matchManagers": [
+        "nuget"
+      ],
+      "matchDepNames": [
+        "/^DotNetAgentSurface\\./"
+      ],
+      "groupName": "dotnet-agent-surface"
+    },
+    {
       "matchDepNames": [
         "/^[Rr]enovatebot/github-action/"
       ],

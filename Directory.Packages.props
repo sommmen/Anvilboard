@@ -4,6 +4,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageVersion Include="DotNetAgentSurface.CommandLine" Version="0.1.80-preview" />
+    <PackageVersion Include="DotNetAgentSurface.Core" Version="0.1.80-preview" />
+    <PackageVersion Include="DotNetAgentSurface.Mcp" Version="0.1.80-preview" />
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection.Extensions" Version="10.0.15" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.15" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.15" />
