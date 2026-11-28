@@ -26,6 +26,7 @@
       "groupName": "dotnet-agent-surface"
     },
     {
+      "description": "Renovate action updates automerge once required checks pass.",
       "matchDepNames": [
         "/^[Rr]enovatebot/github-action/"
       ],

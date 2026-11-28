@@ -45,6 +45,12 @@ This builds all 15 projects (eight application and seven test projects), includi
 packages from NuGet (versions in `Directory.Packages.props`). To build a single project, build its
 `.csproj` instead of the `.slnx`, e.g. `dotnet build src/Anvilboard.Api/Anvilboard.Api.csproj`.
 
+Build output uses the [.NET artifacts layout](https://learn.microsoft.com/en-us/dotnet/core/sdk/artifacts-output)
+(`UseArtifactsOutput` in `Directory.Build.props`): everything lands in the git-ignored `.a/` folder at the repo
+root as `.a/bin/<Project>/<config>` (lower-case configuration, no target framework), with intermediates in
+`.a/obj` and publish output in `.a/publish`. A clean build is deleting `.a/`. Runtime paths relative to
+`AppContext.BaseDirectory` therefore resolve under `.a/bin/<Project>/<config>`.
+
 ## Building the frontend
 
 ```powershell
