@@ -40,7 +40,7 @@ dotnet build Anvilboard.slnx
 
 NuGet package versions are managed centrally in `Directory.Packages.props`; the shared target framework and nullable/implicit-usings settings live in `Directory.Build.props`, so `.csproj` files carry no package versions. Warnings are errors (`TreatWarningsAsErrors` in `Directory.Build.props`), including NuGet vulnerability audit warnings (NU1902/NU1903) — fix the cause rather than suppressing it.
 
-This builds all eight projects, including `Anvilboard.Agent`, which consumes the
+This builds all 15 projects (eight application and seven test projects), including `Anvilboard.Agent`, which consumes the
 [`dotnet-agent-surface`](https://github.com/sommmen/dotnet-agent-surface) `DotNetAgentSurface.*`
 packages from NuGet (versions in `Directory.Packages.props`). To build a single project, build its
 `.csproj` instead of the `.slnx`, e.g. `dotnet build src/Anvilboard.Api/Anvilboard.Api.csproj`.
