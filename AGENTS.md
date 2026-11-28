@@ -19,28 +19,34 @@ See [README.md](README.md) for the full feature set and
   through an MCP server, a CLI and generated agent skills from one catalog.
   Consumed here as the `DotNetAgentSurface.*` NuGet packages, so its source is
   where the behaviour behind those abstractions lives. Usually cloned as a
-  sibling folder next to this repository's checkout; otherwise read it on
+  sibling folder (../dotnet-agent-surface) next to this repository's checkout; otherwise read it on
   GitHub. <https://github.com/sommmen/dotnet-agent-surface>
+
+## Project structure
+
+- `src/Anvilboard.Domain` — entities, enums and strongly-typed IDs; no project dependencies.
+- `src/Anvilboard.Plugins.Abstractions` — the plugin contract (ingestion, webhook and issue-hook interfaces).
+- `src/Anvilboard.Infrastructure` — EF Core `DbContext`, SQLite provider, migrations, plugin registry and loader.
+- `src/Anvilboard.Application` — `IssueService`, `DashboardService`, `SyncCoordinator` and the other shared logic
+  that both the API and the agent surface call.
+- `src/Anvilboard.Integrations.GitHub`, `src/Anvilboard.Integrations.Linear` — first-class ingestion and webhook plugins.
+- `src/Anvilboard.Api` — ASP.NET Core minimal-API host; serves the REST API, webhooks and the built SPA from `wwwroot`.
+- `src/Anvilboard.Agent` — CLI and MCP agent surface built on `DotNetAgentSurface.*`.
+- `src/anvilboard-web` — Angular standalone-component SPA (pnpm); its production build writes into `src/Anvilboard.Api/wwwroot`.
+- `src/*.Tests`, `tests/Anvilboard.IntegrationTests` — xUnit v3 test projects, one per unit under test.
+- `docs/` — PRD, SRS, technical design, per-feature specs and plans; `Anvilboard.slnx` is the solution.
 
 ## Commit conventions
 
-Use Conventional Commits for every commit message and pull request title:
+Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) for
+every commit message and pull request title: `<type>[optional scope]: <description>`.
+Types: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`,
+`revert`, `style`, `test`. Mark a breaking change with `!` after the type or
+scope, or a `BREAKING CHANGE:` footer.
 
-```
-<type>(<scope>): <description>
-```
-
-- `type` — one of `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`,
-  `ci`, `perf`, `style`
-- `scope` — the module, package, or area the change touches
-- `description` — a short, imperative summary of the change
-
-Examples:
-
-- `feat(auth): add refresh token rotation`
-- `fix(api): handle null response from upstream service`
-- `chore(deps): bump dependency versions`
-
+Examples: `feat(auth): add refresh token rotation`,
+`fix(api): handle null response from upstream service`,
+`chore(deps): bump dependency versions`.
 <!-- comment-policy:begin - managed by the stallions comment-policy skill, edit it there -->
 
 ## Code comments
